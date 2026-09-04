@@ -101,7 +101,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setF((s) => ({ ...s, q })), 350);
+    const t = setTimeout(() => setF((s) => ({ ...s, q })), 200);
     return () => clearTimeout(t);
   }, [q]);
 

@@ -225,6 +225,29 @@ export const SYNONYMS: Record<string, string[]> = {
   пневмония: ["pneumonia"],
   дифтерия: ["diphtheria"],
   менингит: ["meningitis"],
+  // Синдромы, связанные с ЛОР
+  "синдром мендельсона": ["mendelson syndrome"],
+  "синдром черджа-стросс": ["churg-strauss syndrome", "eosinophilic granulomatosis with polyangiitis"],
+  "хург-штраус": ["churg-strauss syndrome", "eosinophilic granulomatosis with polyangiitis"],
+  "гранулематоз вегенера": ["granulomatosis with polyangiitis", "wegener granulomatosis"],
+  вегенера: ["granulomatosis with polyangiitis", "wegener granulomatosis", "gpa"],
+  "синдром гудпасчера": ["goodpasture syndrome"],
+  гудпасчер: ["goodpasture syndrome"],
+  "синдром рамсея-ханта": ["ramsay hunt syndrome", "herpes zoster oticus"],
+  "синдром рамсей-хант": ["ramsay hunt syndrome", "herpes zoster oticus"],
+  "синдром костена": ["costen syndrome", "temporomandibular joint disorder", "tmj"],
+  "синдром клиппеля-фейля": ["klippel-feil syndrome"],
+  "синдром шегрена": ["sjogren's syndrome", "sicca syndrome"],
+  "синдром картагенера": ["kartagener syndrome", "primary ciliary dyskinesia"],
+  "синдром пустого носа": ["empty nose syndrome"],
+  "синдром кашля верхних дыхательных путей": ["upper airway cough syndrome", "uacs"],
+  "обструктивное апноэ сна": ["obstructive sleep apnea", "osa"],
+  "синдром аллергического ринита": ["allergic rhinitis", "rhinoconjunctivitis"],
+  "синдром олпорта": ["alport syndrome"],
+  "синдром ушера": ["usher syndrome"],
+  "синдром тречера коллинза": ["treacher collins syndrome"],
+  "синдром пьера робена": ["pierre robin syndrome", "pierre robin sequence"],
+  "весенний катар": ["vernal conjunctivitis"],
   // Симптомы / жалобы
   "боль в ухе": ["earache", "otalgia", "ear pain"],
   "зуд в ухе": ["itchy ear", "ear pruritus"],
@@ -262,11 +285,25 @@ function expandTerm(t: string): string[] {
   const direct = SYNONYMS[t];
   if (direct) for (const s of direct) set.add(s);
   const re = new RegExp(`(^|\\s)${escapeRe(t)}(\\s|$)`, "i");
+  let prefix = 0;
   for (const [k, alts] of Object.entries(SYNONYMS)) {
     if (k === t) continue;
-    if (alts.some((a) => a.split(/\s+/).includes(t) || re.test(a))) {
+    const whole = alts.some((a) => a.split(/\s+/).includes(t) || re.test(a));
+    if (whole) {
       set.add(k);
       for (const a of alts) set.add(a);
+      continue;
+    }
+    // Префиксное разрешение неполного слова: фрагмент «синус»/«менье»/«вегенер» →
+    // целые концепт-группы (RU→EN и EN→RU), с ограничением количества, чтобы не раздувать запрос.
+    if (t.length >= 3 && prefix < 10) {
+      const keyPrefix = k.split(/\s+/).some((w) => w.startsWith(t));
+      const altPrefix = alts.some((a) => a.split(/\s+/).some((w) => w.startsWith(t)));
+      if (keyPrefix || altPrefix) {
+        set.add(k);
+        for (const a of alts) set.add(a);
+        prefix++;
+      }
     }
   }
   return [...set];

@@ -55,3 +55,26 @@ describe("expandQuery (RU↔EN концепт-группы)", () => {
     expect(expandQuery("cholesteatoma")[0]).toContain("cholesteatoma");
   });
 });
+
+describe("expandQuery (синдромы + частичное префиксное разрешение)", () => {
+  it("разрешает синдромы ЛОР: русский термин → англоязычный синдром", () => {
+    expect(expandQuery("вегенера")).toContainEqual(expect.arrayContaining(["granulomatosis with polyangiitis"]));
+    expect(flat("вегенера")).toContain("granulomatosis with polyangiitis");
+    expect(flat("синдром шегрена")).toContain("sjogren's syndrome");
+    expect(flat("гудпасчер")).toContain("goodpasture syndrome");
+  });
+
+  it("разрешает неполный русский фрагмент в полную концепт-группу", () => {
+    expect(expandQuery("синус")[0]).toContain("sinusitis");
+    expect(flat("вегенер")).toContain("granulomatosis with polyangiitis");
+  });
+
+  it("разрешает неполный английский фрагмент в русский эквивалент", () => {
+    expect(flat("sinus")).toContain("синусит");
+  });
+
+  it("уже существующий 'синдром меньера' остаётся доступным", () => {
+    expect(flat("синдром меньера")).toContain("meniere's disease");
+    expect(flat("меньер")).toContain("meniere's disease");
+  });
+});
