@@ -129,7 +129,7 @@ export function ArticleDrawer({ article, onClose, onUpdate }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <aside className="scrollbar-thin relative flex h-full w-full max-w-2xl flex-col overflow-y-auto bg-white shadow-2xl">
+      <aside className="scrollbar-thin relative flex h-full w-full max-w-3xl flex-col overflow-y-auto bg-white shadow-2xl">
         <div className="sticky top-0 z-10 flex items-start gap-3 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
           <TrustScore score={a.trustScore} size="lg" />
           <div className="min-w-0 flex-1">
@@ -212,15 +212,20 @@ export function ArticleDrawer({ article, onClose, onUpdate }: Props) {
             ) : a.abstract ? (
               <div className="space-y-2 text-sm leading-relaxed text-slate-800">
                 {aiState.translate ? (
-                  <>
-                    <p>{aiState.translate}</p>
-                    <details className="text-slate-500">
-                      <summary className="cursor-pointer text-xs font-medium text-teal-700 hover:underline">Оригинал</summary>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-teal-700">Перевод</p>
+                      {aiState.translate.split("\n").filter(Boolean).map((p, i) => (
+                        <p key={i}>{p}</p>
+                      ))}
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Оригинал</p>
                       {a.abstract.split("\n").filter(Boolean).map((p, i) => (
                         <p key={i}>{p}</p>
                       ))}
-                    </details>
-                  </>
+                    </div>
+                  </div>
                 ) : (
                   a.abstract.split("\n").filter(Boolean).map((p, i) => <p key={i}>{p}</p>)
                 )}
