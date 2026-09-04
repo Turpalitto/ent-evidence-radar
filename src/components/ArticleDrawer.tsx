@@ -22,7 +22,20 @@ export function ArticleDrawer({ article, onClose, onUpdate }: Props) {
       setCopied(key);
       setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
     } catch {
-      /* clipboard недоступен — игнорируем */
+      /* игнорируем */
+    }
+  }
+
+  async function shareArticle() {
+    const a = article!;
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title: a.title, text: a.title, url: a.url });
+      } catch {
+        /* пользователь отменил системный share — не ошибка */
+      }
+    } else {
+      await copy(a.url, "share");
     }
   }
 
@@ -99,6 +112,9 @@ export function ArticleDrawer({ article, onClose, onUpdate }: Props) {
             </a>
             <button onClick={() => copy(a.url, "link")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
               {copied === "link" ? "Скопировано ✓" : "⧉ Скопировать ссылку"}
+            </button>
+            <button onClick={() => void shareArticle()} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+              {copied === "share" ? "Скопировано ✓" : "⧉ Поделиться"}
             </button>
             {a.doi && <a href={`https://doi.org/${a.doi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">DOI ↗</a>}
             {a.doi && <button onClick={() => copy(a.doi!, "doi")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
