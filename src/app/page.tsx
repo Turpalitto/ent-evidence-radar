@@ -28,11 +28,11 @@ export default async function HomePage() {
   const run = lastRun[0];
 
   const cards = [
-    { label: "Всего записей", value: totals.total, sub: `+${totals.last7} за 7 дней` },
-    { label: "Непрочитано", value: totals.unread, sub: "новое для вас" },
-    { label: "Уровень 1", value: totals.l1, sub: "СО/МА и руководства" },
-    { label: "Доверие ≥ 70", value: totals.high, sub: "высоконадёжные" },
-    { label: "Руководств", value: totals.guidelines, sub: "guidelines / consensus" },
+    { label: "Всего записей", value: totals.total, sub: `+${totals.last7} за 7 дней`, href: "/" },
+    { label: "Непрочитано", value: totals.unread, sub: "новое для вас", href: "/?unread=1" },
+    { label: "Уровень 1", value: totals.l1, sub: "СО/МА и руководства", href: "/?level=1&sort=trust" },
+    { label: "Доверие ≥ 70", value: totals.high, sub: "высоконадёжные", href: "/?minTrust=70&sort=trust" },
+    { label: "Руководств", value: totals.guidelines, sub: "guidelines / consensus", href: "/?design=guideline" },
   ];
 
   return (
@@ -62,11 +62,15 @@ export default async function HomePage() {
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         {cards.map((c) => (
-          <div key={c.label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+          <Link
+            key={c.label}
+            href={c.href}
+            className="group rounded-2xl border border-slate-200 bg-white px-4 py-3 transition hover:border-teal-400 hover:shadow-sm"
+          >
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{c.label}</p>
             <p className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{c.value.toLocaleString("ru-RU")}</p>
-            <p className="text-[11px] text-slate-500">{c.sub}</p>
-          </div>
+            <p className="text-[11px] text-slate-500 group-hover:text-teal-700">{c.sub}</p>
+          </Link>
         ))}
       </div>
 

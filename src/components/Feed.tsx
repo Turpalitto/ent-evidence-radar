@@ -8,7 +8,6 @@ import { ArticleDrawer } from "./ArticleDrawer";
 
 interface Filters {
   q: string;
-  pico: { p: string; i: string; c: string; o: string };
   subspecialty: string;
   design: string;
   level: string;
@@ -24,7 +23,6 @@ interface Filters {
 
 const initial: Filters = {
   q: "",
-  pico: { p: "", i: "", c: "", o: "" },
   subspecialty: "",
   design: "",
   level: "",
@@ -49,10 +47,6 @@ const PRESETS: { label: string; f: Partial<Filters>; hint: string }[] = [
 function toParams(f: Filters, page: number, pageSize: number) {
   const p = new URLSearchParams();
   if (f.q) p.set("q", f.q);
-  if (f.pico.p) p.set("pico_p", f.pico.p);
-  if (f.pico.i) p.set("pico_i", f.pico.i);
-  if (f.pico.c) p.set("pico_c", f.pico.c);
-  if (f.pico.o) p.set("pico_o", f.pico.o);
   if (f.subspecialty) p.set("subspecialty", f.subspecialty);
   if (f.design) p.set("design", f.design);
   if (f.level) p.set("level", f.level);
@@ -80,12 +74,6 @@ function parseUrlSearch(): { f: Filters; page: number; q: string } {
   const sort = p.get("sort");
   const f: Filters = {
     q: p.get("q") ?? "",
-    pico: {
-      p: p.get("pico_p") ?? "",
-      i: p.get("pico_i") ?? "",
-      c: p.get("pico_c") ?? "",
-      o: p.get("pico_o") ?? "",
-    },
     subspecialty: p.get("subspecialty") ?? "",
     design: p.get("design") ?? "",
     level: p.get("level") ?? "",
@@ -158,7 +146,6 @@ export function Feed({ topics }: { topics: Topic[] }) {
   const activeCount = useMemo(
     () => Object.entries(f).filter(([k, v]) => {
       if (k === "sort") return false;
-      if (k === "pico") return v.p || v.i || v.c || v.o;
       return v !== initial[k as keyof Filters];
     }).length,
     [f],
@@ -182,9 +169,9 @@ export function Feed({ topics }: { topics: Topic[] }) {
       <div>
         <div className="mb-1.5 flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Быстрые фильтры</h3>
-          {activeCount > 0 && (
-            <button onClick={reset} className="text-xs font-medium text-teal-700 hover:underline">Сбросить ({activeCount})</button>
-          )}
+          <button onClick={reset} className={`text-xs font-medium text-teal-700 hover:underline ${activeCount > 0 ? "" : "invisible"}`}>
+            Сбросить{activeCount > 0 ? ` (${activeCount})` : ""}
+          </button>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {PRESETS.map((p) => (
@@ -193,34 +180,6 @@ export function Feed({ topics }: { topics: Topic[] }) {
             </button>
           ))}
         </div>
-      </div>
-
-      <div className="rounded-xl border border-teal-100 bg-teal-50/50 p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-teal-800">PICO-вопрос</h3>
-          {(f.pico.p || f.pico.i || f.pico.c || f.pico.o) && (
-            <button onClick={() => set({ pico: { p: "", i: "", c: "", o: "" } })} className="text-xs font-medium text-teal-700 hover:underline">Очистить</button>
-          )}
-        </div>
-        <div className="space-y-1.5">
-          {([
-            ["p", "P — Пациент"],
-            ["i", "I — Вмешательство"],
-            ["c", "C — Сравнение"],
-            ["o", "O — Исход"],
-          ] as const).map(([key, label]) => (
-            <label key={key} className="block">
-              <span className="mb-0.5 block text-[11px] font-medium text-slate-600">{label}</span>
-              <input
-                value={f.pico[key]}
-                onChange={(e) => set({ pico: { ...f.pico, [key]: e.target.value } })}
-                placeholder={label.split("— ")[1].toLowerCase()}
-                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none"
-              />
-            </label>
-          ))}
-        </div>
-        <p className="mt-2 text-[11px] leading-snug text-slate-500">Найдите статьи под ваш клинический вопрос. Внутри поля — синонимы (RU↔EN), между полями — строго «и».</p>
       </div>
 
       <label className="block">
@@ -318,8 +277,17 @@ export function Feed({ topics }: { topics: Topic[] }) {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Поиск по заголовку, аннотации, журналу, авторам…"
-              className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-teal-500 focus:outline-none"
+              className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-8 text-sm focus:border-teal-500 focus:outline-none"
             />
+            {q && (
+              <button
+                onClick={() => setQ("")}
+                aria-label="Очистить поиск"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
+            )}
           </div>
           <select value={f.sort} onChange={(e) => set({ sort: e.target.value as Filters["sort"] })} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
             <option value="date">Сначала новые (по публикации)</option>

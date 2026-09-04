@@ -37,7 +37,7 @@ export function AppNav() {
               <Link
                 key={l.href}
                 href={l.href}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${active ? "bg-teal-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`}
               >
                 {l.label}
               </Link>
@@ -52,7 +52,7 @@ export function AppNav() {
         {links.map((l) => {
           const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
           return (
-            <Link key={l.href} href={l.href} className={`whitespace-nowrap rounded-lg px-3 py-1 text-xs font-medium ${active ? "bg-slate-900 text-white" : "text-slate-600 bg-slate-100"}`}>
+            <Link key={l.href} href={l.href} className={`whitespace-nowrap rounded-lg px-3 py-1 text-xs font-medium transition ${active ? "bg-teal-600 text-white" : "text-slate-600 bg-slate-100"}`}>
               {l.label}
             </Link>
           );

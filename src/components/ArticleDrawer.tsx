@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Article } from "@/db/schema";
 import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { DesignBadge, LevelBadge, TierBadge, TrustScore, formatDate } from "./Badges";
@@ -15,6 +15,30 @@ export function ArticleDrawer({ article, onClose, onUpdate }: Props) {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [aiState, setAiState] = useState<{ mode: "idle" | "loading" | "done" | "error"; translate?: string; summary?: string; error?: string }>({ mode: "idle" });
+
+  const runAi = useCallback(async (action: "translate" | "summary") => {
+    const a = article;
+    if (!a || !a.abstract) return;
+    setAiState((s) => ({ ...s, mode: "loading" }));
+    try {
+      const r = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, text: a.abstract }),
+      });
+      const j = (await r.json()) as { ok: boolean; text?: string; error?: string };
+      if (!r.ok || !j.ok || !j.text) throw new Error(j.error ?? "Не удалось получить ответ");
+      setAiState((s) => ({ ...s, mode: "done", translate: action === "translate" ? j.text : s.translate, summary: action === "summary" ? j.text : s.summary }));
+    } catch (e) {
+      setAiState((s) => ({ ...s, mode: "error", error: e instanceof Error ? e.message : String(e) }));
+    }
+  }, [article]);
+
+  // Сброс AI-состояния при смене статьи.
+  useEffect(() => {
+    setAiState({ mode: "idle" });
+  }, [article?.id]);
 
   async function copy(text: string, key: string) {
     try {
@@ -97,44 +121,91 @@ export function ArticleDrawer({ article, onClose, onUpdate }: Props) {
         </div>
 
         <div className="space-y-5 px-5 py-4">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <a href={a.url} target="_blank" rel="noreferrer" className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-teal-700">
+              Открыть первоисточник ↗
+            </a>
             <button
               onClick={() => patch(a.id, { isBookmarked: !a.isBookmarked })}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${a.isBookmarked ? "border-amber-300 bg-amber-50 text-amber-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${a.isBookmarked ? "border-amber-300 bg-amber-50 text-amber-800" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+              title={a.isBookmarked ? "Убрать из избранного" : "В избранное"}
             >
               {a.isBookmarked ? "★ В избранном" : "☆ В избранное"}
             </button>
-            <button onClick={() => patch(a.id, { isRead: !a.isRead })} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+            <button onClick={() => patch(a.id, { isRead: !a.isRead })} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" title={a.isRead ? "Отметить непрочитанным" : "Отметить прочитанным"}>
               {a.isRead ? "Отметить непрочитанным" : "Отметить прочитанным"}
             </button>
-            <a href={a.url} target="_blank" rel="noreferrer" className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-              Открыть первоисточник ↗
-            </a>
-            <button onClick={() => copy(a.url, "link")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-              {copied === "link" ? "Скопировано ✓" : "⧉ Скопировать ссылку"}
-            </button>
-            <button onClick={() => void shareArticle()} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+            <button onClick={() => void shareArticle()} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" title="Поделиться">
               {copied === "share" ? "Скопировано ✓" : "⧉ Поделиться"}
             </button>
-            {a.doi && <a href={`https://doi.org/${a.doi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">DOI ↗</a>}
-            {a.doi && <button onClick={() => copy(a.doi!, "doi")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-              {copied === "doi" ? "Скопировано ✓" : "⧉ DOI"}
-            </button>}
-            {a.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">PubMed ↗</a>}
-            {a.pmcid && <a href={`https://www.ncbi.nlm.nih.gov/pmc/articles/${a.pmcid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">Полный текст PMC ↗</a>}
-            {a.nctId && <a href={`https://clinicaltrials.gov/study/${a.nctId}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">{a.nctId} ↗</a>}
+            <button onClick={() => copy(a.url, "link")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" title="Скопировать ссылку на статью">
+              {copied === "link" ? "Скопировано ✓" : "⧉ Ссылка"}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Идентификаторы:</span>
+            {a.doi && <a href={`https://doi.org/${a.doi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50" title="DOI">{a.doi} ↗</a>}
+            {a.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50" title="PubMed">PMID {a.pmid} ↗</a>}
+            {a.pmcid && <a href={`https://www.ncbi.nlm.nih.gov/pmc/articles/${a.pmcid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 transition hover:bg-emerald-100" title="Полный текст в PMC">Полный текст PMC ↗</a>}
+            {a.nctId && <a href={`https://clinicaltrials.gov/study/${a.nctId}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50" title="Регистрация на ClinicalTrials.gov">NCT {a.nctId} ↗</a>}
           </div>
 
           <section>
-            <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Аннотация</h3>
-            {a.abstract ? (
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Аннотация</h3>
+              {a.abstract && (
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => void runAi("translate")}
+                    disabled={aiState.mode === "loading"}
+                    className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold transition disabled:opacity-40 ${aiState.translate ? "border-teal-300 bg-teal-50 text-teal-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                    title="Перевести аннотацию на русский"
+                  >
+                    {aiState.translate ? "Переключить на русский" : "Перевести на русский"}
+                  </button>
+                  <button
+                    onClick={() => void runAi("summary")}
+                    disabled={aiState.mode === "loading"}
+                    className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                    title="Кратко: что за исследование и что это значит для практики"
+                  >
+                    Резюме
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {aiState.mode === "loading" ? (
+              <p className="text-sm text-slate-500">Обрабатываю искусственным интеллектом…</p>
+            ) : a.abstract ? (
               <div className="space-y-2 text-sm leading-relaxed text-slate-800">
-                {a.abstract.split("\n").filter(Boolean).map((p, i) => (
-                  <p key={i}>{p}</p>
-                ))}
+                {aiState.translate ? (
+                  <>
+                    <p>{aiState.translate}</p>
+                    <details className="text-slate-500">
+                      <summary className="cursor-pointer text-xs font-medium text-teal-700 hover:underline">Оригинал</summary>
+                      {a.abstract.split("\n").filter(Boolean).map((p, i) => (
+                        <p key={i}>{p}</p>
+                      ))}
+                    </details>
+                  </>
+                ) : (
+                  a.abstract.split("\n").filter(Boolean).map((p, i) => <p key={i}>{p}</p>)
+                )}
+                {aiState.summary && (
+                  <div className="rounded-xl border border-teal-100 bg-teal-50/60 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Что это значит для практики</p>
+                    <p className="mt-1 leading-relaxed">{aiState.summary}</p>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-sm italic text-slate-500">Аннотация недоступна в источнике.</p>
+            )}
+
+            {aiState.mode === "error" && (
+              <p className="mt-1 text-xs text-rose-600">Не удалось выполнить запрос: {aiState.error}. Проверьте настройку AI_API_KEY.</p>
             )}
           </section>
 

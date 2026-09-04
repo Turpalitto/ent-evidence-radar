@@ -2,7 +2,6 @@ import { and, desc, asc, eq, gte, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { articles } from "@/db/schema";
 import { expandQuery } from "@/lib/search";
-import { buildPicoTerms } from "@/lib/pico";
 import { parseFilters, type ArticleFilters } from "@/lib/filters";
 
 export { parseFilters, type ArticleFilters };
@@ -18,14 +17,6 @@ export function buildWhere(f: ArticleFilters): SQL | undefined {
     // Расширяем запрос синонимами (RU↔EN): каждая концепт-группа — OR по своим вариантам,
     // разные понятия (слова) — через AND. Так «отит» найдёт и «otitis», и «otitis media».
     const groups = expandQuery(f.q);
-    if (groups.length) {
-      const groupConds = groups.map((g) => or(...g.map(termLike))!);
-      conds.push(and(...groupConds)!);
-    }
-  }
-  if (f.pico) {
-    // PICO: внутри каждого поля (P/I/C/O) — OR по синонимам, между полями — AND.
-    const groups = buildPicoTerms(f.pico);
     if (groups.length) {
       const groupConds = groups.map((g) => or(...g.map(termLike))!);
       conds.push(and(...groupConds)!);
