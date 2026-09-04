@@ -1,36 +1,50 @@
 import { describe, it, expect } from "vitest";
 import { expandQuery } from "@/lib/search";
 
-describe("expandQuery", () => {
-  it("возвращает исходный запрос, если синонимов нет", () => {
-    expect(expandQuery("cholesteatoma")).toEqual(["cholesteatoma"]);
-  });
+const flat = (q: string) => expandQuery(q).flat();
 
+describe("expandQuery (RU↔EN концепт-группы)", () => {
   it("возвращает пустой массив на пустом/пробельном вводе", () => {
     expect(expandQuery("")).toEqual([]);
     expect(expandQuery("   ")).toEqual([]);
   });
 
-  it("расширяет русское слово англоязычными синонимами", () => {
-    const out = expandQuery("глухота");
-    expect(out[0]).toBe("глухота");
-    expect(out).toContain("hearing loss");
-    expect(out).toContain("deafness");
+  it("расширяет русское слово англоязычными синонимами (OR в одной группе)", () => {
+    const groups = expandQuery("глухота");
+    expect(groups.length).toBe(1);
+    expect(groups[0]).toContain("глухота");
+    expect(groups[0]).toContain("hearing loss");
+    expect(groups[0]).toContain("deafness");
   });
 
   it("расширяет фразовые синонимы (средний отит)", () => {
-    const out = expandQuery("средний отит");
+    const out = flat("средний отит");
     expect(out).toContain("otitis media");
     expect(out).toContain("middle ear infection");
   });
 
-  it("не дублирует термы", () => {
-    const out = expandQuery("тиннитус");
-    expect(new Set(out).size).toBe(out.length);
+  it("работает двунаправленно: английский термин находит русский эквивалент", () => {
+    const groups = expandQuery("otitis");
+    expect(groups.length).toBe(1);
+    expect(groups[0]).toContain("отит");
+    expect(groups[0]).toContain("otitis");
+  });
+
+  it("разбивает многословный запрос на концепт-группы (AND между словами)", () => {
+    const groups = expandQuery("острый отит");
+    expect(groups.length).toBeGreaterThanOrEqual(2);
+    const out = groups.flat();
+    expect(out).toContain("acute");
+    expect(out).toContain("otitis");
+  });
+
+  it("не дублирует термы внутри одной группы", () => {
+    const g = expandQuery("тиннитус");
+    expect(new Set(g[0]).size).toBe(g[0].length);
   });
 
   it("регистронезависим при поиске синонимов, но сохраняет ввод", () => {
-    expect(expandQuery("Громкий тиннитус".slice(0, 7))).toEqual(["Громкий"]); // «Громкий» — без синонимов
-    expect(expandQuery("РАК ГОРТАНИ")).toContain("laryngeal cancer");
+    expect(flat("РАК ГОРТАНИ")).toContain("laryngeal cancer");
+    expect(expandQuery("cholesteatoma")[0]).toContain("cholesteatoma");
   });
 });

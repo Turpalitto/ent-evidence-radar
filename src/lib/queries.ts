@@ -9,13 +9,19 @@ export { parseFilters, type ArticleFilters };
 export function buildWhere(f: ArticleFilters): SQL | undefined {
   const conds: SQL[] = [];
   if (f.q) {
-    // Расширяем запрос синонимами (RU↔EN): каждый термин ищется в любом из полей, все термы — через AND.
-    const terms = expandQuery(f.q);
-    const termConds = terms.map((t) => {
-      const like = `%${t}%`;
-      return or(ilike(articles.title, like), ilike(articles.abstract, like), ilike(articles.journal, like), sql`${articles.authors}::text ilike ${like}`)!;
-    });
-    conds.push(and(...termConds)!);
+    // Расширяем запрос синонимами (RU↔EN): каждая концепт-группа — OR по своим вариантам,
+    // разные понятия (слова) — через AND. Так «отит» найдёт и «otitis», и «otitis media».
+    const groups = expandQuery(f.q);
+    if (groups.length) {
+      const groupConds = groups.map((g) => {
+        const orConds = g.map((t) => {
+          const like = `%${t}%`;
+          return or(ilike(articles.title, like), ilike(articles.abstract, like), ilike(articles.journal, like), sql`${articles.authors}::text ilike ${like}`)!;
+        });
+        return or(...orConds)!;
+      });
+      conds.push(and(...groupConds)!);
+    }
   }
   if (f.subspecialty) conds.push(sql`${articles.subspecialties} @> ${JSON.stringify([f.subspecialty])}::jsonb`);
   if (f.design) conds.push(eq(articles.studyDesign, f.design as typeof articles.$inferSelect.studyDesign));
