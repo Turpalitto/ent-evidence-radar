@@ -210,12 +210,52 @@ async function chat(prompt: string, system: string, timeoutMs = 60_000): Promise
   throw new Error(`AI: все модели недоступны (${models.join(", ")}). Последняя ошибка: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
 }
 
-async function cached(key: string, fn: () => Promise<string>, ttlMs = 10 * 60_000): Promise<string> {
-  const cache = getCache();
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < ttlMs) return hit.text;
+import { db } from "@/db";
+import { aiCache as aiCacheTable, type NewAiCache } from "@/db/schema";
+import { eq, sql } from "drizzle-orm";
+
+/** Прочитать готовый ответ из персистентной БД (кэш переживает рестарты). */
+async function dbGet(key: string): Promise<string | undefined> {
+  try {
+    const rows = await db
+      .select({ result: aiCacheTable.result })
+      .from(aiCacheTable)
+      .where(eq(aiCacheTable.key, key))
+      .limit(1);
+    return rows[0]?.result;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Записать ответ в персистентную БД (идемпотентно ключ уникален). */
+async function dbSet(key: string, kind: string, result: string): Promise<void> {
+  try {
+    const val: NewAiCache = { key, kind, result };
+    await db
+      .insert(aiCacheTable)
+      .values(val)
+      .onConflictDoUpdate({ target: aiCacheTable.key, set: { result, updatedAt: sql`now()` } });
+  } catch {
+    /* кэш-запись не должна ронять основную логику */
+  }
+}
+
+/** Кэш-поиск: сначала память (быстро), затем БД (переживает рестарт). */
+async function cachedPick(key: string, ttlMs = 10 * 60_000): Promise<string | undefined> {
+  const hit = cachedString(key, ttlMs);
+  if (hit !== undefined) return hit;
+  const fromDb = await dbGet(key);
+  if (fromDb !== undefined) getCache().set(key, { text: fromDb, at: Date.now() });
+  return fromDb;
+}
+
+async function cached(key: string, kind: string, fn: () => Promise<string>, ttlMs = 10 * 60_000): Promise<string> {
+  const pre = await cachedPick(key, ttlMs);
+  if (pre !== undefined) return pre;
   const text = await fn();
-  cache.set(key, { text, at: Date.now() });
+  getCache().set(key, { text, at: Date.now() });
+  void dbSet(key, kind, text);
   return text;
 }
 
@@ -233,7 +273,8 @@ export function warmAbstracts(texts: string[], concurrency = 4): void {
     while (i < uniq.length) {
       const t = uniq[i++];
       if (t.length > 30000) continue;
-      if (cachedString(`tr:${t.slice(0, 200)}`)) continue;
+      const key = `tr:${t.slice(0, 200)}`;
+      if (await cachedPick(key)) continue;
       try {
         await translateAbstract(t);
       } catch {
@@ -262,24 +303,26 @@ const SUMMARIZE_SYSTEM =
 export function translateAbstract(text: string): Promise<string> {
   const t = text.trim();
   if (!t) return Promise.resolve("");
-  return cached(`tr:${t.slice(0, 200)}`, () => chat(t, TRANSLATE_SYSTEM));
+  const key = `tr:${t.slice(0, 200)}`;
+  return cached(key, "tr", () => chat(t, TRANSLATE_SYSTEM));
 }
 
 /** Краткое резюме «о чём статья» (RU). Пустой текст -> пустой ответ. */
 export function summarizeAbstract(text: string): Promise<string> {
   const t = text.trim();
   if (!t) return Promise.resolve("");
-  return cached(`sum:${t.slice(0, 200)}`, () => chat(t, SUMMARIZE_SYSTEM));
+  const key = `sum:${t.slice(0, 200)}`;
+  return cached(key, "sum", () => chat(t, SUMMARIZE_SYSTEM));
 }
 
-/** Стриминговый перевод аннотации. Если перевод уже в кэше — отдаёт его мгновенно. */
+/** Стриминговый перевод аннотации. Если перевод уже в кэше (память/БД) — отдаёт его мгновенно. */
 export async function* translateStream(text: string): AsyncGenerator<string> {
   const t = text.trim();
   if (!t) return;
   const key = `tr:${t.slice(0, 200)}`;
-  const hit = cachedString(key);
-  if (hit !== undefined) {
-    yield hit;
+  const pre = await cachedPick(key);
+  if (pre !== undefined) {
+    yield pre;
     return;
   }
   let acc = "";
@@ -288,6 +331,7 @@ export async function* translateStream(text: string): AsyncGenerator<string> {
     yield delta;
   }
   getCache().set(key, { text: acc, at: Date.now() });
+  void dbSet(key, "tr", acc);
 }
 
 /** Стриминговое резюме. Если резюме уже в кэше — отдаёт его мгновенно. */
@@ -295,9 +339,9 @@ export async function* summarizeStream(text: string): AsyncGenerator<string> {
   const t = text.trim();
   if (!t) return;
   const key = `sum:${t.slice(0, 200)}`;
-  const hit = cachedString(key);
-  if (hit !== undefined) {
-    yield hit;
+  const pre = await cachedPick(key);
+  if (pre !== undefined) {
+    yield pre;
     return;
   }
   let acc = "";
@@ -306,4 +350,5 @@ export async function* summarizeStream(text: string): AsyncGenerator<string> {
     yield delta;
   }
   getCache().set(key, { text: acc, at: Date.now() });
+  void dbSet(key, "sum", acc);
 }

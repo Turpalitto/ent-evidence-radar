@@ -127,8 +127,19 @@ export const settings = pgTable("settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Персистентный кэш ИИ-ответов (перевод/резюме), переживает рестарты. */
+export const aiCache = pgTable("ai_cache", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  kind: text("kind").notNull(), // tr | sum
+  result: text("result").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type Article = typeof articles.$inferSelect;
 export type NewArticle = typeof articles.$inferInsert;
 export type Topic = typeof topics.$inferSelect;
 export type Source = typeof sources.$inferSelect;
 export type FetchRun = typeof fetchRuns.$inferSelect;
+export type AiCache = typeof aiCache.$inferSelect;
+export type NewAiCache = typeof aiCache.$inferInsert;
