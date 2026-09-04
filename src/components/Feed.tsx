@@ -109,7 +109,17 @@ export function Feed({ topics }: { topics: Topic[] }) {
     setLoading(true);
     try {
       const r = await fetch(`/api/articles?${toParams(f, page, pageSize)}`, { cache: "no-store" });
-      setData((await r.json()) as { items: Article[]; total: number });
+      const parsed = (await r.json()) as { items: Article[]; total: number };
+      setData(parsed);
+      // Фоновый прогрев переводов: не ждём ответа, чтобы не тормозить ленту.
+      const abstracts = parsed.items.map((a) => a.abstract).filter((s): s is string => Boolean(s));
+      if (abstracts.length) {
+        void fetch("/api/ai/warm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ texts: abstracts }),
+        }).catch(() => {});
+      }
     } finally {
       setLoading(false);
     }

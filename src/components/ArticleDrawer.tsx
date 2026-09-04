@@ -27,9 +27,40 @@ export function ArticleDrawer({ article, onClose, onUpdate }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, text: a.abstract }),
       });
-      const j = (await r.json()) as { ok: boolean; text?: string; error?: string };
-      if (!r.ok || !j.ok || !j.text) throw new Error(j.error ?? "Не удалось получить ответ");
-      setAiState((s) => ({ ...s, mode: "done", translate: action === "translate" ? j.text : s.translate, summary: action === "summary" ? j.text : s.summary }));
+      if (!r.ok || !r.body) {
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? `Ошибка ${r.status}`);
+      }
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let acc = "";
+      let done = false;
+      while (!done) {
+        const { value, done: d } = await reader.read();
+        done = d;
+        acc += decoder.decode(value, { stream: !done });
+        let nl: number;
+        while ((nl = acc.indexOf("\n")) !== -1) {
+          const line = acc.slice(0, nl).trim();
+          acc = acc.slice(nl + 1);
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
+          try {
+            const j = JSON.parse(data) as { ok: boolean; delta?: string; error?: string };
+            if (!j.ok || j.error) throw new Error(j.error ?? "Не удалось получить ответ");
+            if (j.delta) {
+              setAiState((s) =>
+                action === "translate"
+                  ? { ...s, mode: "done", translate: (s.translate ?? "") + j.delta }
+                  : { ...s, mode: "done", summary: (s.summary ?? "") + j.delta },
+              );
+            }
+          } catch (e) {
+            if (e instanceof SyntaxError) continue;
+            throw e;
+          }
+        }
+      }
     } catch (e) {
       setAiState((s) => ({ ...s, mode: "error", error: e instanceof Error ? e.message : String(e) }));
     }
