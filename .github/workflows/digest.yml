@@ -1,0 +1,19 @@
+name: Weekly digest
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger digest
+        run: |
+          curl -fsS -X POST "${{ secrets.APP_URL }}/api/digest" \
+            -H 'Content-Type: application/json' \
+            -w '\nHTTP %{http_code}\n'
