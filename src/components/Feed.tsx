@@ -91,14 +91,25 @@ function parseUrlSearch(): { f: Filters; page: number; q: string } {
 }
 
 export function Feed({ topics }: { topics: Topic[] }) {
-  const [f, setF] = useState<Filters>(() => parseUrlSearch().f);
-  const [q, setQ] = useState(() => parseUrlSearch().q);
-  const [page, setPage] = useState(() => parseUrlSearch().page);
+  const [f, setF] = useState<Filters>(initial);
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
   const pageSize = 30;
   const [data, setData] = useState<{ items: Article[]; total: number }>({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Article | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Восстанавливаем фильтры/поиск/страницу из URL после монтирования (детерминированный первый рендер).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const parsed = parseUrlSearch();
+      setF(parsed.f);
+      setQ(parsed.q);
+      setPage(parsed.page);
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setF((s) => ({ ...s, q })), 200);
