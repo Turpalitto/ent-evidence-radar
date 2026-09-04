@@ -1,0 +1,94 @@
+# ENT Evidence Radar
+
+Автоматический агрегатор доказательной научной литературы по **оториноларингологии** (ENT) из мировых источников:
+
+- **PubMed / MEDLINE** (NCBI E-utilities) — MeSH-фильтрация, типы публикаций, Cochrane
+- **Europe PMC** — REST API, дублирующий канал MEDLINE + препринты (SRC:PPR)
+- **ClinicalTrials.gov** — API v2, интервенционные исследования, наличие результатов
+- **medRxiv** — препринты категории Otolaryngology (с пометкой «без рецензии»)
+
+Каждая запись автоматически классифицируется: **дизайн исследования** (СО/МА, РКИ, когорта, руководство…), **уровень доказательности** (Oxford 1–5), **размер выборки**, **субспециальности** и **индекс доверия** (0–100) на основе дизайна, уровня журнала, регистрации протокола, стандартов отчётности и признаков «хищнических» издательств.
+
+> ⚠️ Инструмент для мониторинга литературы. Не является медицинской рекомендацией и не заменяет чтение первоисточников.
+
+## Стек
+
+- **Next.js 16** (App Router), React 19, TypeScript 5.9
+- **Tailwind CSS v4**
+- **Drizzle ORM 0.45** поверх **PostgreSQL**
+- **PGlite** — встроенный PostgreSQL (wasm), БД «из коробки» без установки сервера
+- **Vitest** — юнит-тесты ядра классификации
+
+## Быстрый старт
+
+```bash
+npm install
+npm run dev
+```
+
+Откройте http://localhost:3001 (или порт из вывода `next dev`).
+
+По умолчанию используется **встроенный PGlite**: данные — в каталоге `./.pglite` рядом с проектом. Сервер сам создаёт БД, применяет миграции (`drizzle/`) и наполняет справочники (14 тем, источники, настройки). При первом запуске `instrumentation.ts` планирует автообновление каждые 60 минут.
+
+## Переменные окружения
+
+Скопируйте `.env.example` в `.env` при необходимости:
+
+| Переменная | Значение |
+|---|---|
+| `DATABASE_URL` | Опционально. Если задан — используется внешний PostgreSQL (например `postgres://user:pass@host:5432/db`). Если пуст — встроенный PGlite. |
+| `NCBI_API_KEY` | Опционально. Поднимает лимит NCBI E-utilities с 3 до 10 запросов/с. |
+
+## Скрипты
+
+| Команда | Действие |
+|---|---|
+| `npm run dev` | Dev-сервер (Turbopack) |
+| `npm run build` / `npm start` | Продакшн-сборка/запуск |
+| `npm run typecheck` | Проверка типов TS (`tsc --noEmit`) |
+| `npm run lint` | ESLint (Next core-web-vitals) |
+| `npm test` | Vitest — юнит-тесты |
+| `npm run db:generate` | Генерация миграций Drizzle |
+
+## Архитектура
+
+```
+src/
+  app/            # App Router: страницы + REST API
+  components/     # UI (Feed, Badges, ArticleDrawer, SettingsPanel, ...)
+  db/             # подключение к БД (PGlite или PostgreSQL) + schema
+  lib/
+    evidence/     # classify.ts, journals.ts, taxonomy.ts  ← ядро (чистое, тестируемое)
+    sources/      # адаптеры: pubmed, europepmc, clinicaltrials, medrxiv, http
+    refresh.ts    # оркестрация сбора: source → dedup → classify → write
+    queries.ts    # фильтры/поиск/пагинация статей
+    defaults.ts   # 14 тем, настройки, источники
+```
+
+**Поток данных:** `instrumentation`/`POST /api/refresh` → `runRefresh` параллельно опрашивает источники → дедупликация (DOI → PMID → NCT → нормализованный заголовок) → `classify()` → запись в `articles` с `trust_breakdown`, `topic_ids`, `source_keys`.
+
+**Надёжность:** мутекс `globalThis.__entRadarRunning` (без параллельных запусков), изоляция сбоев источников (одна ошибка не обрывает весь запуск), уважение rate-limit NCBI, идемпотентный посев (`ensureSeeded`).
+
+## Развёртывание
+
+### Сам-хостинг (долгоживущий Node-процесс)
+
+`instrumentation.ts` планирует автообновление внутри процесса — подходит для VPS/свой сервер.
+
+### Serverless (Vercel) — внешний cron
+
+`instrumentation` на serverless не жить. Используйте внешний расписатель — cron, GitHub Actions (`/.github/workflows/refresh.yml`) — который вызывает готовый эндпоинт:
+
+```bash
+curl -X POST https://<ваш-домен>/api/refresh
+```
+
+Состояние и последние ошибки источников смотрите в `GET /api/status`.
+
+## Тесты
+
+```bash
+npm test
+```
+
+Покрыто ядро классификации: определение дизайна, уровень доказательности, размер выборки, субспециальности, индекс доверия, журнальные tier-ы, дедупликация.

@@ -1,0 +1,19 @@
+name: Scheduled refresh
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger refresh
+        run: |
+          curl -fsS -X POST "${{ secrets.APP_URL }}/api/refresh" \
+            -H 'Content-Type: application/json' \
+            -w '\nHTTP %{http_code}\n'
