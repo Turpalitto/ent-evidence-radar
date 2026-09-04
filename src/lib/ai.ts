@@ -273,7 +273,7 @@ export function warmAbstracts(texts: string[], concurrency = 4): void {
     while (i < uniq.length) {
       const t = uniq[i++];
       if (t.length > 30000) continue;
-      const key = `tr:${t.slice(0, 200)}`;
+      const key = `tr2:${t.slice(0, 200)}`;
       if (await cachedPick(key)) continue;
       try {
         await translateAbstract(t);
@@ -303,7 +303,7 @@ const SUMMARIZE_SYSTEM =
 export function translateAbstract(text: string): Promise<string> {
   const t = text.trim();
   if (!t) return Promise.resolve("");
-  const key = `tr:${t.slice(0, 200)}`;
+  const key = `tr2:${t.slice(0, 200)}`;
   return cached(key, "tr", () => chat(t, TRANSLATE_SYSTEM));
 }
 
@@ -311,7 +311,7 @@ export function translateAbstract(text: string): Promise<string> {
 export function summarizeAbstract(text: string): Promise<string> {
   const t = text.trim();
   if (!t) return Promise.resolve("");
-  const key = `sum:${t.slice(0, 200)}`;
+  const key = `sum2:${t.slice(0, 200)}`;
   return cached(key, "sum", () => chat(t, SUMMARIZE_SYSTEM));
 }
 
@@ -319,7 +319,7 @@ export function summarizeAbstract(text: string): Promise<string> {
 export async function* translateStream(text: string): AsyncGenerator<string> {
   const t = text.trim();
   if (!t) return;
-  const key = `tr:${t.slice(0, 200)}`;
+  const key = `tr2:${t.slice(0, 200)}`;
   const pre = await cachedPick(key);
   if (pre !== undefined) {
     yield pre;
@@ -338,7 +338,7 @@ export async function* translateStream(text: string): AsyncGenerator<string> {
 export async function* summarizeStream(text: string): AsyncGenerator<string> {
   const t = text.trim();
   if (!t) return;
-  const key = `sum:${t.slice(0, 200)}`;
+  const key = `sum2:${t.slice(0, 200)}`;
   const pre = await cachedPick(key);
   if (pre !== undefined) {
     yield pre;
