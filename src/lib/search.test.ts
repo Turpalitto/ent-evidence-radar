@@ -23,6 +23,13 @@ describe("expandQuery (RU↔EN концепт-группы)", () => {
     expect(out).toContain("middle ear infection");
   });
 
+  it("расширяет одиночные ЛОР-термины (синусит/ангина/фарингит)", () => {
+    expect(expandQuery("синусит")[0]).toContain("sinusitis");
+    expect(expandQuery("ангина")[0]).toContain("tonsillitis");
+    expect(expandQuery("фарингит")[0]).toContain("pharyngitis");
+    expect(expandQuery("ларингит")[0]).toContain("laryngitis");
+  });
+
   it("работает двунаправленно: английский термин находит русский эквивалент", () => {
     const groups = expandQuery("otitis");
     expect(groups.length).toBe(1);
