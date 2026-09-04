@@ -17,6 +17,41 @@ export function isRefreshRunning() {
   return !!g.__entRadarRunning;
 }
 
+// ---- Кросс-инстансная блокировка запуска (через settings; без новой миграции).
+// Позволяет нескольким процессам (self-host + cron) не запускать рефреш одновременно.
+const LOCK_KEY = "lock_refresh";
+const LOCK_LEASE_MS = 6 * 60 * 1000;
+
+async function acquireLock(holder: string): Promise<boolean> {
+  const exp = new Date(Date.now() + LOCK_LEASE_MS).toISOString();
+  const res = await db.execute(sql`
+    INSERT INTO settings (key, value, "updated_at")
+    VALUES ('${sql.raw(LOCK_KEY)}', jsonb_build_object('holder', ${holder}::text, 'expiresAt', ${exp}::text), now())
+    ON CONFLICT (key) DO UPDATE
+      SET value = excluded.value, "updated_at" = excluded."updated_at"
+      WHERE settings.value->>'holder' IS NULL
+         OR (settings.value->>'expiresAt')::timestamptz < now()
+    RETURNING key
+  `);
+  return ((res as { rows?: unknown[] }).rows?.length ?? 0) > 0;
+}
+
+async function renewLock(holder: string) {
+  const exp = new Date(Date.now() + LOCK_LEASE_MS).toISOString();
+  await db.execute(sql`
+    UPDATE settings
+    SET value = jsonb_build_object('holder', ${holder}::text, 'expiresAt', ${exp}::text), "updated_at" = now()
+    WHERE key = '${sql.raw(LOCK_KEY)}' AND settings.value->>'holder' = ${holder}
+  `);
+}
+
+async function releaseLock(holder: string) {
+  await db.execute(sql`
+    DELETE FROM settings
+    WHERE key = '${sql.raw(LOCK_KEY)}' AND settings.value->>'holder' = ${holder}
+  `);
+}
+
 /** Идемпотентное наполнение справочников при первом старте. */
 export async function ensureSeeded() {
   if (g.__entRadarSeeded) return;
@@ -76,7 +111,20 @@ function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
 
 export async function runRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: number; skipped?: boolean }> {
   if (g.__entRadarRunning) return { runId: -1, skipped: true };
+  const holder = `proc-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  if (!(await acquireLock(holder))) return { runId: -1, skipped: true };
   g.__entRadarRunning = true;
+  const heartbeat = setInterval(() => void renewLock(holder).catch(() => {}), 120_000);
+  try {
+    return await doRefresh(trigger);
+  } finally {
+    clearInterval(heartbeat);
+    await releaseLock(holder).catch(() => {});
+    g.__entRadarRunning = false;
+  }
+}
+
+async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: number }> {
   await ensureSeeded();
   const cfg = await getSettings();
   const started = Date.now();
@@ -264,7 +312,6 @@ export async function runRefresh(trigger: "manual" | "scheduled"): Promise<{ run
     })
     .where(eq(fetchRuns.id, run.id));
 
-  g.__entRadarRunning = false;
   return { runId: run.id };
 }
 
