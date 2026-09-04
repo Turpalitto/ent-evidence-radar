@@ -2,9 +2,15 @@ import { and, desc, asc, eq, gte, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { articles } from "@/db/schema";
 import { expandQuery } from "@/lib/search";
+import { buildPicoTerms } from "@/lib/pico";
 import { parseFilters, type ArticleFilters } from "@/lib/filters";
 
 export { parseFilters, type ArticleFilters };
+
+function termLike(t: string): SQL {
+  const like = `%${t}%`;
+  return or(ilike(articles.title, like), ilike(articles.abstract, like), ilike(articles.journal, like), sql`${articles.authors}::text ilike ${like}`)!;
+}
 
 export function buildWhere(f: ArticleFilters): SQL | undefined {
   const conds: SQL[] = [];
@@ -13,13 +19,15 @@ export function buildWhere(f: ArticleFilters): SQL | undefined {
     // разные понятия (слова) — через AND. Так «отит» найдёт и «otitis», и «otitis media».
     const groups = expandQuery(f.q);
     if (groups.length) {
-      const groupConds = groups.map((g) => {
-        const orConds = g.map((t) => {
-          const like = `%${t}%`;
-          return or(ilike(articles.title, like), ilike(articles.abstract, like), ilike(articles.journal, like), sql`${articles.authors}::text ilike ${like}`)!;
-        });
-        return or(...orConds)!;
-      });
+      const groupConds = groups.map((g) => or(...g.map(termLike))!);
+      conds.push(and(...groupConds)!);
+    }
+  }
+  if (f.pico) {
+    // PICO: внутри каждого поля (P/I/C/O) — OR по синонимам, между полями — AND.
+    const groups = buildPicoTerms(f.pico);
+    if (groups.length) {
+      const groupConds = groups.map((g) => or(...g.map(termLike))!);
       conds.push(and(...groupConds)!);
     }
   }
