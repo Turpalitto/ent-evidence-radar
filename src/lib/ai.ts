@@ -73,7 +73,7 @@ async function chatOnce(prompt: string, system: string, model: string, timeoutMs
           { role: "user", content: prompt },
         ],
         temperature: 0.2,
-        max_tokens: 800,
+        max_tokens: 2048,
       }),
       signal: ctrl.signal,
     });
@@ -110,7 +110,7 @@ async function* streamOnce(prompt: string, system: string, model: string, timeou
           { role: "user", content: prompt },
         ],
         temperature: 0.2,
-        max_tokens: 800,
+        max_tokens: 2048,
         stream: true,
       }),
       signal: ctrl.signal,
