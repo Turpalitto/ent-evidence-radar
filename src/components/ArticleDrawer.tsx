@@ -36,11 +36,17 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
   const dragCurrentY = useRef(0);
   const isDragging = useRef(false);
 
-  // Загрузка перевода
+  // Загрузка перевода/резюме
   const runAi = useCallback(async (action: "translate" | "summary") => {
     const a = article;
     if (!a || !a.abstract) return;
-    setAiState((s) => ({ ...s, mode: "loading" }));
+    // Сбрасываем только нужное поле перед началом — чтобы не было дублирования при повторном запросе
+    setAiState((s) => ({
+      ...s,
+      mode: "loading",
+      ...(action === "translate" ? { translate: "" } : { summary: "" }),
+      error: undefined,
+    }));
     try {
       const r = await fetch("/api/ai", {
         method: "POST",
@@ -69,6 +75,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             const j = JSON.parse(data) as { ok: boolean; delta?: string; error?: string };
             if (!j.ok || j.error) throw new Error(j.error ?? "Не удалось получить ответ");
             if (j.delta) {
+              // Накапливаем дельты (поле уже сброшено в "", дублирования нет)
               setAiState((s) =>
                 action === "translate"
                   ? { ...s, mode: "done", translate: (s.translate ?? "") + j.delta }
@@ -184,10 +191,13 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
   const negatives = a.trustBreakdown.filter((b) => b.points <= 0);
 
   const handleTranslateClick = () => {
+    if (aiState.mode === "loading") return;
     if (!aiState.translate) {
+      // Ещё не загружен — запрашиваем
       void runAi("translate");
       setShowTranslate(true);
     } else {
+      // Уже загружен — просто переключаем видимость, без нового запроса
       setShowTranslate((v) => !v);
     }
   };
