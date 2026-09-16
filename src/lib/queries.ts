@@ -1,6 +1,6 @@
-import { and, desc, asc, eq, gte, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, asc, eq, ne, gte, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { articles } from "@/db/schema";
+import { articles, type Article } from "@/db/schema";
 import { expandQuery } from "@/lib/search";
 import { parseFilters, type ArticleFilters } from "@/lib/filters";
 
@@ -51,3 +51,37 @@ export async function listArticles(f: ArticleFilters) {
   ]);
   return { items, total, page, pageSize };
 }
+
+export async function findRelatedArticles(id: number, limit = 5): Promise<Article[]> {
+  const [target] = await db.select().from(articles).where(eq(articles.id, id));
+  if (!target) return [];
+
+  const conds: SQL[] = [ne(articles.id, id)];
+  const similarityOr: SQL[] = [];
+
+  for (const s of (target.subspecialties || []).slice(0, 3)) {
+    similarityOr.push(sql`${articles.subspecialties} @> ${JSON.stringify([s])}::jsonb`);
+  }
+  for (const m of (target.meshTerms || []).slice(0, 3)) {
+    similarityOr.push(sql`${articles.meshTerms} @> ${JSON.stringify([m])}::jsonb`);
+  }
+  for (const k of (target.keywords || []).slice(0, 3)) {
+    similarityOr.push(sql`${articles.keywords} @> ${JSON.stringify([k])}::jsonb`);
+  }
+
+  if (similarityOr.length > 0) {
+    conds.push(or(...similarityOr)!);
+  } else if (target.studyDesign && target.studyDesign !== "other") {
+    conds.push(eq(articles.studyDesign, target.studyDesign));
+  }
+
+  const related = await db
+    .select()
+    .from(articles)
+    .where(and(...conds))
+    .orderBy(desc(articles.trustScore), desc(articles.publishedAt))
+    .limit(limit);
+
+  return related;
+}
+

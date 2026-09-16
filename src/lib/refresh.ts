@@ -26,7 +26,7 @@ async function acquireLock(holder: string): Promise<boolean> {
   const exp = new Date(Date.now() + LOCK_LEASE_MS).toISOString();
   const res = await db.execute(sql`
     INSERT INTO settings (key, value, "updated_at")
-    VALUES ('${sql.raw(LOCK_KEY)}', jsonb_build_object('holder', ${holder}::text, 'expiresAt', ${exp}::text), now())
+    VALUES (${LOCK_KEY}, jsonb_build_object('holder', ${holder}::text, 'expiresAt', ${exp}::text), now())
     ON CONFLICT (key) DO UPDATE
       SET value = excluded.value, "updated_at" = excluded."updated_at"
       WHERE settings.value->>'holder' IS NULL
@@ -41,14 +41,14 @@ async function renewLock(holder: string) {
   await db.execute(sql`
     UPDATE settings
     SET value = jsonb_build_object('holder', ${holder}::text, 'expiresAt', ${exp}::text), "updated_at" = now()
-    WHERE key = '${sql.raw(LOCK_KEY)}' AND settings.value->>'holder' = ${holder}
+    WHERE key = ${LOCK_KEY} AND settings.value->>'holder' = ${holder}
   `);
 }
 
 async function releaseLock(holder: string) {
   await db.execute(sql`
     DELETE FROM settings
-    WHERE key = '${sql.raw(LOCK_KEY)}' AND settings.value->>'holder' = ${holder}
+    WHERE key = ${LOCK_KEY} AND settings.value->>'holder' = ${holder}
   `);
 }
 
@@ -219,15 +219,15 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
   // вторичная дедупликация: та же DOI/PMID под другим ключом
   const allDois = keys.length ? Array.from(candidates.values()).map((c) => c.raw.doi?.toLowerCase()).filter((x): x is string => !!x) : [];
   const allPmids = Array.from(candidates.values()).map((c) => c.raw.pmid).filter((x): x is string => !!x);
-  const byDoi = new Map<string, number>();
-  const byPmid = new Map<string, number>();
+  const byDoi = new Map<string, { id: number; topicIds: number[]; sourceKeys: string[] }>();
+  const byPmid = new Map<string, { id: number; topicIds: number[]; sourceKeys: string[] }>();
   if (allDois.length) {
-    const rows = await db.select({ id: articles.id, doi: articles.doi }).from(articles).where(inArray(sql`lower(${articles.doi})`, allDois));
-    for (const r of rows) if (r.doi) byDoi.set(r.doi.toLowerCase(), r.id);
+    const rows = await db.select({ id: articles.id, doi: articles.doi, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys }).from(articles).where(inArray(sql`lower(${articles.doi})`, allDois));
+    for (const r of rows) if (r.doi) byDoi.set(r.doi.toLowerCase(), { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [] });
   }
   if (allPmids.length) {
-    const rows = await db.select({ id: articles.id, pmid: articles.pmid }).from(articles).where(inArray(articles.pmid, allPmids));
-    for (const r of rows) if (r.pmid) byPmid.set(r.pmid, r.id);
+    const rows = await db.select({ id: articles.id, pmid: articles.pmid, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys }).from(articles).where(inArray(articles.pmid, allPmids));
+    for (const r of rows) if (r.pmid) byPmid.set(r.pmid, { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [] });
   }
 
   for (const [key, cand] of candidates) {
@@ -267,13 +267,14 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
     };
 
     const existing = existingByKey.get(key);
-    const existingId =
-      existing?.id ?? (raw.doi ? byDoi.get(raw.doi.toLowerCase()) : undefined) ?? (raw.pmid ? byPmid.get(raw.pmid) : undefined);
+    const doiMatch = raw.doi ? byDoi.get(raw.doi.toLowerCase()) : undefined;
+    const pmidMatch = raw.pmid ? byPmid.get(raw.pmid) : undefined;
+    const existingId = existing?.id ?? doiMatch?.id ?? pmidMatch?.id;
 
     if (existingId) {
-      const prev = existing ?? (await db.select({ id: articles.id, dedupKey: articles.dedupKey, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, pmid: articles.pmid, doi: articles.doi }).from(articles).where(eq(articles.id, existingId)))[0];
-      const mergedTopics = Array.from(new Set([...(prev?.topicIds ?? []), ...values.topicIds!]));
-      const mergedSources = Array.from(new Set([...(prev?.sourceKeys ?? []), ...srcKeys]));
+      const prev = existing ?? doiMatch ?? pmidMatch ?? { topicIds: [] as number[], sourceKeys: [] as string[] };
+      const mergedTopics = Array.from(new Set([...(prev.topicIds ?? []), ...values.topicIds!]));
+      const mergedSources = Array.from(new Set([...(prev.sourceKeys ?? []), ...srcKeys]));
       // не перетираем пользовательские поля (isRead, isBookmarked, notes) и dedupKey
       const { dedupKey: _dk, ...upd } = values;
       void _dk;

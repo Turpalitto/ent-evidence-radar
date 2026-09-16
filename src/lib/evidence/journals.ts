@@ -83,14 +83,30 @@ export const JOURNAL_TIERS: { tier: 1 | 2 | 3; patterns: RegExp[] }[] = [
   },
 ];
 
-/** Издательства/журналы с известной репутацией «хищнических». Небольшой демонстрационный список. */
+/** Издательства/журналы с известной репутацией «хищнических». Основан на Beall's List и аналогах. */
 export const PREDATORY_PATTERNS: RegExp[] = [
-  /omics/i,
+  /omics\s+(international|publishing|group)/i,
   /scires literature/i,
   /juniper publishers/i,
   /austin publishing/i,
   /sciencedomain/i,
   /world journal of otorhinolaryngology[-\s]*head and neck surgery online/i,
+  /herald\s+scholarly/i,
+  /science\s+repository/i,
+  /medcrave\s+(group|online)/i,
+  /crimson\s+publishers/i,
+  /iris\s+publishers/i,
+  /lupine\s+publishers/i,
+  /biomedres/i,
+  /science\s+publishing\s+group/i,
+  /crescendo\s+publications/i,
+  /jacobs\s+publishers/i,
+  /savvy\s+science\s+publisher/i,
+  /scientific\s+literature/i,
+  /remedy\s+publications/i,
+  /imedpub/i,
+  /pulsus\s+group/i,
+  /longdom\s+publishing/i,
 ];
 
 export function journalTier(journal: string | null | undefined): number {

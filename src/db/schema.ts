@@ -19,6 +19,7 @@ export type StudyDesign =
   | "rct"
   | "cohort"
   | "case_control"
+  | "cross_sectional"
   | "case_series"
   | "narrative"
   | "trial_registry"

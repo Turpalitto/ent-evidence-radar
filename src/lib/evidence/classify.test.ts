@@ -33,6 +33,7 @@ describe("detectDesign", () => {
     expect(detectDesign(base({ title: "A systematic review and meta-analysis" }))).toBe("systematic_review");
     expect(detectDesign(base({ title: "Clinical practice guideline: rhinosinusitis" }))).toBe("guideline");
     expect(detectDesign(base({ title: "A case report of cholesteatoma" }))).toBe("case_series");
+    expect(detectDesign(base({ title: "Cross-sectional survey of ENT surgeons" }))).toBe("cross_sectional");
   });
 
   it("respects studyTypeHint and preprint", () => {
@@ -51,6 +52,8 @@ describe("evidenceLevel", () => {
     expect(evidenceLevel("cohort", 5000)).toBe(2);
     expect(evidenceLevel("cohort", 50)).toBe(3);
     expect(evidenceLevel("case_control", null)).toBe(3);
+    expect(evidenceLevel("cross_sectional", 2000)).toBe(3);
+    expect(evidenceLevel("cross_sectional", 50)).toBe(4);
     expect(evidenceLevel("case_series", null)).toBe(4);
     expect(evidenceLevel("narrative", null)).toBe(5);
     expect(evidenceLevel("other", null)).toBe(5);
@@ -62,11 +65,14 @@ describe("extractSampleSize", () => {
     expect(extractSampleSize("We enrolled 240 patients")).toBe(240);
     expect(extractSampleSize("n = 1,200 participants")).toBe(1200);
     expect(extractSampleSize("total of 45 subjects")).toBe(45);
+    expect(extractSampleSize("sample size of 350 patients")).toBe(350);
     expect(extractSampleSize("no numbers here")).toBeNull();
   });
 
-  it("ignores implausibly small samples", () => {
+  it("ignores implausibly small samples and year-like numbers", () => {
     expect(extractSampleSize("n=3 patients")).toBeNull();
+    expect(extractSampleSize("n = 2024")).toBeNull();
+    expect(extractSampleSize("In 2023, 2024 subjects were analyzed")).toBeNull();
   });
 });
 
@@ -79,6 +85,14 @@ describe("detectSubspecialties", () => {
   it("detects otology from hearing terms", () => {
     const ss = detectSubspecialties(base({ title: "Sensorineural hearing loss in adults" }));
     expect(ss).toContain("otology");
+  });
+
+  it("is consistent across multiple calls without regex state leak", () => {
+    const a = base({ title: "Endoscopic sinus surgery for rhinosinusitis" });
+    const first = detectSubspecialties(a);
+    const second = detectSubspecialties(a);
+    expect(first).toEqual(second);
+    expect(first).toContain("rhinology");
   });
 });
 

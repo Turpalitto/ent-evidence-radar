@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { aiConfigured, summarizeStream, translateStream } from "@/lib/ai";
+import { checkApiAuth, checkRateLimit, getClientIp } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -33,6 +34,20 @@ function sse(stream: AsyncGenerator<string>): Response {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = checkApiAuth(req);
+  if (!auth.ok) {
+    return Response.json({ ok: false, error: auth.error }, { status: auth.status ?? 401 });
+  }
+
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`ai:${ip}`, 30, 60_000);
+  if (!rl.allowed) {
+    return Response.json(
+      { ok: false, error: "Слишком много запросов к AI. Подождите немного." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } },
+    );
+  }
+
   if (!aiConfigured()) {
     return Response.json({ ok: false, error: "AI не настроен: задайте AI_API_KEY" }, { status: 400 });
   }

@@ -69,10 +69,10 @@ export function detectDesign(a: RawArticle): StudyDesign {
   if (/randomi[sz]ed controlled trial|were randomi[sz]ed|randomly (assigned|allocated)/i.test(a.abstract ?? "")) return "rct";
   if (/\bcohort\b|prospective study|retrospective (study|analysis|review|cohort)|population[- ]based|registry|longitudinal/i.test(text)) return "cohort";
   if (/case[- ]control/i.test(text)) return "case_control";
+  if (/cross[- ]sectional|survey|questionnaire/i.test(text)) return "cross_sectional";
   if (/case report|case series|a case of|rare case|unusual presentation/i.test(title)) return "case_series";
   if (/\breview\b|narrative|overview|perspective|state of the art|update on/i.test(title) && !PT(types, /journal article/i)) return "narrative";
   if (PT(types, /^review$/i)) return "narrative";
-  if (/cross[- ]sectional|survey|questionnaire/i.test(text)) return "cohort";
   return "other";
 }
 
@@ -88,6 +88,8 @@ export function evidenceLevel(design: StudyDesign, sampleSize: number | null): n
       return sampleSize !== null && sampleSize >= 1000 ? 2 : 3;
     case "case_control":
       return 3;
+    case "cross_sectional":
+      return sampleSize !== null && sampleSize >= 1000 ? 3 : 4;
     case "case_series":
       return 4;
     case "trial_registry":
@@ -106,12 +108,16 @@ export function extractSampleSize(text: string): number | null {
     /\bn\s*=\s*([\d,]{2,7})\b/gi,
     /\b([\d,]{2,7})\s+(?:patients|participants|subjects|children|adults|individuals|cases|women|men|eyes|ears|studies were included|studies)\b/gi,
     /(?:total of|enrolled|included|comprising|involving)\s+([\d,]{2,7})\s+(?:patients|participants|subjects|children|adults|individuals|studies|trials|articles)/gi,
+    /sample\s+size\s+(?:of\s+|was\s+|:?\s*)([\d,]{2,7})\b/gi,
   ];
   for (const p of patterns) {
     let m: RegExpExecArray | null;
     while ((m = p.exec(text)) !== null) {
       const n = parseInt(m[1].replace(/,/g, ""), 10);
-      if (!Number.isNaN(n) && n >= 5 && n < 5_000_000) candidates.push(n);
+      // Отсеиваем: NaN, слишком мелкие (<5), годы (2019-2099), слишком большие (>5M)
+      if (Number.isNaN(n) || n < 5 || n > 5_000_000) continue;
+      if (n >= 2019 && n <= 2099) continue; // вероятно, год
+      candidates.push(n);
     }
   }
   if (!candidates.length) return null;
@@ -128,8 +134,11 @@ export function detectSubspecialties(a: RawArticle): string[] {
       const matches = text.match(re);
       if (matches) score += matches.length;
     }
-    // заголовок весит больше
-    for (const p of s.patterns) if (p.test(a.title)) score += 3;
+    // заголовок весит больше — используем новый RegExp, чтобы не наследовать lastIndex от g-флага
+    for (const p of s.patterns) {
+      const fresh = new RegExp(p.source, p.flags.replace("g", ""));
+      if (fresh.test(a.title)) score += 3;
+    }
     if (score > 0) scores.push({ key: s.key, score });
   }
   scores.sort((x, y) => y.score - x.score);
@@ -153,6 +162,7 @@ export function classify(a: RawArticle): Classified {
     rct: 34,
     cohort: 22,
     case_control: 18,
+    cross_sectional: 14,
     case_series: 8,
     narrative: 6,
     trial_registry: 12,

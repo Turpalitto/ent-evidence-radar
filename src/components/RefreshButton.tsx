@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface RunSummary {
@@ -14,7 +14,11 @@ interface RunSummary {
 export function RefreshButton() {
   const router = useRouter();
   const [running, setRunning] = useState(false);
+  const runningRef = useRef(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  // Sync ref with state
+  useEffect(() => { runningRef.current = running; }, [running]);
 
   const checkStatus = useCallback(async () => {
     try {
@@ -30,7 +34,7 @@ export function RefreshButton() {
   useEffect(() => {
     const check = setTimeout(() => void checkStatus(), 0);
     const t = setInterval(async () => {
-      const wasRunning = running;
+      const wasRunning = runningRef.current;
       const now = await checkStatus();
       if (wasRunning && !now) {
         router.refresh();
@@ -41,7 +45,7 @@ export function RefreshButton() {
       clearTimeout(check);
       clearInterval(t);
     };
-  }, [checkStatus, running, router]);
+  }, [checkStatus, router]);
 
   const start = async () => {
     setRunning(true);

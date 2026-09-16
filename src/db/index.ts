@@ -18,8 +18,8 @@ const g = globalThis as typeof globalThis & {
 };
 
 /** Открывает PGlite и применяет миграции. */
-async function openPglite(dataDir: string) {
-  const pglite = new PGlite(dataDir);
+async function openPglite(dataDir?: string) {
+  const pglite = dataDir ? new PGlite(dataDir) : new PGlite();
   g.__entRadarPglite = pglite;
   const db = drizzlePglite(pglite);
   await migratePglite(db, { migrationsFolder });
@@ -36,12 +36,28 @@ async function initDb() {
     return db;
   }
 
-  // По умолчанию — встроенный PostgreSQL (PGlite) с файловым хранилищем в корне проекта.
+  // Во время `next build` Next.js запускает множество параллельных воркеров.
+  // Файловый PGlite конфликтует при одновременном открытии одной директории,
+  // поэтому при сборке используем in-memory PGlite.
+  const isBuild =
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    process.env.npm_lifecycle_event === "build" ||
+    process.argv.some((a) => a.includes("build"));
+
+  if (isBuild) {
+    return await openPglite();
+  }
+
+  // По умолчанию в runtime — встроенный PostgreSQL (PGlite) с файловым хранилищем в корне проекта.
   const dataDir = path.join(process.cwd(), ".pglite");
 
+  // Удаляем stale postmaster.pid если процесс был прерван жестко
+  const pidFile = path.join(dataDir, "postmaster.pid");
+  if (fs.existsSync(pidFile)) {
+    try { fs.unlinkSync(pidFile); } catch {}
+  }
+
   // Штатная остановка (Ctrl+C / SIGTERM) должна закрывать PGlite, иначе каталог повреждается
-  // (без graceful close() при повторном открытии PGlite абортится). Сигнатуры кэшируем на globalThis,
-  // чтобы повторный HMR не регистрировал их заново; на момент вызова читаем текущий инстанс.
   if (!g.__entRadarClosed) {
     g.__entRadarClosed = true;
     const close = () => g.__entRadarPglite?.close().catch(() => {});
@@ -59,9 +75,6 @@ async function initDb() {
   try {
     return await open();
   } catch {
-    // Каталог повреждён после «жёсткого» завершения (крэш/OOM без close). PGlite не умеет
-    // восстанавливать такой каталог — пересоздаём его начисто и повторно применяем миграции.
-    // Повторный посев (ensureSeeded) наполнит данные заново.
     fs.rmSync(dataDir, { recursive: true, force: true });
     g.__entRadarPglite = undefined;
     g.__entRadarDb = undefined;

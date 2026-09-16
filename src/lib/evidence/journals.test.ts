@@ -35,6 +35,10 @@ describe("journalTier", () => {
     expect(journalTier("Juniper Publishers")).toBe(-1);
     expect(journalTier("Austin Publishing Group")).toBe(-1);
     expect(journalTier("World Journal of Otorhinolaryngology - Head and Neck Surgery Online")).toBe(-1);
+    expect(journalTier("Iris Publishers")).toBe(-1);
+    expect(journalTier("Lupine Publishers")).toBe(-1);
+    expect(journalTier("MedCrave Online")).toBe(-1);
+    expect(journalTier("Longdom Publishing")).toBe(-1);
   });
 
   it("неизвестный журнал -> 0", () => {

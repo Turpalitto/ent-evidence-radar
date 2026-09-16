@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, saveSettings } from "@/lib/refresh";
 import type { AppSettings } from "@/lib/defaults";
+import { checkApiAuth } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,11 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const auth = checkApiAuth(req);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status ?? 401 });
+  }
+
   const body = (await req.json()) as Partial<AppSettings>;
   const patch: Partial<AppSettings> = {};
   if (typeof body.autoRefreshEnabled === "boolean") patch.autoRefreshEnabled = body.autoRefreshEnabled;
