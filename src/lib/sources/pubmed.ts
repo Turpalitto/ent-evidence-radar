@@ -171,3 +171,37 @@ export async function fetchPubmed(query: string, days: number, maxResults: numbe
   const ids = await pubmedSearch(query, days, maxResults);
   return pubmedFetch(ids);
 }
+
+/**
+ * Пакетная перепроверка типа публикации «Retracted Publication» для уже сохранённых записей.
+ * PubMed проставляет отзыв задним числом — статья, сохранённая ранее, осталась бы «не отозванной».
+ * Возвращает map: pmid -> отозвана ли. Отсутствующие в ответе PMID в map не попадают.
+ */
+export async function pubmedRetractionMap(pmids: string[]): Promise<Map<string, boolean>> {
+  const out = new Map<string, boolean>();
+  const { key, throttleMs } = ncbiParams();
+  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", textNodeName: "#text" });
+
+  for (let i = 0; i < pmids.length; i += 200) {
+    const chunk = pmids.slice(i, i + 200);
+    const p = new URLSearchParams({ db: "pubmed", id: chunk.join(","), retmode: "xml", tool: "ent-evidence-radar", email: "radar@example.org" });
+    if (key) p.set("api_key", key);
+    const xml = await fetchText(`${BASE}/efetch.fcgi?${p}`, { throttleKey: "ncbi", throttleMs, timeoutMs: 40_000 });
+    const doc = parser.parse(xml) as AnyObj;
+    const set = (doc.PubmedArticleSet as AnyObj) ?? {};
+    const items = toArray(set.PubmedArticle as AnyObj | AnyObj[]);
+
+    for (const item of items) {
+      const citation = item.MedlineCitation as AnyObj | undefined;
+      if (!citation) continue;
+      const pmid = textOf((citation.PMID as AnyObj)?.["#text"] ?? citation.PMID).trim();
+      if (!pmid) continue;
+      const article = citation.Article as AnyObj | undefined;
+      const pubTypes = toArray(((article?.PublicationTypeList as AnyObj)?.PublicationType as unknown) as AnyObj | AnyObj[]).map((t) =>
+        stripTags(textOf(t)),
+      );
+      out.set(pmid, pubTypes.some((t) => /retracted publication/i.test(t)));
+    }
+  }
+  return out;
+}

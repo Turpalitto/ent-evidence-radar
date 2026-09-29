@@ -41,6 +41,18 @@ describe("detectDesign", () => {
     expect(detectDesign(base({ isPreprint: true, title: "Protocol for a systematic review" }))).toBe("preprint");
     expect(detectDesign(base({ isPreprint: true, title: "Randomized trial interim results" }))).toBe("rct");
   });
+
+  it("excludes protocols and non-randomized trials from RCT/SR", () => {
+    expect(detectDesign(base({ title: "Study protocol for a randomized controlled trial of dupilumab" }))).toBe("other");
+    expect(detectDesign(base({ title: "Protocol for a systematic review of tonsillectomy outcomes" }))).toBe("other");
+    expect(detectDesign(base({ title: "A quasi-randomized trial of endoscopic sinus surgery" }))).toBe("cohort");
+    expect(detectDesign(base({ title: "Non-randomized clinical trial of voice therapy" }))).toBe("cohort");
+  });
+
+  it("distinguishes guideline adherence audits from true guidelines", () => {
+    expect(detectDesign(base({ title: "Adherence to EPOS guidelines in clinical practice", publicationTypes: ["Guideline"] }))).toBe("cohort");
+    expect(detectDesign(base({ title: "EPOS 2020: European Position Paper on Rhinosinusitis" }))).toBe("guideline");
+  });
 });
 
 describe("evidenceLevel", () => {
@@ -67,6 +79,11 @@ describe("extractSampleSize", () => {
     expect(extractSampleSize("total of 45 subjects")).toBe(45);
     expect(extractSampleSize("sample size of 350 patients")).toBe(350);
     expect(extractSampleSize("no numbers here")).toBeNull();
+  });
+
+  it("prioritizes enrolled/included participants over screened counts", () => {
+    expect(extractSampleSize("A total of 800 patients were screened, and 120 patients were enrolled.")).toBe(120);
+    expect(extractSampleSize("We included 75 patients with vestibular schwannoma")).toBe(75);
   });
 
   it("ignores implausibly small samples and year-like numbers", () => {

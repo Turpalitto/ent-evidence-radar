@@ -1,0 +1,15 @@
+node_modules/
+.next/
+.pglite/
+.git/
+.github/
+.freebuff/
+coverage/
+*.zip
+*.tsbuildinfo
+npm-debug.log*
+.env
+.env*.local
+Dockerfile
+docker-compose.yml
+.dockerignore

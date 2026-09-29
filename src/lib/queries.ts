@@ -28,6 +28,8 @@ export function buildWhere(f: ArticleFilters): SQL | undefined {
   if (f.minTrust) conds.push(gte(articles.trustScore, f.minTrust));
   if (f.source) conds.push(sql`${articles.sourceKeys} @> ${JSON.stringify([f.source])}::jsonb`);
   if (f.days) conds.push(gte(articles.publishedAt, new Date(Date.now() - f.days * 86400_000)));
+  if (f.fromYear) conds.push(gte(articles.publishedAt, new Date(Date.UTC(f.fromYear, 0, 1))));
+  if (f.toYear) conds.push(sql`${articles.publishedAt} < ${new Date(Date.UTC(f.toYear + 1, 0, 1))}`);
   if (f.bookmarked) conds.push(eq(articles.isBookmarked, true));
   if (f.unread) conds.push(eq(articles.isRead, false));
   if (f.topicId) conds.push(sql`${articles.topicIds} @> ${JSON.stringify([f.topicId])}::jsonb`);

@@ -1,0 +1,39 @@
+# Сам-хостинг ENT Evidence Radar.
+# По умолчанию — встроенный PGlite с персистентным volume ./docker-data.
+# Для внешнего PostgreSQL раскомментируйте блок db и переменную DATABASE_URL у сервиса app.
+
+services:
+  app:
+    build: .
+    container_name: ent-radar
+    ports:
+      - "3000:3000"
+    environment:
+      # --- Внешняя БД (опционально) ---
+      # DATABASE_URL: postgres://postgres:postgres@db:5432/ent_radar
+      # --- AI-перевод/резюме (опционально) ---
+      # AI_API_KEY: ${AI_API_KEY}
+      # AI_BASE_URL: https://openrouter.ai/api/v1
+      # AI_MODEL: minimax/minimax-m2.7:free,minimax/minimax-m3:free
+      # --- Защита мутаций API (рекомендуется для публичного хостинга) ---
+      # API_SECRET: ${API_SECRET}
+      # NCBI_API_KEY: ${NCBI_API_KEY}
+    volumes:
+      - ./docker-data:/app/.pglite
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # db:
+  #   image: postgres:17-alpine
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_DB: ent_radar
+  #   volumes:
+  #     - ./docker-data-pg:/var/lib/postgresql/data
+  #   restart: unless-stopped

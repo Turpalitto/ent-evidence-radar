@@ -16,6 +16,8 @@ describe("parseFilters", () => {
       minTrust: undefined,
       source: undefined,
       days: undefined,
+      fromYear: undefined,
+      toYear: undefined,
       bookmarked: false,
       unread: false,
       topicId: undefined,
@@ -63,5 +65,18 @@ describe("parseFilters", () => {
     expect(parseFilters(sp("sort=trust")).sort).toBe("trust");
     expect(parseFilters(sp("sort=fetched")).sort).toBe("fetched");
     expect(parseFilters(sp("sort=date")).sort).toBe("date");
+  });
+
+  it("парсит годовые границы", () => {
+    const f = parseFilters(sp("fromYear=2023&toYear=2025"));
+    expect(f.fromYear).toBe(2023);
+    expect(f.toYear).toBe(2025);
+  });
+
+  it("отбрасывает бессмысленные годы", () => {
+    expect(parseFilters(sp("fromYear=1500")).fromYear).toBeUndefined();
+    expect(parseFilters(sp("fromYear=9999")).fromYear).toBeUndefined();
+    expect(parseFilters(sp("toYear=abc")).toYear).toBeUndefined();
+    expect(parseFilters(sp("toYear=2025.5")).toYear).toBeUndefined();
   });
 });

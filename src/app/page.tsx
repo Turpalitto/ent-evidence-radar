@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { asc, desc, sql } from "drizzle-orm";
 import Link from "next/link";
 import { db } from "@/db";
@@ -36,23 +37,25 @@ export default async function HomePage() {
   ];
 
   return (
-    <main className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <main className="space-y-5">
+      <div className="rise-in flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Лента доказательных публикаций</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+            Лента доказательных публикаций
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             PubMed/MEDLINE · Cochrane · Europe PMC · ClinicalTrials.gov · medRxiv — окно {cfg.lookbackDays} дн., {topicRows.filter((t) => t.enabled).length} активных тем,
             автообновление {cfg.autoRefreshEnabled ? `каждые ${cfg.refreshIntervalMinutes} мин` : "выключено"}.
           </p>
         </div>
-        <div className="text-right text-xs text-slate-500">
+        <div className="text-right text-xs text-slate-500 dark:text-slate-400">
           {run ? (
             <>
-              Последний запуск: <span className="font-medium text-slate-800">{formatDateTime(run.startedAt)}</span> ·{" "}
-              <span className={run.status === "success" ? "text-emerald-700" : run.status === "running" ? "text-sky-700" : run.status === "partial" ? "text-amber-700" : "text-rose-700"}>
+              Последний запуск: <span className="font-medium text-slate-800 dark:text-slate-200">{formatDateTime(run.startedAt)}</span> ·{" "}
+              <span className={run.status === "success" ? "text-emerald-700 dark:text-emerald-400" : run.status === "running" ? "text-sky-700 dark:text-sky-400" : run.status === "partial" ? "text-amber-700 dark:text-amber-400" : "text-rose-700 dark:text-rose-400"}>
                 {run.status === "success" ? "успешно" : run.status === "running" ? "выполняется" : run.status === "partial" ? "частично" : "ошибка"}
               </span>{" "}
-              · +{run.newAdded} новых · <Link href="/runs" className="underline">журнал</Link>
+              · +{run.newAdded} новых · <Link href="/runs" className="underline transition hover:text-teal-700 dark:hover:text-teal-400">журнал</Link>
             </>
           ) : (
             <>Обновление ещё не запускалось — нажмите «Обновить данные»</>
@@ -60,16 +63,19 @@ export default async function HomePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        {cards.map((c) => (
+      <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {cards.map((c, i) => (
           <Link
             key={c.label}
             href={c.href}
-            className="group rounded-2xl border border-slate-200 bg-white px-4 py-3 transition hover:border-teal-400 hover:shadow-sm"
+            style={{ "--stagger-i": i } as CSSProperties}
+            className="card card-lift group rounded-2xl px-4 py-3.5 transition hover:border-teal-400/60 dark:hover:border-teal-500/40"
           >
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{c.label}</p>
-            <p className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{c.value.toLocaleString("ru-RU")}</p>
-            <p className="text-[11px] text-slate-500 group-hover:text-teal-700">{c.sub}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{c.label}</p>
+            <p className="mt-1 text-[26px] font-bold leading-none tabular-nums tracking-tight text-slate-900 dark:text-slate-50">
+              {c.value.toLocaleString("ru-RU")}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500 transition group-hover:text-teal-700 dark:text-slate-400 dark:group-hover:text-teal-400">{c.sub}</p>
           </Link>
         ))}
       </div>

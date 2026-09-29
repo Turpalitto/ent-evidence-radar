@@ -9,7 +9,7 @@ export async function register() {
   const { getSettings, runRefreshSafe, isRefreshRunning, ensureSeeded } = await import("@/lib/refresh");
   const { db } = await import("@/db");
   const { fetchRuns } = await import("@/db/schema");
-  const { desc } = await import("drizzle-orm");
+  const { and, desc, eq, lt } = await import("drizzle-orm");
 
   const tick = async () => {
     try {
@@ -35,6 +35,21 @@ export async function register() {
     } catch (e) {
       console.error("[ent-radar] seed failed", e);
     }
+
+    // ── Восстановление после сбоя: процессы умирают (OOM, рестарт хоста) и оставляют
+    // в журнале записи «running». Помечаем зависшие запуски как failed, чтобы журнал
+    // и UI отражали реальность, а не висящий призрак.
+    try {
+      const stale = await db
+        .update(fetchRuns)
+        .set({ status: "failed", finishedAt: new Date(), errorMessage: "Процесс прерван до завершения запуска" })
+        .where(and(eq(fetchRuns.status, "running"), lt(fetchRuns.startedAt, new Date(Date.now() - 15 * 60_000))))
+        .returning({ id: fetchRuns.id });
+      if (stale.length) console.log(`[ent-radar] recovered ${stale.length} stale running run(s) as failed`);
+    } catch (e) {
+      console.error("[ent-radar] stale-run recovery failed", e);
+    }
+
     await tick();
     setInterval(tick, 60_000);
   }, 20_000);

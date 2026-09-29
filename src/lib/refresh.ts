@@ -7,6 +7,7 @@ import { fetchPubmed } from "@/lib/sources/pubmed";
 import { fetchEuropePmc } from "@/lib/sources/europepmc";
 import { fetchClinicalTrials } from "@/lib/sources/clinicaltrials";
 import { fetchMedrxiv } from "@/lib/sources/medrxiv";
+import { recheckRetractions } from "@/lib/retraction";
 
 const g = globalThis as typeof globalThis & {
   __entRadarRunning?: boolean;
@@ -293,7 +294,24 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
     }
   }
 
+  // ---- Перепроверка отзывов: PubMed проставляет «Retracted Publication» задним числом,
+  // поэтому уже сохранённые статьи могли быть отозваны после загрузки.
+  const tRecheck = Date.now();
+  const recheck = await recheckRetractions();
+  if (recheck.checked > 0 || recheck.error) {
+    // Семантика полей: found = сколько записей проверено, added = сколько новых отзывов обнаружено.
+    details.push({
+      source: "retraction-recheck",
+      found: recheck.checked,
+      added: recheck.newlyRetracted,
+      updated: 0,
+      durationMs: Date.now() - tRecheck,
+      error: recheck.error,
+    });
+  }
+
   for (const d of details) {
+    if (d.source === "retraction-recheck") continue; // added уже проставлен перепроверкой
     d.added = addedBySource[d.source] ?? 0;
     d.updated = updatedBySource[d.source] ?? 0;
   }

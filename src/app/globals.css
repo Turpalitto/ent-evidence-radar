@@ -4,15 +4,41 @@
 
 :root {
   color-scheme: light;
+  /* ── Дизайн-токены: поверхности ── */
+  --surface-1: #ffffff;
+  --surface-2: #f8fafc;
+  --hairline: rgba(15, 23, 42, 0.08);
+  --ink-muted: #64748b;
+  /* ── Тени продукта ── */
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 1px rgba(15, 23, 42, 0.03);
+  --shadow-lift: 0 10px 30px -12px rgba(15, 23, 42, 0.16), 0 2px 8px -2px rgba(15, 23, 42, 0.06);
+  --shadow-modal: 0 24px 70px -12px rgba(15, 23, 100, 0.28), 0 8px 24px -8px rgba(15, 23, 42, 0.12);
+  /* ── Бренд-градиент ── */
+  --brand-a: #0d9488;
+  --brand-b: #0284c7;
+  --brand-soft: rgba(13, 148, 136, 0.1);
 }
 .dark {
   color-scheme: dark;
+  --surface-1: #0f172a;
+  --surface-2: #1e293b;
+  --hairline: rgba(148, 163, 184, 0.12);
+  --ink-muted: #94a3b8;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lift: 0 10px 30px -12px rgba(0, 0, 0, 0.55), 0 2px 8px -2px rgba(0, 0, 0, 0.35);
+  --shadow-modal: 0 24px 70px -12px rgba(0, 0, 0, 0.65), 0 8px 24px -8px rgba(0, 0, 0, 0.4);
+  --brand-soft: rgba(45, 212, 191, 0.12);
 }
 
 body {
   font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Числа — табличные, чтобы счётчики не «плясали» при обновлении */
+.tabular-nums, .tnum {
+  font-variant-numeric: tabular-nums;
 }
 
 ::selection {
@@ -40,11 +66,95 @@ body {
 *::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 *::-webkit-scrollbar-track { background: transparent; }
 
+/* ═══ Премиум-материалы ═══ */
+
+/* Карточка: hairline-граница + мягкая тень; hover — подъём */
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-card);
+}
+.card-lift {
+  transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1), box-shadow 0.25s cubic-bezier(0.32, 0.72, 0, 1), border-color 0.2s ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+}
+
+/* Стеклянный хедер */
+.glass-header {
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* Акцентный градиентный текст */
+.brand-gradient-text {
+  background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Кнопка с бренд-градиентом */
+.btn-brand {
+  background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
+  box-shadow: 0 2px 10px -2px rgba(13, 148, 136, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition: filter 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+.btn-brand:hover:not(:disabled) {
+  filter: brightness(1.07);
+  box-shadow: 0 4px 16px -4px rgba(13, 148, 136, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.btn-brand:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn-brand:disabled {
+  filter: grayscale(0.35) brightness(0.96);
+  box-shadow: none;
+}
+
+/* ── Анимации входа ── */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rise-in { animation: rise-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.fade-in { animation: fade-in 0.3s ease both; }
+
+/* Стаггер карточек ленты: элементы появляются каскадом */
+.stagger > * {
+  animation: rise-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--stagger-i, 0) * 28ms);
+}
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
   100% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
 }
 .pulse-ring { animation: pulse-ring 1.4s ease-out infinite; }
+
+/* ═══ Скелетоны ═══ */
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+.skeleton {
+  border-radius: 0.75rem;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.12) 25%, rgba(148, 163, 184, 0.22) 50%, rgba(148, 163, 184, 0.12) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+.dark .skeleton {
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.08) 25%, rgba(148, 163, 184, 0.16) 50%, rgba(148, 163, 184, 0.08) 75%);
+  background-size: 200% 100%;
+}
 
 /* Keyboard navigation highlight for article items */
 .article-kbd-active {
@@ -102,3 +212,12 @@ button, a, [role="button"] { touch-action: manipulation; }
   margin: 0 auto;
 }
 
+/* ═══ Доступность: уважаем reduced motion ═══ */
+@media (prefers-reduced-motion: reduce) {
+  .rise-in, .fade-in, .stagger > *, .sheet-enter, .drawer-enter, .overlay-enter {
+    animation: none !important;
+  }
+  .card-lift, .btn-brand {
+    transition: none !important;
+  }
+}

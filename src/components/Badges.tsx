@@ -12,7 +12,7 @@ export function DesignBadge({ design }: { design: StudyDesign }) {
 export function LevelBadge({ level }: { level: number }) {
   const color =
     level === 1 ? "bg-emerald-600 text-white" : level === 2 ? "bg-sky-600 text-white" : level === 3 ? "bg-amber-500 text-white" : level === 4 ? "bg-orange-400 text-white" : "bg-slate-400 text-white";
-  return <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-[11px] font-bold ${color}`} title={EVIDENCE_LEVEL_LABELS[level] ?? `Уровень доказательности ${level}`}>L{level}</span>;
+  return <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1.5 text-[11px] font-bold ${color}`} title={EVIDENCE_LEVEL_LABELS[level] ?? `Уровень доказательности ${level}`}>Ур.{level}</span>;
 }
 
 export function TrustScore({ score, size = "md" }: { score: number; size?: "sm" | "md" | "lg" }) {
@@ -38,8 +38,9 @@ export function TierBadge({ tier }: { tier: number }) {
   if (tier === 0) return null;
   if (tier === -1) return <span title="Журнал из списка сомнительных (возможно «хищнических») издательств" className="inline-flex items-center rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">⚠ Сомнительный журнал</span>;
   const c = tier === 1 ? "bg-yellow-400 text-yellow-950" : tier === 2 ? "bg-slate-300 text-slate-900" : "bg-orange-200 text-orange-900";
-  const hint = tier === 1 ? "Tier 1 — топ-журналы и Cochrane" : tier === 2 ? "Tier 2 — ведущие профильные ЛОР-журналы" : "Tier 3 — индексируемые в MEDLINE";
-  return <span title={hint} className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold ${c}`}>Tier {tier}</span>;
+  const label = tier === 1 ? "Топ (Tier 1)" : tier === 2 ? "Профиль (Tier 2)" : "MEDLINE (Tier 3)";
+  const hint = tier === 1 ? "Tier 1 — ведущие мировые журналы и Cochrane" : tier === 2 ? "Tier 2 — ведущие профильные ЛОР-журналы" : "Tier 3 — рецензируемые журналы, индексируемые в MEDLINE";
+  return <span title={hint} className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold ${c}`}>{label}</span>;
 }
 
 export function formatDate(d: string | Date | null | undefined) {

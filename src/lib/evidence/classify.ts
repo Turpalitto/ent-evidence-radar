@@ -54,8 +54,20 @@ export function detectDesign(a: RawArticle): StudyDesign {
   }
 
   if (PT(types, /retract/i)) return "other";
+
+  // Исключаем протоколы незавершённых исследований
+  if (/^protocol\b|study protocol|protocol for\b|trial protocol/i.test(title) || PT(types, /protocol/i)) {
+    return "other";
+  }
+
   if (PT(types, /systematic review|meta-analysis/i)) return "systematic_review";
-  if (PT(types, /guideline|consensus development conference/i)) return "guideline";
+  if (PT(types, /guideline|consensus development conference/i)) {
+    // Исследования приверженности/аудиты руководств — когортные/одномоментные, а не сами руководства
+    if (/adherence to|compliance with|implementation of|evaluation of|awareness of/i.test(title)) {
+      return "cohort";
+    }
+    return "guideline";
+  }
   if (PT(types, /randomized controlled trial/i)) return "rct";
   if (PT(types, /clinical trial, phase (ii|iii|iv)/i)) return "rct";
   if (PT(types, /observational study|cohort/i)) return "cohort";
@@ -63,8 +75,22 @@ export function detectDesign(a: RawArticle): StudyDesign {
   if (PT(types, /editorial|comment|letter|news/i)) return "narrative";
 
   // Текстовые эвристики (в первую очередь по заголовку)
-  if (/systematic review|meta-analys[ie]s|metaanalysis|umbrella review|network meta/i.test(title)) return "systematic_review";
-  if (/clinical practice guideline|consensus statement|position (paper|statement)|recommendations? (of|from)|EPOS|international consensus/i.test(title)) return "guideline";
+  if (/systematic review|meta-analys[ie]s|metaanalysis|umbrella review|network meta/i.test(title)) {
+    if (/protocol for|study protocol/i.test(title)) return "other";
+    return "systematic_review";
+  }
+  if (/clinical practice guideline|consensus statement|position (paper|statement)|recommendations? (of|from)|EPOS|international consensus/i.test(title)) {
+    if (/adherence to|compliance with|implementation of|evaluation of|awareness of/i.test(title)) {
+      return "cohort";
+    }
+    return "guideline";
+  }
+
+  // Нерандомизированные исследования не должны ошибочно помечаться как RCT
+  if (/non[- ]randomi[sz]ed|quasi[- ]randomi[sz]ed|pseudo[- ]randomi[sz]ed|unrandomi[sz]ed/i.test(text)) {
+    return "cohort";
+  }
+
   if (/randomi[sz]ed|randomised|placebo[- ]controlled|double[- ]blind/i.test(title)) return "rct";
   if (/randomi[sz]ed controlled trial|were randomi[sz]ed|randomly (assigned|allocated)/i.test(a.abstract ?? "")) return "rct";
   if (/\bcohort\b|prospective study|retrospective (study|analysis|review|cohort)|population[- ]based|registry|longitudinal/i.test(text)) return "cohort";
@@ -103,12 +129,33 @@ export function evidenceLevel(design: StudyDesign, sampleSize: number | null): n
 }
 
 export function extractSampleSize(text: string): number | null {
+  // 1. Приоритетные паттерны: явно включённые, рандомизированные или завершившие пациенты
+  const priorityCandidates: number[] = [];
+  const priorityPatterns = [
+    /\b(?:enrolled|included|randomized|randomised|allocated|assigned|completed|evaluated)\s+([\d,]{2,7})\s+(?:patients|participants|subjects|cases|children|adults|individuals)/gi,
+    /\b([\d,]{2,7})\s+(?:patients|participants|subjects|cases|children|adults|individuals)\s+(?:were|was)\s+(?:enrolled|included|randomized|randomised|analyzed|analysed)/gi,
+    /\bn\s*=\s*([\d,]{2,7})\b/gi,
+    /sample\s+size\s+(?:of\s+|was\s+|:?\s*)([\d,]{2,7})\b/gi,
+  ];
+
+  for (const p of priorityPatterns) {
+    let m: RegExpExecArray | null;
+    while ((m = p.exec(text)) !== null) {
+      const n = parseInt(m[1].replace(/,/g, ""), 10);
+      if (Number.isNaN(n) || n < 5 || n > 5_000_000) continue;
+      if (n >= 2019 && n <= 2099) continue;
+      priorityCandidates.push(n);
+    }
+  }
+  if (priorityCandidates.length) {
+    return Math.max(...priorityCandidates);
+  }
+
+  // 2. Общие паттерны
   const candidates: number[] = [];
   const patterns = [
-    /\bn\s*=\s*([\d,]{2,7})\b/gi,
     /\b([\d,]{2,7})\s+(?:patients|participants|subjects|children|adults|individuals|cases|women|men|eyes|ears|studies were included|studies)\b/gi,
-    /(?:total of|enrolled|included|comprising|involving)\s+([\d,]{2,7})\s+(?:patients|participants|subjects|children|adults|individuals|studies|trials|articles)/gi,
-    /sample\s+size\s+(?:of\s+|was\s+|:?\s*)([\d,]{2,7})\b/gi,
+    /(?:total of|comprising|involving)\s+([\d,]{2,7})\s+(?:patients|participants|subjects|children|adults|individuals|studies|trials|articles)/gi,
   ];
   for (const p of patterns) {
     let m: RegExpExecArray | null;
@@ -194,6 +241,17 @@ export function classify(a: RawArticle): Classified {
   if (sampleSize !== null) {
     const pts = sampleSize >= 1000 ? 8 : sampleSize >= 200 ? 5 : sampleSize >= 50 ? 2 : 0;
     if (pts) b.push({ label: `Размер выборки n≈${sampleSize}`, points: pts });
+  }
+  if (design === "rct") {
+    if (/double[- ]blind/i.test(text)) {
+      b.push({ label: "Двойное слепое исследование (double-blind)", points: 3 });
+    }
+    if (/placebo[- ]controlled/i.test(text)) {
+      b.push({ label: "Плацебо-контроль (placebo-controlled)", points: 2 });
+    }
+    if (/intention[- ]to[- ]treat|\bITT\b/i.test(text)) {
+      b.push({ label: "Анализ intention-to-treat (ITT)", points: 2 });
+    }
   }
   if (/multicent(er|re)|multinational|international/i.test(text) && design !== "systematic_review") {
     b.push({ label: "Многоцентровое / международное", points: 3 });

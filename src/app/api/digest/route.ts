@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { buildDigestData, renderDigest } from "@/lib/digest";
 import { getRecipients, sendMail } from "@/lib/mailer";
+import { checkApiAuth } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -17,7 +18,12 @@ export async function GET() {
   return NextResponse.json({ ok: true, days: data.days, generatedAt: data.generatedAt, html, text, data });
 }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  const auth = checkApiAuth(req);
+  if (!auth.ok) {
+    return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status ?? 401 });
+  }
+
   if (g.__entRadarDigestRunning) {
     return NextResponse.json({ ok: false, running: true, message: "Дайджест уже формируется" }, { status: 409 });
   }

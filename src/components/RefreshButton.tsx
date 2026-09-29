@@ -31,6 +31,29 @@ export function RefreshButton() {
     }
   }, []);
 
+  const start = useCallback(async () => {
+    setRunning(true);
+    setToast("Запрашиваем PubMed, Europe PMC, ClinicalTrials.gov, medRxiv…");
+    try {
+      const r = await fetch("/api/refresh", { method: "POST" });
+      const j = (await r.json()) as RunSummary;
+      if (j.ok) setToast(`Готово. Запуск #${j.runId}. Лента обновлена.`);
+      else setToast(j.message ?? j.error ?? "Ошибка обновления");
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "Ошибка сети");
+    } finally {
+      setRunning(false);
+      router.refresh();
+      window.dispatchEvent(new CustomEvent("ent-radar:refreshed"));
+      setTimeout(() => setToast(null), 6000);
+    }
+  }, [router]);
+
+  // Стабильный обработчик: start меняется только при смене router,
+  // а эффект не пересоздаётся — ref внутри актуален всегда.
+  const startRef = useRef(start);
+  useEffect(() => { startRef.current = start; }, [start]);
+
   useEffect(() => {
     const check = setTimeout(() => void checkStatus(), 0);
     const t = setInterval(async () => {
@@ -47,23 +70,15 @@ export function RefreshButton() {
     };
   }, [checkStatus, router]);
 
-  const start = async () => {
-    setRunning(true);
-    setToast("Запрашиваем PubMed, Europe PMC, ClinicalTrials.gov, medRxiv…");
-    try {
-      const r = await fetch("/api/refresh", { method: "POST" });
-      const j = (await r.json()) as RunSummary;
-      if (j.ok) setToast(`Готово. Запуск #${j.runId}. Лента обновлена.`);
-      else setToast(j.message ?? j.error ?? "Ошибка обновления");
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : "Ошибка сети");
-    } finally {
-      setRunning(false);
-      router.refresh();
-      window.dispatchEvent(new CustomEvent("ent-radar:refreshed"));
-      setTimeout(() => setToast(null), 6000);
-    }
-  };
+  // Пустое состояние ленты диспетчит это событие — запускаем обновление отсюда,
+  // чтобы кнопка и статус «running» оставались в одном месте.
+  useEffect(() => {
+    const h = () => {
+      if (!runningRef.current) void startRef.current();
+    };
+    window.addEventListener("ent-radar:refresh-request", h);
+    return () => window.removeEventListener("ent-radar:refresh-request", h);
+  }, []);
 
   return (
     <div className="relative flex items-center gap-2">
@@ -73,8 +88,8 @@ export function RefreshButton() {
       <button
         onClick={start}
         disabled={running}
-        className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition ${
-          running ? "cursor-wait bg-slate-400" : "bg-teal-600 hover:bg-teal-700"
+        className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold text-white transition ${
+          running ? "cursor-wait bg-slate-400" : "btn-brand"
         }`}
       >
         <svg viewBox="0 0 24 24" className={`h-4 w-4 ${running ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

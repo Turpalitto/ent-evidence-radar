@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 
 function subscribeNotification(callback: () => void) {
   if (typeof window === "undefined" || !("navigator" in window) || !("permissions" in navigator)) return () => {};
@@ -24,6 +24,7 @@ function getServerNotificationSnapshot(): string {
 }
 import type { Article, Topic } from "@/db/schema";
 import { DESIGN_LABELS, DESIGN_SHORT, SOURCE_LABELS, SUBSPECIALTIES, EVIDENCE_LEVEL_LABELS } from "@/lib/evidence/taxonomy";
+import { extractConclusion } from "@/lib/evidence/abstract";
 import { DesignBadge, LevelBadge, SourceBadge, SubBadge, TierBadge, TrustScore, formatDate } from "./Badges";
 import { ArticleDrawer } from "./ArticleDrawer";
 
@@ -35,6 +36,8 @@ interface Filters {
   minTrust: number;
   source: string;
   days: string;
+  fromYear: string;
+  toYear: string;
   bookmarked: boolean;
   unread: boolean;
   topicId: string;
@@ -50,6 +53,8 @@ const initial: Filters = {
   minTrust: 0,
   source: "",
   days: "",
+  fromYear: "",
+  toYear: "",
   bookmarked: false,
   unread: false,
   topicId: "",
@@ -57,12 +62,17 @@ const initial: Filters = {
   sort: "date",
 };
 
+const THIS_YEAR = new Date().getFullYear();
+
 const PRESETS: { label: string; f: Partial<Filters>; hint: string }[] = [
+  { label: "⚡ Изменит практику", f: { level: "2", minTrust: 70, sort: "trust" }, hint: "СО/МА, руководства и РКИ с высоким доверием (≥70)" },
   { label: "Только высший уровень", f: { level: "1", minTrust: 60 }, hint: "СО/МА и руководства, доверие ≥60" },
   { label: "Свежие РКИ", f: { design: "rct", days: "30" }, hint: "РКИ за 30 дней" },
   { label: "Руководства", f: { design: "guideline" }, hint: "Клинические руководства и консенсусы" },
   { label: "Cochrane", f: { q: "Cochrane" }, hint: "Cochrane Database of Systematic Reviews" },
   { label: "Непрочитанное ≥70", f: { unread: true, minTrust: 70, sort: "trust" }, hint: "Что стоит прочитать в первую очередь" },
+  { label: "Этот год", f: { fromYear: String(THIS_YEAR) }, hint: `Исследования, опубликованные с 1 января ${THIS_YEAR} года` },
+  { label: "Прошлый год", f: { fromYear: String(THIS_YEAR - 1), toYear: String(THIS_YEAR - 1) }, hint: `Только публикации ${THIS_YEAR - 1} года` },
 ];
 
 function toParams(f: Filters, page: number, pageSize: number) {
@@ -74,6 +84,8 @@ function toParams(f: Filters, page: number, pageSize: number) {
   if (f.minTrust) p.set("minTrust", String(f.minTrust));
   if (f.source) p.set("source", f.source);
   if (f.days) p.set("days", f.days);
+  if (f.fromYear) p.set("fromYear", f.fromYear);
+  if (f.toYear) p.set("toYear", f.toYear);
   if (f.bookmarked) p.set("bookmarked", "1");
   if (f.unread) p.set("unread", "1");
   if (f.topicId) p.set("topicId", f.topicId);
@@ -101,6 +113,8 @@ function parseUrlSearch(): { f: Filters; page: number; q: string } {
     minTrust: num("minTrust") || 0,
     source: p.get("source") ?? "",
     days: p.get("days") ?? "",
+    fromYear: p.get("fromYear") ?? "",
+    toYear: p.get("toYear") ?? "",
     bookmarked: p.get("bookmarked") === "1",
     unread: p.get("unread") === "1",
     topicId: p.get("topicId") ?? "",
@@ -118,6 +132,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
   const pageSize = 30;
   const [data, setData] = useState<{ items: Article[]; total: number }>({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Article | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [focusedIdx, setFocusedIdx] = useState<number>(-1);
@@ -154,12 +169,14 @@ export function Feed({ topics }: { topics: Topic[] }) {
   };
 
   // Восстанавливаем фильтры/поиск/страницу из URL после монтирования (детерминированный первый рендер).
+  const restoredRef = useRef(false);
   useEffect(() => {
     const t = setTimeout(() => {
       const parsed = parseUrlSearch();
       setF(parsed.f);
       setQ(parsed.q);
       setPage(parsed.page);
+      restoredRef.current = true;
     }, 0);
     return () => clearTimeout(t);
   }, []);
@@ -171,13 +188,16 @@ export function Feed({ topics }: { topics: Topic[] }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const r = await fetch(`/api/articles?${toParams(f, page, pageSize)}`, { cache: "no-store" });
-      const parsed = (await r.json()) as { items: Article[]; total: number };
-      setData(parsed);
+      if (!r.ok) throw new Error(`Ошибка сервера ${r.status}`);
+      const parsed = (await r.json()) as { items?: Article[]; total?: number };
+      const items = parsed.items ?? [];
+      setData({ items, total: parsed.total ?? 0 });
       setFocusedIdx(-1);
       // Фоновый прогрев переводов: только если AI настроен
-      const abstracts = parsed.items.map((a) => a.abstract).filter((s): s is string => Boolean(s));
+      const abstracts = items.map((a) => a.abstract).filter((s): s is string => Boolean(s));
       if (abstracts.length && aiConfiguredRef.current !== false) {
         void fetch("/api/ai/warm", {
           method: "POST",
@@ -185,6 +205,8 @@ export function Feed({ topics }: { topics: Topic[] }) {
           body: JSON.stringify({ texts: abstracts }),
         }).catch(() => {});
       }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка сети");
     } finally {
       setLoading(false);
     }
@@ -219,6 +241,8 @@ export function Feed({ topics }: { topics: Topic[] }) {
 
   // Синхронизируем фильтры/поиск/страницу в URL (replaceState — без захламления истории).
   useEffect(() => {
+    // Не затираем глубокую ссылку, пока восстановление из URL ещё не выполнено.
+    if (!restoredRef.current) return;
     const url = `${window.location.pathname}?${toParams(f, page, pageSize).toString()}`;
     window.history.replaceState(null, "", url);
   }, [f, page]);
@@ -262,6 +286,18 @@ export function Feed({ topics }: { topics: Topic[] }) {
   };
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
   const exportParams = useMemo(() => toParams(f, 1, 2000), [f]);
+
+  // Годы для селектов: из реальных дат публикаций в текущей выборке + текущий год
+  // + выбранные значения (чтобы не «терялись» при смене страницы).
+  const yearOptions = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    if (f.fromYear) years.add(Number(f.fromYear));
+    if (f.toYear) years.add(Number(f.toYear));
+    for (const a of data.items) {
+      if (a.publishedAt) years.add(new Date(a.publishedAt).getUTCFullYear());
+    }
+    return [...years].sort((a, b) => b - a);
+  }, [data.items, f.fromYear, f.toYear]);
   const activeCount = useMemo(
     () => Object.entries(f).filter(([k, v]) => {
       if (k === "sort") return false;
@@ -269,6 +305,9 @@ export function Feed({ topics }: { topics: Topic[] }) {
     }).length,
     [f],
   );
+
+  // Пресет считается активным, когда все его условия включены в текущие фильтры.
+  const presetActive = (pf: Partial<Filters>) => Object.entries(pf).every(([k, v]) => f[k as keyof Filters] === v);
 
   const onUpdate = (a: Article) => {
     setSelected(a);
@@ -370,7 +409,11 @@ export function Feed({ topics }: { topics: Topic[] }) {
               key={p.label}
               title={p.hint}
               onClick={() => { reset(); set(p.f); if (p.f.q) setQ(p.f.q); }}
-              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-teal-400 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-teal-400 dark:hover:text-teal-400"
+              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                presetActive(p.f)
+                  ? "border-teal-400 bg-teal-50 text-teal-700 dark:border-teal-600 dark:bg-teal-950/40 dark:text-teal-300"
+                  : "border-slate-200 bg-white text-slate-700 hover:border-teal-400 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-teal-400 dark:hover:text-teal-400"
+              }`}
             >
               {p.label}
             </button>
@@ -438,6 +481,23 @@ export function Feed({ topics }: { topics: Topic[] }) {
           {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </label>
+
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Год от</span>
+          <select value={f.fromYear} onChange={(e) => set({ fromYear: e.target.value, toYear: f.toYear && e.target.value && Number(e.target.value) > Number(f.toYear) ? e.target.value : f.toYear })} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+            <option value="">Все</option>
+            {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Год до</span>
+          <select value={f.toYear} onChange={(e) => set({ toYear: e.target.value, fromYear: f.fromYear && e.target.value && Number(e.target.value) < Number(f.fromYear) ? e.target.value : f.fromYear })} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+            <option value="">Все</option>
+            {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </label>
+      </div>
 
       <div className="space-y-1.5 text-slate-700 dark:text-slate-300">
         <label className="flex items-center gap-2"><input type="checkbox" checked={f.unread} onChange={(e) => set({ unread: e.target.checked })} className="accent-teal-600" /> Только непрочитанные</label>
@@ -577,20 +637,70 @@ export function Feed({ topics }: { topics: Topic[] }) {
           </span>
         </div>
 
-        {!loading && data.items.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center dark:border-slate-700 dark:bg-slate-900">
-            <p className="text-base font-semibold text-slate-800 dark:text-slate-200">Пока ничего не найдено</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              {data.total === 0 && activeCount === 0 && !f.q
-                ? "База пуста. Нажмите «Обновить данные» вверху — приложение опросит PubMed, Europe PMC, ClinicalTrials.gov и medRxiv (обычно 1–3 минуты)."
-                : "Попробуйте ослабить фильтры."}
-            </p>
+        {loading && data.items.length === 0 && (
+          <div className="stagger space-y-2" aria-hidden>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} style={{ "--stagger-i": i } as CSSProperties} className="card rounded-2xl p-4">
+                <div className="flex gap-3.5">
+                  <div className="skeleton h-12 w-12 shrink-0 rounded-full" />
+                  <div className="min-w-0 flex-1 space-y-2 py-0.5">
+                    <div className="flex gap-1.5">
+                      <div className="skeleton h-5 w-14" />
+                      <div className="skeleton h-5 w-10" />
+                      <div className="skeleton h-5 w-16" />
+                    </div>
+                    <div className="skeleton h-4 w-3/4" />
+                    <div className="skeleton h-3 w-full" />
+                    <div className="skeleton h-3 w-5/6" />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
-        <ul ref={listRef} className="space-y-2">
+        {error && !loading && (
+          <div className="card fade-in rounded-2xl border-rose-200 p-8 text-center dark:border-rose-900/50">
+            <p className="text-base font-semibold text-rose-800 dark:text-rose-300">Не удалось загрузить ленту</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{error}. Проверьте соединение и попробуйте ещё раз.</p>
+            <button
+              onClick={() => void load()}
+              className="btn-brand mt-4 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+            >
+              Повторить
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && data.items.length === 0 && (
+          <div className="card fade-in rounded-2xl border-dashed p-10 text-center">
+            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl" style={{ background: "var(--brand-soft)" }}>
+              <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ color: "var(--brand-a)" }}>
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+            </div>
+            <p className="text-base font-semibold text-slate-800 dark:text-slate-200">Пока ничего не найдено</p>
+            <p className="mx-auto mt-1 max-w-md text-sm text-slate-500 dark:text-slate-400">
+              {data.total === 0 && activeCount === 0 && !f.q
+                ? "База пуста. Запустите обновление — приложение опросит PubMed, Europe PMC, ClinicalTrials.gov и medRxiv (обычно 1–3 минуты)."
+                : "Попробуйте ослабить фильтры или изменить запрос."}
+            </p>
+            {data.total === 0 && activeCount === 0 && !f.q && (
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent("ent-radar:refresh-request"))}
+                className="btn-brand mt-4 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+              >
+                Обновить данные
+              </button>
+            )}
+          </div>
+        )}
+
+        <ul ref={listRef} className="stagger space-y-2">
           {data.items.map((a, idx) => {
             const isFocused = idx === focusedIdx;
+            const conclusion = extractConclusion(a.abstract);
             return (
               <li
                 key={a.id}
@@ -618,7 +728,16 @@ export function Feed({ topics }: { topics: Topic[] }) {
                     <h3 className={`text-[15px] leading-snug ${a.isRead ? "font-medium text-slate-700 dark:text-slate-300" : "font-semibold text-slate-900 dark:text-slate-100"} group-hover:text-teal-800 dark:group-hover:text-teal-400`}>
                       {a.title}
                     </h3>
-                    <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-slate-600 dark:text-slate-400">{a.abstract || "Аннотация недоступна"}</p>
+                    {conclusion ? (
+                      <div className="mt-2 rounded-xl border border-teal-100 bg-teal-50/70 p-2.5 dark:border-teal-900/50 dark:bg-teal-950/30">
+                        <p className="line-clamp-2 text-[12.5px] leading-relaxed text-teal-950 dark:text-teal-100">
+                          <span className="font-semibold text-teal-700 dark:text-teal-400">💡 Вывод: </span>
+                          {conclusion}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-slate-600 dark:text-slate-400">{a.abstract || "Аннотация недоступна"}</p>
+                    )}
                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                       <span className="font-medium text-slate-700 dark:text-slate-300">{a.journal || "—"}</span>
                       <span>{formatDate(a.publishedAt)}</span>
@@ -654,6 +773,14 @@ export function Feed({ topics }: { topics: Topic[] }) {
                   <h3 className={`text-sm leading-snug ${a.isRead ? "font-medium text-slate-600 dark:text-slate-400" : "font-semibold text-slate-900 dark:text-slate-100"}`}>
                     {a.title}
                   </h3>
+                  {conclusion && (
+                    <div className="mt-1.5 rounded-lg border border-teal-100 bg-teal-50/60 p-2 dark:border-teal-900/40 dark:bg-teal-950/20">
+                      <p className="line-clamp-2 text-[11px] leading-relaxed text-teal-900 dark:text-teal-200">
+                        <span className="font-semibold text-teal-700 dark:text-teal-400">💡 Вывод: </span>
+                        {conclusion}
+                      </p>
+                    </div>
+                  )}
                   <div className="mt-1.5 flex items-center gap-2 text-[12px] text-slate-500 dark:text-slate-400">
                     <span className="min-w-0 truncate font-medium text-slate-600 dark:text-slate-300">{a.journal || "—"}</span>
                     <span className="shrink-0">{formatDate(a.publishedAt)}</span>

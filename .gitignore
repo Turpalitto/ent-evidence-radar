@@ -34,3 +34,6 @@ coverage/
 
 # source archive artifact
 *.zip
+
+# agent cache
+.freebuff/

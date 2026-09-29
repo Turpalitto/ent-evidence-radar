@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
@@ -19,7 +20,9 @@ const g = globalThis as typeof globalThis & {
 
 /** Открывает PGlite и применяет миграции. */
 async function openPglite(dataDir?: string) {
-  const pglite = dataDir ? new PGlite(dataDir) : new PGlite();
+  // pg_trgm нужен миграции 0003 (GIN-индексы для ILIKE-поиска) — регистрируем заранее.
+  const extensions = { pg_trgm };
+  const pglite = dataDir ? new PGlite(dataDir, { extensions }) : new PGlite({ extensions });
   g.__entRadarPglite = pglite;
   const db = drizzlePglite(pglite);
   await migratePglite(db, { migrationsFolder });
@@ -45,6 +48,12 @@ async function initDb() {
     process.argv.some((a) => a.includes("build"));
 
   if (isBuild) {
+    return await openPglite();
+  }
+
+  // Под Vitest каждый файл тестов — отдельный воркер: файловый PGlite нельзя
+  // открыть из нескольких процессов, поэтому тестам выдаём изолированный in-memory.
+  if (process.env.VITEST) {
     return await openPglite();
   }
 

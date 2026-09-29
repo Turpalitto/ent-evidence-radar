@@ -12,6 +12,8 @@
 
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
+import { createHash } from "node:crypto";
+
 // Топ бесплатных моделей для медицинского перевода (проверены на OpenRouter).
 // Первая — основная; остальные подхватываются при отказе предыдущей.
 const DEFAULT_MODELS = [
@@ -19,6 +21,15 @@ const DEFAULT_MODELS = [
   "minimax/minimax-m3:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
 ];
+
+/**
+ * Стабильный ключ кэша: sha256 ПОЛНОГО текста.
+ * Срез «первые N символов» опасен: у структурированных аннотаций префиксы
+ * часто совпадают (BACKGROUND:…METHODS:…), и одной статье показался бы чужой перевод.
+ */
+export function cacheKeyFor(kind: "tr" | "sum", text: string): string {
+  return `${kind}2:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+}
 
 const g = globalThis as typeof globalThis & {
   __aiCache?: Map<string, { text: string; at: number }>;
@@ -273,7 +284,7 @@ export function warmAbstracts(texts: string[], concurrency = 4): void {
     while (i < uniq.length) {
       const t = uniq[i++];
       if (t.length > 30000) continue;
-      const key = `tr2:${t.slice(0, 200)}`;
+      const key = cacheKeyFor("tr", t);
       if (await cachedPick(key)) continue;
       try {
         await translateAbstract(t);
@@ -297,29 +308,33 @@ const TRANSLATE_SYSTEM =
   "Верни ТОЛЬКО перевод.";
 
 const SUMMARIZE_SYSTEM =
-  "Ты — ассистент врача-оториноларинголога (ЛОР) в области доказательной медицины. Прочитай аннотацию научной статьи и кратко (2–3 строки) по-русски объясни: что за исследование, что нашли, и что это значит для клинической практики. Пиши нейтрально, по существу, без воды и без оценок «отличная/плохая». Не выдумывай данные, которых нет в аннотации. Терминология — понятная русскому ЛОР-врачу, сложные термины объясняй в скобках. Верни ТОЛЬКО текст резюме.";
+  "Ты — ассистент врача-оториноларинголога (ЛОР) в области доказательной медицины.\n" +
+  "Прочитай аннотацию научной статьи и составь структурированное клиническое резюме строго по схеме:\n" +
+  "• Пациенты (P): кого исследовали, диагноз, объем выборки (n)\n" +
+  "• Вмешательство (I/C): что сравнивали (препарат/операция vs контроль/плацебо)\n" +
+  "• Главный результат (O): ключевые цифры исходов и статистическая значимость (p-value, CI)\n" +
+  "• Клинический вывод: что это меняет в практике (рекомендовано/неэффективно/безопасно)\n\n" +
+  "Пиши предельно конкретно, без вводных фраз и воды. Не выдумывай данные, которых нет в аннотации. Терминология — профессиональная русская ЛОР-медицина. Верни ТОЛЬКО текст резюме.";
 
 /** Перевод англ. аннотации на русский. Пустой текст -> пустой ответ. */
 export function translateAbstract(text: string): Promise<string> {
   const t = text.trim();
   if (!t) return Promise.resolve("");
-  const key = `tr2:${t.slice(0, 200)}`;
-  return cached(key, "tr", () => chat(t, TRANSLATE_SYSTEM));
+  return cached(cacheKeyFor("tr", t), "tr", () => chat(t, TRANSLATE_SYSTEM));
 }
 
 /** Краткое резюме «о чём статья» (RU). Пустой текст -> пустой ответ. */
 export function summarizeAbstract(text: string): Promise<string> {
   const t = text.trim();
   if (!t) return Promise.resolve("");
-  const key = `sum2:${t.slice(0, 200)}`;
-  return cached(key, "sum", () => chat(t, SUMMARIZE_SYSTEM));
+  return cached(cacheKeyFor("sum", t), "sum", () => chat(t, SUMMARIZE_SYSTEM));
 }
 
 /** Стриминговый перевод аннотации. Если перевод уже в кэше (память/БД) — отдаёт его мгновенно. */
 export async function* translateStream(text: string): AsyncGenerator<string> {
   const t = text.trim();
   if (!t) return;
-  const key = `tr2:${t.slice(0, 200)}`;
+  const key = cacheKeyFor("tr", t);
   const pre = await cachedPick(key);
   if (pre !== undefined) {
     yield pre;
@@ -338,7 +353,7 @@ export async function* translateStream(text: string): AsyncGenerator<string> {
 export async function* summarizeStream(text: string): AsyncGenerator<string> {
   const t = text.trim();
   if (!t) return;
-  const key = `sum2:${t.slice(0, 200)}`;
+  const key = cacheKeyFor("sum", t);
   const pre = await cachedPick(key);
   if (pre !== undefined) {
     yield pre;

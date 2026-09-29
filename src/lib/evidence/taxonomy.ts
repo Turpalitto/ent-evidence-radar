@@ -145,4 +145,5 @@ export const SOURCE_LABELS: Record<string, string> = {
   europepmc: "Europe PMC",
   clinicaltrials: "ClinicalTrials.gov",
   medrxiv: "medRxiv (препринты)",
+  "retraction-recheck": "Перепроверка отзывов",
 };

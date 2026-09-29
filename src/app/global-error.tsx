@@ -1,0 +1,41 @@
+"use client";
+
+export default function GlobalError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  return (
+    <html lang="ru">
+      <body style={{ fontFamily: "system-ui, sans-serif", background: "#f8fafc", color: "#0f172a", margin: 0 }}>
+        <div style={{ maxWidth: 480, margin: "80px auto", padding: "0 16px", textAlign: "center" }}>
+          <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>ENT Evidence Radar</h1>
+          <p style={{ color: "#64748b", fontSize: 14, lineHeight: 1.5 }}>
+            Приложение не смогло запуститься. Обычно это временный сбой — обновите страницу.
+          </p>
+          {error.digest && (
+            <p style={{ color: "#94a3b8", fontSize: 11, fontFamily: "monospace", marginTop: 12 }}>digest: {error.digest}</p>
+          )}
+          <button
+            onClick={reset}
+            style={{
+              marginTop: 20,
+              padding: "10px 20px",
+              borderRadius: 12,
+              border: "none",
+              background: "linear-gradient(135deg, #0d9488, #0284c7)",
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Обновить страницу
+          </button>
+        </div>
+      </body>
+    </html>
+  );
+}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Article } from "@/db/schema";
 import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
+import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
 import { DesignBadge, LevelBadge, TierBadge, TrustScore, formatDate } from "./Badges";
 
 interface Props {
@@ -14,6 +15,28 @@ interface Props {
 
 function isMobile() {
   return typeof window !== "undefined" && window.innerWidth < 768;
+}
+
+function buildCitation(a: Article): string {
+  const authorPart = a.authors.length ? a.authors.slice(0, 6).join(", ") + (a.authors.length > 6 ? " et al." : "") : "Авт. не указан";
+  const year = a.publishedAt ? new Date(a.publishedAt).getFullYear() : "";
+  const journalPart = a.journal ? `${a.journal}. ` : "";
+  const yearPart = year ? `${year}. ` : "";
+  const doiPart = a.doi ? `doi:${a.doi}. ` : "";
+  const pmidPart = a.pmid ? `PMID:${a.pmid}.` : "";
+  return `${authorPart}. ${a.title}. ${journalPart}${yearPart}${doiPart}${pmidPart}`.trim();
+}
+
+function buildConsiliumSummary(a: Article): string {
+  const citation = buildCitation(a);
+  const conclusion = extractConclusion(a.abstract);
+  const design = DESIGN_LABELS[a.studyDesign] || a.studyDesign;
+  const level = EVIDENCE_LEVEL_LABELS[a.evidenceLevel] || `Уровень ${a.evidenceLevel}`;
+  let text = `📄 ${citation}\n📊 Дизайн: ${design} (${level}), Индекс доверия: ${a.trustScore}/100`;
+  if (a.sampleSize) text += `, n≈${a.sampleSize}`;
+  if (conclusion) text += `\n💡 Вывод: ${conclusion}`;
+  text += `\n🔗 Источник: ${a.url}`;
+  return text;
 }
 
 export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: Props) {
@@ -246,6 +269,13 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             {a.isBookmarked ? "★" : "☆"} {a.isBookmarked ? "Сохранено" : "Сохранить"}
           </button>
           <button
+            onClick={() => void copyToClipboard(buildConsiliumSummary(a), "consilium")}
+            className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition active:scale-95 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:py-2"
+            title="Скопировать библиографическую ссылку, дизайн и клинический вывод"
+          >
+            {copied === "consilium" ? "✓ Ссылка скопирована" : "📋 Для консилиума"}
+          </button>
+          <button
             onClick={() => void share()}
             className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition active:scale-95 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:py-2"
           >
@@ -256,17 +286,17 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         {/* ── Идентификаторы (компактно) ── */}
         {(a.doi || a.pmid || a.pmcid || a.nctId) && (
           <div className="flex flex-wrap gap-2">
-            {a.pmcid && <a href={`https://www.ncbi.nlm.nih.gov/pmc/articles/${a.pmcid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">Полный текст PMC ↗</a>}
-            {a.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">PMID {a.pmid} ↗</a>}
-            {a.doi && <a href={`https://doi.org/${a.doi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">DOI ↗</a>}
-            {a.nctId && <a href={`https://clinicaltrials.gov/study/${a.nctId}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">NCT {a.nctId} ↗</a>}
+            {a.pmcid && <a href={`https://www.ncbi.nlm.nih.gov/pmc/articles/${a.pmcid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">Полный текст (PMC) ↗</a>}
+            {a.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">PubMed (PMID {a.pmid}) ↗</a>}
+            {a.doi && <a href={`https://doi.org/${a.doi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">Первоисточник (DOI) ↗</a>}
+            {a.nctId && <a href={`https://clinicaltrials.gov/study/${a.nctId}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">Реестр КИ ({a.nctId}) ↗</a>}
           </div>
         )}
 
         {/* ── Аннотация ── */}
         <section>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Аннотация</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Аннотация исследования</h3>
             {a.abstract && (
               <div className="flex gap-1.5">
                 <button
@@ -278,14 +308,14 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
                       : "border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                   }`}
                 >
-                  {aiState.mode === "loading" ? "…" : showTranslate && aiState.translate ? "Скрыть перевод" : "🌐 Перевод"}
+                  {aiState.mode === "loading" ? "…" : showTranslate && aiState.translate ? "Скрыть перевод" : "🌐 Перевод на русский"}
                 </button>
                 <button
                   onClick={() => void runAi("summary")}
                   disabled={aiState.mode === "loading"}
                   className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
-                  💡 Резюме
+                  💡 Резюме для практики (PICO)
                 </button>
               </div>
             )}
@@ -309,10 +339,48 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             </div>
           )}
 
-          {/* Оригинал — всегда виден */}
+          {/* Оригинал — структурированное отображение */}
           {a.abstract ? (
-            <div className="space-y-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
-              {a.abstract.split("\n").filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}
+            <div className="space-y-2.5 text-sm leading-relaxed">
+              {(() => {
+                const sections = parseStructuredAbstract(a.abstract);
+                if (sections.length > 1) {
+                  return sections.map((sec, i) => {
+                    const isConclusion = /^CONCLUSIONS?$/i.test(sec.label);
+                    const isResults = /^RESULTS?$/i.test(sec.label);
+                    return (
+                      <div
+                        key={i}
+                        className={
+                          isConclusion
+                            ? "rounded-xl border border-teal-200 bg-teal-50/70 p-3 dark:border-teal-800 dark:bg-teal-950/30"
+                            : isResults
+                              ? "rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 dark:border-slate-800 dark:bg-slate-800/30"
+                              : "py-0.5"
+                        }
+                      >
+                        {sec.label && (
+                          <span
+                            className={
+                              isConclusion
+                                ? "mb-1 block text-[11px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400"
+                                : "mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+                            }
+                          >
+                            {isConclusion ? "💡 Клинический вывод" : sectionHeaderRu(sec.label)}
+                          </span>
+                        )}
+                        <p className={isConclusion ? "font-medium text-teal-950 dark:text-teal-100" : "text-slate-700 dark:text-slate-300"}>
+                          {sec.text}
+                        </p>
+                      </div>
+                    );
+                  });
+                }
+                return a.abstract.split("\n").filter(Boolean).map((p, i) => (
+                  <p key={i} className="text-slate-700 dark:text-slate-300">{p}</p>
+                ));
+              })()}
             </div>
           ) : (
             <p className="text-sm italic text-slate-400">Аннотация недоступна в источнике.</p>
@@ -386,9 +454,21 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
           <section>
             {a.meshTerms.length > 0 && (
               <>
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">MeSH</p>
-                <div className="mb-2 flex flex-wrap gap-1">
-                  {a.meshTerms.map((t) => <span key={t} className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-800 dark:bg-blue-950/40 dark:text-blue-300">{t}</span>)}
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">MeSH-термины (медицинские дескрипторы)</p>
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {a.meshTerms.map((t) => {
+                    const ru = translateMesh(t);
+                    return (
+                      <span
+                        key={t}
+                        title={ru ? `${t} (${ru})` : t}
+                        className="rounded-lg bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
+                      >
+                        {t}
+                        {ru && <span className="font-normal text-blue-600/80 dark:text-blue-400"> · {ru}</span>}
+                      </span>
+                    );
+                  })}
                 </div>
               </>
             )}

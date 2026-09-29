@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { desc, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { articles } from "@/db/schema";
@@ -56,8 +57,12 @@ export default async function StatsPage() {
   const trustHist = await db.execute<{ bucket: number; count: number }>(
     sql`select (floor(${articles.trustScore} / 10) * 10)::int as bucket, count(*)::int as count from ${articles} group by 1 order by 1`,
   );
+  const byYear = await db.execute<{ yr: number; count: number; high: number }>(
+    sql`select extract(year from ${articles.publishedAt})::int as yr, count(*)::int as count, count(*) filter (where ${articles.trustScore} >= 70)::int as high from ${articles} where ${articles.publishedAt} is not null group by 1 order by 1 desc`,
+  );
   const maxWeek = Math.max(1, ...byWeek.rows.map((r) => r.count));
   const maxHist = Math.max(1, ...trustHist.rows.map((r) => r.count));
+  const maxYear = Math.max(1, ...byYear.rows.map((r) => Number(r.count)));
 
   return (
     <main className="space-y-5">
@@ -81,6 +86,41 @@ export default async function StatsPage() {
           </div>
         ))}
       </div>
+
+      {byYear.rows.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold">Публикации по годам</h2>
+            <p className="text-xs text-slate-500">Нажмите на столбец, чтобы открыть ленту за год</p>
+          </div>
+          <div className="flex h-44 items-end gap-1.5">
+            {byYear.rows.map((r) => {
+              const year = Number(r.yr);
+              const high = Number(r.high);
+              const count = Number(r.count);
+              return (
+                <Link
+                  key={year}
+                  href={`/?fromYear=${year}&toYear=${year}`}
+                  className="group flex min-w-9 flex-1 flex-col items-center gap-1"
+                  title={`${year}: ${count} публикаций, ${high} с индексом ≥70`}
+                >
+                  <span className="text-[10px] font-semibold tabular-nums text-slate-400 transition group-hover:text-teal-600">{count}</span>
+                  <div className="relative flex w-full items-end" style={{ height: "150px" }}>
+                    <div
+                      className="w-full rounded-t bg-teal-200 transition group-hover:bg-teal-300 dark:bg-teal-800 dark:group-hover:bg-teal-700"
+                      style={{ height: `${Math.max(4, (count / maxYear) * 150)}px` }}
+                    >
+                      <div className="absolute bottom-0 w-full rounded-t bg-teal-600 dark:bg-teal-500" style={{ height: `${count ? (high / count) * 100 : 0}%` }} />
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-slate-500 transition group-hover:text-teal-600">{year}</span>
+                </Link>
+                );
+            })}
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <section className="rounded-2xl border border-slate-200 bg-white p-4">

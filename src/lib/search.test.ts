@@ -77,4 +77,11 @@ describe("expandQuery (синдромы + частичное префиксно�
     expect(flat("синдром меньера")).toContain("meniere's disease");
     expect(flat("меньер")).toContain("meniere's disease");
   });
+
+  it("разрешает ЛОР-фармакотерапию и маневры", () => {
+    expect(flat("дупилумаб")).toContain("dupilumab");
+    expect(flat("мометазон")).toContain("mometasone");
+    expect(flat("эпли")).toContain("epley maneuver");
+    expect(flat("дексаметазон")).toContain("intratympanic dexamethasone");
+  });
 });

@@ -21,6 +21,8 @@ describe("journalTier", () => {
     expect(journalTier("Otolaryngology--head and neck surgery")).toBe(2);
     expect(journalTier("Clinical Otolaryngology")).toBe(2);
     expect(journalTier("Rhinology")).toBe(2);
+    expect(journalTier("Clinical and Experimental Otorhinolaryngology")).toBe(2);
+    expect(journalTier("Acta Otorhinolaryngologica Italica")).toBe(2);
   });
 
   it("Tier 3 — индексируемые в MEDLINE", () => {

@@ -1,5 +1,3 @@
-import type { NextRequest } from "next/server";
-
 interface RateLimitEntry {
   count: number;
   resetTime: number;
@@ -21,7 +19,7 @@ if (typeof setInterval !== "undefined") {
 }
 
 /** Получает IP клиента с учётом стандартных заголовков прокси (Cloudflare, Vercel, reverse proxy). */
-export function getClientIp(req: NextRequest): string {
+export function getClientIp(req: { headers: { get(name: string): string | null } }): string {
   const xForwardedFor = req.headers.get("x-forwarded-for");
   if (xForwardedFor) {
     const first = xForwardedFor.split(",")[0].trim();
@@ -57,7 +55,26 @@ export function checkRateLimit(
  * Если API_SECRET не задан — разрешает доступ (для простоты локальной разработки).
  * Если API_SECRET задан — требует Bearer токен или заголовок X-API-Key, либо same-origin браузерный запрос.
  */
-export function checkApiAuth(req: NextRequest): { ok: boolean; status?: number; error?: string } {
+interface HeadersLike {
+  get(name: string): string | null;
+}
+
+/**
+ * Same-origin только при ТОЧНОМ совпадении host. Сравнение `origin.includes(host)`
+ * обходится подделкой «Origin: https://evil.example/app.example.com» — здесь так не может быть.
+ */
+function isSameOrigin(headers: HeadersLike): boolean {
+  const origin = headers.get("origin");
+  const host = headers.get("host");
+  if (!origin || !host) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false; // битый Origin — не браузерный запрос
+  }
+}
+
+export function checkApiAuth(req: { headers: HeadersLike }): { ok: boolean; status?: number; error?: string } {
   const secret = process.env.API_SECRET;
   if (!secret) return { ok: true };
 
@@ -70,9 +87,7 @@ export function checkApiAuth(req: NextRequest): { ok: boolean; status?: number; 
   const secFetchSite = req.headers.get("sec-fetch-site");
   if (secFetchSite === "same-origin") return { ok: true };
 
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("host");
-  if (origin && host && origin.includes(host)) return { ok: true };
+  if (isSameOrigin(req.headers)) return { ok: true };
 
   return { ok: false, status: 401, error: "Требуется авторизация (API_SECRET)" };
 }

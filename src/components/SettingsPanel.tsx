@@ -201,12 +201,28 @@ export function SettingsPanel() {
             <li><b>Индексация:</b> PubMed/MEDLINE +10, Europe PMC +8, ClinicalTrials.gov +6.</li>
           </ul>
           <ul className="list-disc space-y-1 pl-5">
-            <li><b>Методология:</b> регистрация протокола (PROSPERO/NCT/ISRCTN) +6; PRISMA/CONSORT/GRADE/STROBE +4; многоцентровое +3.</li>
-            <li><b>Выборка:</b> n≥1000 +8, ≥200 +5, ≥50 +2.</li>
+            <li><b>Методология:</b> регистрация протокола (PROSPERO/NCT/ISRCTN) +6; двойное слепое (double-blind) +3; плацебо-контроль +2; ITT-анализ +2; PRISMA/CONSORT/GRADE/STROBE +4; многоцентровое +3.</li>
+            <li><b>Выборка:</b> n≥1000 +8, ≥200 +5, ≥50 +2 (приоритет числу фактически включённых пациентов).</li>
             <li><b>Штрафы:</b> препринт −20, отозвана −60, доклиническое −10, пилотное −5, нет аннотации −4.</li>
           </ul>
         </div>
         <p className="mt-3 text-xs text-slate-500">Это эвристика для приоритизации чтения. Она не заменяет формальную оценку риска систематической ошибки (RoB 2, ROBINS-I, AMSTAR 2, AGREE II).</p>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+        <h2 className="text-base font-semibold">Резервное копирование и безопасность данных</h2>
+        <p className="mb-4 text-sm text-slate-500">
+          Выгрузка всех сохранённых закладок, клинических заметок, пользовательских тем и настроек в JSON-файл. Позволяет не потерять персональные данные врача при любых работах с базой.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href="/api/backup"
+            download
+            className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700"
+          >
+            <span>📥 Скачать резервную копию (JSON)</span>
+          </a>
+        </div>
       </section>
     </div>
   );
