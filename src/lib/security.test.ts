@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { checkRateLimit, checkApiAuth } from "@/lib/security";
+import { checkRateLimit, checkApiAuth, getClientIp } from "@/lib/security";
 
 describe("checkRateLimit", () => {
   it("allows requests within limit", () => {
@@ -85,5 +85,45 @@ describe("checkApiAuth", () => {
     const r = checkApiAuth(req({ host: "app.example.com" }));
     expect(r.ok).toBe(false);
     expect(r.status).toBe(401);
+  });
+});
+
+describe("getClientIp", () => {
+  function req(headers: Record<string, string>) {
+    return { headers: { get: (n: string) => headers[n.toLowerCase()] ?? null } };
+  }
+
+  afterEach(() => {
+    delete process.env.TRUST_PROXY;
+    delete process.env.TRUSTED_PROXIES;
+    delete process.env.CLIENT_IP_HEADER;
+  });
+
+  it("ignores proxy headers when TRUST_PROXY is not set (fail-safe)", () => {
+    expect(getClientIp(req({ "x-forwarded-for": "1.2.3.4" }))).toBe("unknown");
+    expect(getClientIp(req({ "x-real-ip": "5.6.7.8" }))).toBe("unknown");
+  });
+
+  it("takes the rightmost XFF entry (closest to the app), not the client-spoofed leftmost", () => {
+    process.env.TRUST_PROXY = "1";
+    expect(getClientIp(req({ "x-forwarded-for": "1.2.3.4, 203.0.113.9" }))).toBe("203.0.113.9");
+  });
+
+  it("strips the port and IPv4-mapped prefix", () => {
+    process.env.TRUST_PROXY = "1";
+    expect(getClientIp(req({ "x-forwarded-for": "203.0.113.9:5555" }))).toBe("203.0.113.9");
+    expect(getClientIp(req({ "x-forwarded-for": "::ffff:203.0.113.9" }))).toBe("203.0.113.9");
+  });
+
+  it("skips trusted proxy hops via CIDR", () => {
+    process.env.TRUST_PROXY = "1";
+    process.env.TRUSTED_PROXIES = "10.0.0.0/8";
+    expect(getClientIp(req({ "x-forwarded-for": "203.0.113.9, 10.1.2.3" }))).toBe("203.0.113.9");
+  });
+
+  it("prefers an explicitly configured CLIENT_IP_HEADER", () => {
+    process.env.TRUST_PROXY = "1";
+    process.env.CLIENT_IP_HEADER = "cf-connecting-ip";
+    expect(getClientIp(req({ "cf-connecting-ip": "198.51.100.7", "x-forwarded-for": "1.2.3.4" }))).toBe("198.51.100.7");
   });
 });

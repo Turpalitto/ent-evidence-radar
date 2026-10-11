@@ -60,6 +60,16 @@ async function initDb() {
   // По умолчанию в runtime — встроенный PostgreSQL (PGlite) с файловым хранилищем в корне проекта.
   const dataDir = path.join(process.cwd(), ".pglite");
 
+  // Явно предупреждаем: файловый PGlite в продакшене — риск потери данных
+  // (при OOM/kill каталог может повредиться, включая закладки и заметки).
+  if (process.env.NODE_ENV === "production") {
+    console.warn(
+      "[ent-radar] DATABASE_URL не задан — используется файловый PGlite (./.pglite). " +
+        "При аварийном завершении процесса каталог может повредиться, и пользовательские данные (закладки, заметки) будут потеряны. " +
+        "Для продакшена задайте DATABASE_URL с внешним PostgreSQL.",
+    );
+  }
+
   // Удаляем stale postmaster.pid если процесс был прерван жестко
   const pidFile = path.join(dataDir, "postmaster.pid");
   if (fs.existsSync(pidFile)) {

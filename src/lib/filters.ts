@@ -34,7 +34,9 @@ export function parseFilters(sp: URLSearchParams): ArticleFilters {
     return Number.isInteger(n) && n >= 1800 && n <= new Date().getFullYear() + 1 ? n : undefined;
   };
   return {
-    q: sp.get("q") ?? undefined,
+    // Ограничиваем длину запроса: каждый токен расширяется синонимами и порождает
+    // отдельный ILIKE, поэтому длинный ввод — это усиление нагрузки на БД.
+    q: (sp.get("q") ?? "").trim().slice(0, 200) || undefined,
     subspecialty: sp.get("subspecialty") ?? undefined,
     design: sp.get("design") ?? undefined,
     level: num("level"),

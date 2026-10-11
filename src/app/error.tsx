@@ -24,12 +24,12 @@ export default function GlobalError({
           <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
       </div>
-      <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Что-то пошло не так</h1>
-      <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
+      <h1 className="text-lg font-semibold text-[color:var(--ink)]">Что-то пошло не так</h1>
+      <p className="mx-auto mt-1 max-w-sm text-sm text-[color:var(--ink-muted)]">
         Произошла непредвиденная ошибка. Данные не пострадали — попробуйте повторить попытку.
       </p>
       {error.digest && (
-        <p className="mt-2 font-mono text-[11px] text-slate-400 dark:text-slate-500">digest: {error.digest}</p>
+        <p className="mt-2 font-mono text-[11px] text-[color:var(--ink-subtle)]">digest: {error.digest}</p>
       )}
       <div className="mt-5 flex items-center justify-center gap-2">
         <button onClick={reset} className="btn-brand rounded-xl px-4 py-2 text-sm font-semibold text-white">

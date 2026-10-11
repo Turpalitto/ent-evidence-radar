@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isRefreshRunning, runRefreshSafe } from "@/lib/refresh";
-import { checkApiAuth, checkRateLimit, getClientIp } from "@/lib/security";
+import { checkApiAuth, getClientIp } from "@/lib/security";
+import { checkRateLimitShared } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
   }
 
   const ip = getClientIp(req);
-  const rl = checkRateLimit(`refresh:${ip}`, 5, 60_000);
+  const rl = await checkRateLimitShared(`refresh:${ip}`, 5, 60_000);
   if (!rl.allowed) {
     return NextResponse.json(
       { ok: false, error: "Слишком много запросов на обновление. Подождите минуту." },

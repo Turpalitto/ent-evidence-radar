@@ -7,7 +7,10 @@ import { parseFilters, type ArticleFilters } from "@/lib/filters";
 export { parseFilters, type ArticleFilters };
 
 function termLike(t: string): SQL {
-  const like = `%${t}%`;
+  // Экранируем спецсимволы LIKE (Postgres по умолчанию использует backslash как escape):
+  // иначе ввод вида «%» или «_» становится wildcard и матчит всю базу.
+  const esc = t.replace(/\\/g, "\\\\").replace(/[%_]/g, "\\$&");
+  const like = `%${esc}%`;
   return or(ilike(articles.title, like), ilike(articles.abstract, like), ilike(articles.journal, like), sql`${articles.authors}::text ilike ${like}`)!;
 }
 

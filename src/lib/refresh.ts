@@ -8,6 +8,7 @@ import { fetchEuropePmc } from "@/lib/sources/europepmc";
 import { fetchClinicalTrials } from "@/lib/sources/clinicaltrials";
 import { fetchMedrxiv } from "@/lib/sources/medrxiv";
 import { recheckRetractions } from "@/lib/retraction";
+import { invalidateStatsCache } from "@/lib/stats";
 
 const g = globalThis as typeof globalThis & {
   __entRadarRunning?: boolean;
@@ -86,12 +87,12 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<AppSett
   return next;
 }
 
-interface Candidate {
+export interface Candidate {
   raw: RawArticle;
   topicIds: Set<number>;
 }
 
-function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
+export function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
   // Предпочитаем PubMed-запись как более полную; дополняем недостающие поля.
   const primary = a.sourceKey === "pubmed" ? a : b.sourceKey === "pubmed" ? b : a;
   const secondary = primary === a ? b : a;
@@ -108,6 +109,94 @@ function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
     publicationTypes: Array.from(new Set([...(primary.publicationTypes ?? []), ...(secondary.publicationTypes ?? [])])),
     isPreprint: !!(primary.isPreprint && secondary.isPreprint),
   };
+}
+
+export interface PlannedInsert {
+  values: NewArticle;
+  source: string;
+}
+export interface PlannedUpdate {
+  id: number;
+  values: Omit<NewArticle, "dedupKey">;
+  source: string;
+}
+export interface WritePlan {
+  toInsert: PlannedInsert[];
+  toUpdate: PlannedUpdate[];
+}
+type ExistingRef = { id: number; topicIds?: number[] | null; sourceKeys?: string[] | null };
+
+/**
+ * Чистая функция планирования записи: по кандидатам и уже существующим записям решает,
+ * какие строки вставить, а какие обновить (с дедупликацией по dedupKey → DOI → PMID и
+ * слиянием тем/источников). Вынесена из doRefresh, чтобы покрывать логику тестами без БД.
+ */
+export function planWrites(
+  candidates: Map<string, Candidate>,
+  sourceKeysByDedup: Map<string, Set<string>>,
+  existingByKey: Map<string, ExistingRef>,
+  byDoi: Map<string, ExistingRef>,
+  byPmid: Map<string, ExistingRef>,
+  minTrustToStore: number,
+): WritePlan {
+  const toInsert: PlannedInsert[] = [];
+  const toUpdate: PlannedUpdate[] = [];
+
+  for (const [key, cand] of candidates) {
+    const raw = cand.raw;
+    const c = classify(raw);
+    if (c.trustScore < minTrustToStore) continue;
+    const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
+    const values: NewArticle = {
+      dedupKey: key,
+      pmid: raw.pmid ?? null,
+      doi: raw.doi ?? null,
+      pmcid: raw.pmcid ?? null,
+      nctId: raw.nctId ?? null,
+      title: raw.title,
+      abstract: raw.abstract ?? "",
+      journal: raw.journal ?? "",
+      authors: raw.authors ?? [],
+      publishedAt: raw.publishedAt ?? null,
+      publicationTypes: raw.publicationTypes ?? [],
+      meshTerms: raw.meshTerms ?? [],
+      keywords: raw.keywords ?? [],
+      language: raw.language ?? null,
+      sourceKey: raw.sourceKey,
+      sourceKeys: srcKeys,
+      url: raw.url,
+      studyDesign: c.studyDesign,
+      evidenceLevel: c.evidenceLevel,
+      trustScore: c.trustScore,
+      trustBreakdown: c.trustBreakdown,
+      journalTier: c.journalTier,
+      subspecialties: c.subspecialties,
+      sampleSize: c.sampleSize,
+      isPreprint: c.isPreprint,
+      isRetracted: c.isRetracted,
+      topicIds: Array.from(cand.topicIds),
+      updatedAt: new Date(),
+    };
+
+    const existing = existingByKey.get(key);
+    const doiMatch = raw.doi ? byDoi.get(raw.doi.toLowerCase()) : undefined;
+    const pmidMatch = raw.pmid ? byPmid.get(raw.pmid) : undefined;
+    const existingId = existing?.id ?? doiMatch?.id ?? pmidMatch?.id;
+
+    if (existingId) {
+      const prev = existing ?? doiMatch ?? pmidMatch ?? { topicIds: [] as number[], sourceKeys: [] as string[] };
+      const mergedTopics = Array.from(new Set([...(prev.topicIds ?? []), ...values.topicIds!]));
+      const mergedSources = Array.from(new Set([...(prev.sourceKeys ?? []), ...srcKeys]));
+      // не перетираем пользовательские поля (isRead, isBookmarked, notes) и dedupKey
+      const { dedupKey: _dk, ...upd } = values;
+      void _dk;
+      toUpdate.push({ id: existingId, values: { ...upd, topicIds: mergedTopics, sourceKeys: mergedSources }, source: raw.sourceKey });
+    } else {
+      toInsert.push({ values, source: raw.sourceKey });
+    }
+  }
+
+  return { toInsert, toUpdate };
 }
 
 export async function runRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: number; skipped?: boolean }> {
@@ -231,68 +320,29 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
     for (const r of rows) if (r.pmid) byPmid.set(r.pmid, { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [] });
   }
 
-  for (const [key, cand] of candidates) {
-    const raw = cand.raw;
-    const c = classify(raw);
-    if (c.trustScore < cfg.minTrustToStore) continue;
-    const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
-    const values: NewArticle = {
-      dedupKey: key,
-      pmid: raw.pmid ?? null,
-      doi: raw.doi ?? null,
-      pmcid: raw.pmcid ?? null,
-      nctId: raw.nctId ?? null,
-      title: raw.title,
-      abstract: raw.abstract ?? "",
-      journal: raw.journal ?? "",
-      authors: raw.authors ?? [],
-      publishedAt: raw.publishedAt ?? null,
-      publicationTypes: raw.publicationTypes ?? [],
-      meshTerms: raw.meshTerms ?? [],
-      keywords: raw.keywords ?? [],
-      language: raw.language ?? null,
-      sourceKey: raw.sourceKey,
-      sourceKeys: srcKeys,
-      url: raw.url,
-      studyDesign: c.studyDesign,
-      evidenceLevel: c.evidenceLevel,
-      trustScore: c.trustScore,
-      trustBreakdown: c.trustBreakdown,
-      journalTier: c.journalTier,
-      subspecialties: c.subspecialties,
-      sampleSize: c.sampleSize,
-      isPreprint: c.isPreprint,
-      isRetracted: c.isRetracted,
-      topicIds: Array.from(cand.topicIds),
-      updatedAt: new Date(),
-    };
+  // Сначала считаем решения (insert/update) чистой функцией, затем пишем пакетно в одной
+  // транзакции: вставки — пачками по 100, обновления — в той же транзакции. Это убирает
+  // N отдельных коммитов (fsync) на PGlite и N round-trip'ов на внешнем PostgreSQL.
+  const { toInsert, toUpdate } = planWrites(candidates, sourceKeysByDedup, existingByKey, byDoi, byPmid, cfg.minTrustToStore);
 
-    const existing = existingByKey.get(key);
-    const doiMatch = raw.doi ? byDoi.get(raw.doi.toLowerCase()) : undefined;
-    const pmidMatch = raw.pmid ? byPmid.get(raw.pmid) : undefined;
-    const existingId = existing?.id ?? doiMatch?.id ?? pmidMatch?.id;
-
-    if (existingId) {
-      const prev = existing ?? doiMatch ?? pmidMatch ?? { topicIds: [] as number[], sourceKeys: [] as string[] };
-      const mergedTopics = Array.from(new Set([...(prev.topicIds ?? []), ...values.topicIds!]));
-      const mergedSources = Array.from(new Set([...(prev.sourceKeys ?? []), ...srcKeys]));
-      // не перетираем пользовательские поля (isRead, isBookmarked, notes) и dedupKey
-      const { dedupKey: _dk, ...upd } = values;
-      void _dk;
-      await db
-        .update(articles)
-        .set({ ...upd, topicIds: mergedTopics, sourceKeys: mergedSources })
-        .where(eq(articles.id, existingId));
+  const INSERT_CHUNK = 100;
+  await db.transaction(async (tx) => {
+    for (const op of toUpdate) {
+      await tx.update(articles).set(op.values).where(eq(articles.id, op.id));
       updated++;
-      updatedBySource[raw.sourceKey] = (updatedBySource[raw.sourceKey] ?? 0) + 1;
-    } else {
-      const inserted = await db.insert(articles).values(values).onConflictDoNothing().returning({ id: articles.id });
-      if (inserted.length) {
-        newAdded++;
-        addedBySource[raw.sourceKey] = (addedBySource[raw.sourceKey] ?? 0) + 1;
-      }
+      updatedBySource[op.source] = (updatedBySource[op.source] ?? 0) + 1;
     }
-  }
+    for (let i = 0; i < toInsert.length; i += INSERT_CHUNK) {
+      const chunk = toInsert.slice(i, i + INSERT_CHUNK);
+      const inserted = await tx
+        .insert(articles)
+        .values(chunk.map((c) => c.values))
+        .onConflictDoNothing()
+        .returning({ id: articles.id, sourceKey: articles.sourceKey });
+      newAdded += inserted.length;
+      for (const row of inserted) addedBySource[row.sourceKey] = (addedBySource[row.sourceKey] ?? 0) + 1;
+    }
+  });
 
   // ---- Перепроверка отзывов: PubMed проставляет «Retracted Publication» задним числом,
   // поэтому уже сохранённые статьи могли быть отозваны после загрузки.
@@ -330,6 +380,9 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
       errorMessage: errCount ? details.filter((d) => d.error).map((d) => `${d.source}: ${d.error}`).join("\n") : null,
     })
     .where(eq(fetchRuns.id, run.id));
+
+  // Данные изменились — сбрасываем TTL-кэш агрегатов статистики.
+  invalidateStatsCache();
 
   return { runId: run.id };
 }

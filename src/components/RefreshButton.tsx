@@ -54,21 +54,25 @@ export function RefreshButton() {
   const startRef = useRef(start);
   useEffect(() => { startRef.current = start; }, [start]);
 
+  // Однократная проверка статуса при монтировании (на случай, если обновление
+  // уже запущено на сервере — тогда опрос ниже подхватит его).
   useEffect(() => {
-    const check = setTimeout(() => void checkStatus(), 0);
+    const t = setTimeout(() => void checkStatus(), 0);
+    return () => clearTimeout(t);
+  }, [checkStatus]);
+
+  // Опрашиваем статус только пока обновление идёт; завершение фиксируем один раз.
+  useEffect(() => {
+    if (!running) return;
     const t = setInterval(async () => {
-      const wasRunning = runningRef.current;
       const now = await checkStatus();
-      if (wasRunning && !now) {
+      if (!now) {
         router.refresh();
         window.dispatchEvent(new CustomEvent("ent-radar:refreshed"));
       }
     }, 5000);
-    return () => {
-      clearTimeout(check);
-      clearInterval(t);
-    };
-  }, [checkStatus, router]);
+    return () => clearInterval(t);
+  }, [running, checkStatus, router]);
 
   // Пустое состояние ленты диспетчит это событие — запускаем обновление отсюда,
   // чтобы кнопка и статус «running» оставались в одном месте.
@@ -83,13 +87,13 @@ export function RefreshButton() {
   return (
     <div className="relative flex items-center gap-2">
       {toast && (
-        <span className="hidden max-w-[360px] truncate rounded-lg bg-slate-900 px-3 py-1.5 text-xs text-white shadow lg:inline">{toast}</span>
+        <span className="hidden max-w-[360px] truncate rounded-xl bg-slate-900/95 px-3 py-1.5 text-xs font-medium text-white shadow-lg ring-1 ring-white/10 backdrop-blur lg:inline">{toast}</span>
       )}
       <button
         onClick={start}
         disabled={running}
-        className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold text-white transition ${
-          running ? "cursor-wait bg-slate-400" : "btn-brand"
+        className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white transition ${
+          running ? "cursor-wait bg-slate-400 dark:bg-slate-600" : "btn-brand"
         }`}
       >
         <svg viewBox="0 0 24 24" className={`h-4 w-4 ${running ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

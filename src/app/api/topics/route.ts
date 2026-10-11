@@ -3,6 +3,7 @@ import { asc } from "drizzle-orm";
 import { db } from "@/db";
 import { topics } from "@/db/schema";
 import { ensureSeeded } from "@/lib/refresh";
+import { checkApiAuth } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = checkApiAuth(req);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status ?? 401 });
+  }
+
   const body = (await req.json()) as { name?: string; query?: string; subspecialty?: string; lookbackDays?: number | null };
   if (!body.name?.trim() || !body.query?.trim()) return NextResponse.json({ error: "name и query обязательны" }, { status: 400 });
   const [row] = await db

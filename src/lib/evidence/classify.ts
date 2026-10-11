@@ -171,20 +171,33 @@ export function extractSampleSize(text: string): number | null {
   return Math.max(...candidates);
 }
 
+/**
+ * Предкомпилированные паттерны субспециальностей. Раньше `new RegExp(...)` создавался
+ * на каждую статью × каждый паттерн (десятки объектов на статью) — теперь один раз при
+ * загрузке модуля. `global` — для подсчёта вхождений, `single` — для проверки заголовка.
+ */
+const COMPILED_SUBSPECIALTIES: { key: string; global: RegExp[]; single: RegExp[] }[] = SUBSPECIALTIES.map(
+  (s) => ({
+    key: s.key,
+    global: s.patterns.map((p) => new RegExp(p.source, p.flags.includes("g") ? p.flags : p.flags + "g")),
+    single: s.patterns.map((p) => new RegExp(p.source, p.flags.replace("g", ""))),
+  }),
+);
+
 export function detectSubspecialties(a: RawArticle): string[] {
   const text = `${a.title} ${a.title} ${a.abstract ?? ""} ${(a.meshTerms ?? []).join(" ")} ${(a.keywords ?? []).join(" ")}`;
   const scores: { key: string; score: number }[] = [];
-  for (const s of SUBSPECIALTIES) {
+  for (const s of COMPILED_SUBSPECIALTIES) {
     let score = 0;
-    for (const p of s.patterns) {
-      const re = new RegExp(p.source, p.flags.includes("g") ? p.flags : p.flags + "g");
+    for (const re of s.global) {
+      // RegExp со флагом g и .match() безопасен для переиспользования: match() сам
+      // сбрасывает lastIndex, поэтому утечки состояния между статьями нет.
       const matches = text.match(re);
       if (matches) score += matches.length;
     }
-    // заголовок весит больше — используем новый RegExp, чтобы не наследовать lastIndex от g-флага
-    for (const p of s.patterns) {
-      const fresh = new RegExp(p.source, p.flags.replace("g", ""));
-      if (fresh.test(a.title)) score += 3;
+    // заголовок весит больше — отдельный набор не-global regex без lastIndex
+    for (const re of s.single) {
+      if (re.test(a.title)) score += 3;
     }
     if (score > 0) scores.push({ key: s.key, score });
   }

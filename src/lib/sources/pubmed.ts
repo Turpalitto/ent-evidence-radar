@@ -7,13 +7,20 @@ const MONTHS: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 };
 
-function ncbiParams(): { key: string; throttleMs: number } {
+const NCBI_TOOL = "ent-evidence-radar";
+
+/** Контактный e-mail для NCBI E-utilities (требование их политики). Настраивается через NCBI_EMAIL. */
+function ncbiEmail(): string {
+  return process.env.NCBI_EMAIL?.trim() || "ent-evidence-radar@example.org";
+}
+
+function ncbiParams(): { key: string; throttleMs: number; email: string; tool: string } {
   const key = process.env.NCBI_API_KEY ?? "";
-  return { key, throttleMs: key ? 110 : 400 }; // ≤3 req/s без ключа, ≤10 req/s с ключом
+  return { key, throttleMs: key ? 110 : 400, email: ncbiEmail(), tool: NCBI_TOOL }; // ≤3 req/s без ключа, ≤10 req/s с ключом
 }
 
 export async function pubmedSearch(query: string, days: number, maxResults: number): Promise<string[]> {
-  const { key, throttleMs } = ncbiParams();
+  const { key, throttleMs, email, tool } = ncbiParams();
   const p = new URLSearchParams({
     db: "pubmed",
     term: query,
@@ -22,8 +29,8 @@ export async function pubmedSearch(query: string, days: number, maxResults: numb
     sort: "date",
     datetype: "edat",
     reldate: String(days),
-    tool: "ent-evidence-radar",
-    email: "radar@example.org",
+    tool,
+    email,
   });
   if (key) p.set("api_key", key);
   const data = await fetchJson<{ esearchresult?: { idlist?: string[]; ERROR?: string } }>(
@@ -73,13 +80,14 @@ function parseDate(article: AnyObj): Date | null {
 
 export async function pubmedFetch(pmids: string[]): Promise<RawArticle[]> {
   if (!pmids.length) return [];
-  const { key, throttleMs } = ncbiParams();
+  const { key, throttleMs, email, tool } = ncbiParams();
   const out: RawArticle[] = [];
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", textNodeName: "#text" });
 
-  for (let i = 0; i < pmids.length; i += 100) {
-    const chunk = pmids.slice(i, i + 100);
-    const p = new URLSearchParams({ db: "pubmed", id: chunk.join(","), retmode: "xml", tool: "ent-evidence-radar", email: "radar@example.org" });
+  // efetch принимает до 200 id за запрос — вдвое меньше раундов, чем при батче 100.
+  for (let i = 0; i < pmids.length; i += 200) {
+    const chunk = pmids.slice(i, i + 200);
+    const p = new URLSearchParams({ db: "pubmed", id: chunk.join(","), retmode: "xml", tool, email });
     if (key) p.set("api_key", key);
     const xml = await fetchText(`${BASE}/efetch.fcgi?${p}`, { throttleKey: "ncbi", throttleMs, timeoutMs: 40_000 });
     const doc = parser.parse(xml) as AnyObj;
@@ -179,12 +187,12 @@ export async function fetchPubmed(query: string, days: number, maxResults: numbe
  */
 export async function pubmedRetractionMap(pmids: string[]): Promise<Map<string, boolean>> {
   const out = new Map<string, boolean>();
-  const { key, throttleMs } = ncbiParams();
+  const { key, throttleMs, email, tool } = ncbiParams();
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", textNodeName: "#text" });
 
   for (let i = 0; i < pmids.length; i += 200) {
     const chunk = pmids.slice(i, i + 200);
-    const p = new URLSearchParams({ db: "pubmed", id: chunk.join(","), retmode: "xml", tool: "ent-evidence-radar", email: "radar@example.org" });
+    const p = new URLSearchParams({ db: "pubmed", id: chunk.join(","), retmode: "xml", tool, email });
     if (key) p.set("api_key", key);
     const xml = await fetchText(`${BASE}/efetch.fcgi?${p}`, { throttleKey: "ncbi", throttleMs, timeoutMs: 40_000 });
     const doc = parser.parse(xml) as AnyObj;

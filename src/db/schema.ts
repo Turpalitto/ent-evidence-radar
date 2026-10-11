@@ -10,6 +10,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export type SourceKey = "pubmed" | "europepmc" | "clinicaltrials" | "medrxiv";
 
@@ -92,6 +93,10 @@ export const articles = pgTable(
   },
   (t) => [
     uniqueIndex("articles_dedup_key_idx").on(t.dedupKey),
+    // Частичные уникальные индексы: не дают появиться дублям при гонке/импорте
+    // (вторичная дедупликация refresh работает только внутри одного запуска).
+    uniqueIndex("articles_pmid_unique_idx").on(t.pmid).where(sql`${t.pmid} is not null and ${t.pmid} <> ''`),
+    uniqueIndex("articles_doi_unique_idx").on(sql`lower(${t.doi})`).where(sql`${t.doi} is not null and ${t.doi} <> ''`),
     index("articles_published_at_idx").on(t.publishedAt),
     index("articles_trust_idx").on(t.trustScore),
     index("articles_pmid_idx").on(t.pmid),
@@ -127,6 +132,20 @@ export const settings = pgTable("settings", {
   value: jsonb("value").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Общий счётчик rate-limit: живёт в БД, поэтому лимиты соблюдаются и при нескольких
+ * инстансах приложения (in-memory Map остаётся только резервным путём).
+ */
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    key: text("key").primaryKey(),
+    count: integer("count").notNull().default(0),
+    resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("rate_limits_reset_at_idx").on(t.resetAt)],
+);
 
 /** Персистентный кэш ИИ-ответов (перевод/резюме), переживает рестарты. */
 export const aiCache = pgTable("ai_cache", {

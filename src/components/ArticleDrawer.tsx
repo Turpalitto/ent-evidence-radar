@@ -5,6 +5,7 @@ import type { Article } from "@/db/schema";
 import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
 import { DesignBadge, LevelBadge, TierBadge, TrustScore, formatDate } from "./Badges";
+import { useFocusTrap } from "./useFocusTrap";
 
 interface Props {
   article: Article | null;
@@ -208,6 +209,10 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
     if (dy > window.innerHeight * 0.25 || dy > 80) onClose();
   }, [onClose]);
 
+  // Удержание фокуса внутри панели и возврат фокуса при закрытии.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(wrapperRef, !!article);
+
   if (!article) return null;
   const a = article;
   const positives = a.trustBreakdown.filter((b) => b.points > 0);
@@ -228,23 +233,23 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
   const Content = (
     <>
       {/* ── Шапка ── */}
-      <div className="sticky top-0 z-10 flex items-start gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:px-5 md:py-4">
+      <div className="glass-header sticky top-0 z-10 flex items-start gap-3 px-4 py-3 md:px-5 md:py-4">
         <TrustScore score={a.trustScore} size="lg" />
         <div className="min-w-0 flex-1">
-          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
             <DesignBadge design={a.studyDesign} />
             <LevelBadge level={a.evidenceLevel} />
             <TierBadge tier={a.journalTier} />
             {a.isPreprint && <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">ПРЕПРИНТ</span>}
             {a.isRetracted && <span className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">ОТОЗВАНА</span>}
           </div>
-          <h2 className="text-sm font-semibold leading-snug text-slate-900 dark:text-slate-100 md:text-base">{a.title}</h2>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          <h2 className="text-sm font-semibold leading-snug text-[color:var(--ink)] md:text-base">{a.title}</h2>
+          <p className="mt-1 text-xs text-[color:var(--ink-muted)]">
             {a.journal || "—"} · {formatDate(a.publishedAt)}
             {a.sampleSize ? ` · n≈${a.sampleSize}` : ""}
           </p>
         </div>
-        <button onClick={onClose} className="rounded-xl p-2.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Закрыть">
+        <button onClick={onClose} className="rounded-xl p-2.5 text-[color:var(--ink-subtle)] transition hover:bg-[color:var(--surface-3)] hover:text-[color:var(--ink)]" aria-label="Закрыть">
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
       </div>
@@ -257,27 +262,27 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             href={a.url}
             target="_blank"
             rel="noreferrer"
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition active:bg-teal-800 hover:bg-teal-700 sm:flex-none sm:py-2"
+            className="btn-brand flex flex-1 items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-white sm:flex-none sm:py-2"
           >
             Открыть источник
             <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3" /></svg>
           </a>
           <button
             onClick={() => patch(a.id, { isBookmarked: !a.isBookmarked })}
-            className={`flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition active:scale-95 sm:py-2 ${a.isBookmarked ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300" : "border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition active:scale-95 sm:py-2 ${a.isBookmarked ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300" : "btn-ghost"}`}
           >
             {a.isBookmarked ? "★" : "☆"} {a.isBookmarked ? "Сохранено" : "Сохранить"}
           </button>
           <button
             onClick={() => void copyToClipboard(buildConsiliumSummary(a), "consilium")}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition active:scale-95 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:py-2"
+            className="btn-ghost flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition active:scale-95 sm:py-2"
             title="Скопировать библиографическую ссылку, дизайн и клинический вывод"
           >
             {copied === "consilium" ? "✓ Ссылка скопирована" : "📋 Для консилиума"}
           </button>
           <button
             onClick={() => void share()}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition active:scale-95 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:py-2"
+            className="btn-ghost flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition active:scale-95 sm:py-2"
           >
             {copied === "share" ? "✓ Скопировано" : "⧉ Поделиться"}
           </button>
@@ -296,16 +301,16 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         {/* ── Аннотация ── */}
         <section>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Аннотация исследования</h3>
+            <h3 className="eyebrow">Аннотация исследования</h3>
             {a.abstract && (
               <div className="flex gap-1.5">
                 <button
                   onClick={handleTranslateClick}
                   disabled={aiState.mode === "loading"}
-                  className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-40 ${
+                  className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-40 ${
                     showTranslate && aiState.translate
-                      ? "border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-300"
-                      : "border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                      ? "border-[color:var(--brand-ring)] bg-[color:var(--brand-soft)] text-[color:var(--brand-ink)]"
+                      : "btn-ghost"
                   }`}
                 >
                   {aiState.mode === "loading" ? "…" : showTranslate && aiState.translate ? "Скрыть перевод" : "🌐 Перевод на русский"}
@@ -313,7 +318,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
                 <button
                   onClick={() => void runAi("summary")}
                   disabled={aiState.mode === "loading"}
-                  className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="btn-ghost rounded-lg px-2.5 py-1 text-xs font-semibold transition disabled:opacity-40"
                 >
                   💡 Резюме для практики (PICO)
                 </button>
@@ -392,31 +397,31 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         </section>
 
         {/* ── Индекс доверия ── */}
-        <section className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-800/50">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <section className="panel rounded-xl p-3.5">
+          <h3 className="eyebrow mb-2.5">
             Индекс доверия — {a.trustScore}/100
           </h3>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2.5 sm:grid-cols-2">
             <ul className="space-y-1 text-sm">
               {positives.map((b, i) => (
                 <li key={i} className="flex justify-between gap-2">
-                  <span className="text-slate-600 dark:text-slate-300">{b.label}</span>
-                  <span className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-400">+{b.points}</span>
+                  <span className="text-[color:var(--ink-soft)]">{b.label}</span>
+                  <span className="shrink-0 font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">+{b.points}</span>
                 </li>
               ))}
             </ul>
             <ul className="space-y-1 text-sm">
               {negatives.length ? negatives.map((b, i) => (
                 <li key={i} className="flex justify-between gap-2">
-                  <span className="text-slate-600 dark:text-slate-300">{b.label}</span>
-                  <span className="shrink-0 font-semibold text-rose-600 dark:text-rose-400">{b.points}</span>
+                  <span className="text-[color:var(--ink-soft)]">{b.label}</span>
+                  <span className="shrink-0 font-semibold tabular-nums text-rose-600 dark:text-rose-400">{b.points}</span>
                 </li>
               )) : (
-                <li className="text-sm text-slate-400">Штрафных факторов нет</li>
+                <li className="text-sm text-[color:var(--ink-subtle)]">Штрафных факторов нет</li>
               )}
             </ul>
           </div>
-          <p className="mt-2 text-[11px] text-slate-400">
+          <p className="mt-2.5 text-[11px] text-[color:var(--ink-subtle)]">
             {DESIGN_LABELS[a.studyDesign]} · {EVIDENCE_LEVEL_LABELS[a.evidenceLevel]}
           </p>
         </section>
@@ -425,7 +430,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         <section className="grid gap-3 text-sm sm:grid-cols-2">
           {a.authors.length > 0 && (
             <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Авторы</p>
+              <p className="mb-1 eyebrow">Авторы</p>
               <p className="text-slate-700 dark:text-slate-300">
                 {a.authors.slice(0, 10).join(", ")}{a.authors.length > 10 ? ` и ещё ${a.authors.length - 10}` : ""}
               </p>
@@ -435,13 +440,13 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             <div className="space-y-2">
               {a.subspecialties.length > 0 && (
                 <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Субспециальность</p>
+                  <p className="mb-1 eyebrow">Субспециальность</p>
                   <p className="text-slate-700 dark:text-slate-300">{a.subspecialties.map((s) => SUBSPECIALTY_LABELS[s] ?? s).join(", ")}</p>
                 </div>
               )}
               {a.sourceKeys.length > 0 && (
                 <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Источник</p>
+                  <p className="mb-1 eyebrow">Источник</p>
                   <p className="text-slate-700 dark:text-slate-300">{a.sourceKeys.map((s) => SOURCE_LABELS[s] ?? s).join(", ")}</p>
                 </div>
               )}
@@ -454,7 +459,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
           <section>
             {a.meshTerms.length > 0 && (
               <>
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">MeSH-термины (медицинские дескрипторы)</p>
+                <p className="mb-1.5 eyebrow">MeSH-термины (медицинские дескрипторы)</p>
                 <div className="mb-2 flex flex-wrap gap-1.5">
                   {a.meshTerms.map((t) => {
                     const ru = translateMesh(t);
@@ -474,7 +479,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             )}
             {a.keywords.length > 0 && (
               <>
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Ключевые слова</p>
+                <p className="mb-1.5 eyebrow">Ключевые слова</p>
                 <div className="flex flex-wrap gap-1">
                   {a.keywords.slice(0, 20).map((t, i) => <span key={i} className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">{t}</span>)}
                 </div>
@@ -486,7 +491,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         {/* ── Похожие публикации ── */}
         {(loadingRelated || related.length > 0) && (
           <section>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Похожие публикации</p>
+            <p className="mb-2 eyebrow">Похожие публикации</p>
             {loadingRelated && <p className="text-xs text-slate-400">Поиск…</p>}
             {!loadingRelated && related.length > 0 && (
               <div className="grid gap-2 sm:grid-cols-2">
@@ -494,14 +499,14 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
                   <div
                     key={rel.id}
                     onClick={() => (onSelectArticle ? onSelectArticle(rel) : onUpdate(rel))}
-                    className="group cursor-pointer rounded-xl border border-slate-200 bg-slate-50/50 p-3 transition hover:border-teal-400 hover:bg-white active:scale-[0.98] dark:border-slate-800 dark:bg-slate-800/40 dark:hover:border-teal-500 dark:hover:bg-slate-800"
+                    className="panel group cursor-pointer rounded-xl p-3 transition hover:border-[color:var(--brand-ring)] active:scale-[0.98]"
                   >
                     <div className="mb-1 flex items-center gap-1.5">
                       <DesignBadge design={rel.studyDesign} />
                       <TrustScore score={rel.trustScore} size="sm" />
                     </div>
-                    <p className="line-clamp-2 text-xs font-medium text-slate-800 group-hover:text-teal-700 dark:text-slate-200 dark:group-hover:text-teal-400">{rel.title}</p>
-                    <p className="mt-1 truncate text-[11px] text-slate-400">{rel.journal || "—"} · {formatDate(rel.publishedAt)}</p>
+                    <p className="line-clamp-2 text-xs font-medium text-[color:var(--ink)] transition-colors group-hover:text-[color:var(--brand-ink)]">{rel.title}</p>
+                    <p className="mt-1 truncate text-[11px] text-[color:var(--ink-subtle)]">{rel.journal || "—"} · {formatDate(rel.publishedAt)}</p>
                   </div>
                 ))}
               </div>
@@ -511,19 +516,19 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
 
         {/* ── Заметки ── */}
         <section>
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Мои заметки</p>
+          <p className="mb-1.5 eyebrow">Мои заметки</p>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
             placeholder="Выводы, применимость к практике…"
-            className="w-full rounded-lg border border-slate-200 p-2.5 text-sm focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            className="field w-full rounded-lg p-2.5 text-sm text-[color:var(--ink)]"
           />
           <div className="mt-1.5 flex justify-end">
             <button
               disabled={saving || notes === a.notes}
               onClick={() => patch(a.id, { notes })}
-              className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className="btn-brand rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
             >
               {saving ? "Сохраняем…" : "Сохранить"}
             </button>
@@ -534,16 +539,19 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-end md:items-stretch">
+    <div ref={wrapperRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-end outline-none md:items-stretch">
       <div className="overlay-enter absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]" onClick={onClose} />
 
       {/* Mobile: bottom sheet */}
       <aside
         ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Детали публикации"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="sheet-enter relative flex max-h-[92dvh] w-full flex-col overflow-y-auto overscroll-contain rounded-t-3xl bg-white shadow-2xl dark:bg-slate-900 md:hidden"
+        className="sheet-enter relative flex max-h-[92dvh] w-full flex-col overflow-y-auto overscroll-contain rounded-t-3xl bg-[color:var(--surface-1)] shadow-[var(--shadow-modal)] md:hidden"
       >
         <div className="flex-none pt-3 pb-1 text-slate-400">
           <div className="sheet-handle" />
@@ -553,7 +561,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
       </aside>
 
       {/* Desktop: side drawer */}
-      <aside className="drawer-enter relative hidden h-full w-full max-w-2xl flex-col overflow-y-auto bg-white shadow-2xl dark:border-l dark:border-slate-800 dark:bg-slate-900 md:flex">
+      <aside role="dialog" aria-modal="true" aria-label="Детали публикации" className="drawer-enter relative hidden h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-[color:var(--hairline)] bg-[color:var(--surface-1)] shadow-[var(--shadow-modal)] md:flex">
         {Content}
       </aside>
     </div>

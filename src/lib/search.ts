@@ -293,9 +293,9 @@ const STOPWORDS = new Set([
   "the", "of", "and", "or", "in", "a", "an", "for", "with", "on", "by", "to", "at",
 ]);
 
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+/** Ограничители расширения запроса: не даём одному вводу породить сотни ILIKE-условий. */
+const MAX_TOKENS = 12;
+const MAX_TERMS_PER_GROUP = 16;
 
 /** Разбивает запрос на слова (кириллица/латиница/цифры), отбрасывает стоп-слова. */
 function tokenize(q: string): string[] {
@@ -305,34 +305,85 @@ function tokenize(q: string): string[] {
     .filter((w) => w.length > 1 && !STOPWORDS.has(w));
 }
 
+/**
+ * Предвычисленный индекс «слово → концепт-ключи», где слово встречается (в ключе
+ * или в одной из альтернатив). Раньше `expandTerm` на каждый токен перебирал все
+ * ~300 групп синонимов с regex/split — теперь поиск O(1) + бинарный по префиксу.
+ */
+let synonymIndex: Map<string, string[]> | null = null;
+let synonymWords: { word: string; keys: string[] }[] | null = null;
+
+function buildSynonymIndex(): void {
+  if (synonymIndex) return;
+  const idx = new Map<string, string[]>();
+  const add = (word: string, key: string) => {
+    if (!word) return;
+    const arr = idx.get(word);
+    if (arr) {
+      if (!arr.includes(key)) arr.push(key);
+    } else {
+      idx.set(word, [key]);
+    }
+  };
+  for (const [k, alts] of Object.entries(SYNONYMS)) {
+    for (const w of k.split(/\s+/)) add(w, k);
+    for (const a of alts) for (const w of a.split(/\s+/)) add(w, k);
+  }
+  synonymIndex = idx;
+  synonymWords = [...idx.entries()]
+    .map(([word, keys]) => ({ word, keys }))
+    .sort((a, b) => (a.word < b.word ? -1 : a.word > b.word ? 1 : 0));
+}
+
+/** Слова, начинающиеся с префикса, — бинарный поиск по отсортированному массиву. */
+function wordsWithPrefix(prefix: string, limit: number): { word: string; keys: string[] }[] {
+  buildSynonymIndex();
+  const arr = synonymWords!;
+  let lo = 0;
+  let hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid].word < prefix) lo = mid + 1;
+    else hi = mid;
+  }
+  const out: { word: string; keys: string[] }[] = [];
+  for (let i = lo; i < arr.length && out.length < limit; i++) {
+    if (!arr[i].word.startsWith(prefix)) break;
+    out.push(arr[i]);
+  }
+  return out;
+}
+
 /** Расширяет одно слово: само слово + прямые синонимы + reverse-подбор (EN→RU и наоборот). */
 function expandTerm(t: string): string[] {
   const set = new Set<string>([t]);
   const direct = SYNONYMS[t];
   if (direct) for (const s of direct) set.add(s);
-  const re = new RegExp(`(^|\\s)${escapeRe(t)}(\\s|$)`, "i");
-  let prefix = 0;
-  for (const [k, alts] of Object.entries(SYNONYMS)) {
-    if (k === t) continue;
-    const whole = alts.some((a) => a.split(/\s+/).includes(t) || re.test(a));
-    if (whole) {
-      set.add(k);
-      for (const a of alts) set.add(a);
-      continue;
-    }
-    // Префиксное разрешение неполного слова: фрагмент «синус»/«менье»/«вегенер» →
-    // целые концепт-группы (RU→EN и EN→RU), с ограничением количества, чтобы не раздувать запрос.
-    if (t.length >= 3 && prefix < 10) {
-      const keyPrefix = k.split(/\s+/).some((w) => w.startsWith(t));
-      const altPrefix = alts.some((a) => a.split(/\s+/).some((w) => w.startsWith(t)));
-      if (keyPrefix || altPrefix) {
-        set.add(k);
-        for (const a of alts) set.add(a);
-        prefix++;
+
+  buildSynonymIndex();
+  const addGroup = (k: string) => {
+    if (k === t) return;
+    set.add(k);
+    for (const a of SYNONYMS[k]) set.add(a);
+  };
+
+  // Точное вхождение слова в концепт-группу (ключ или альтернатива).
+  for (const k of synonymIndex!.get(t) ?? []) addGroup(k);
+
+  // Префиксное разрешение неполного слова: фрагмент «синус»/«менье»/«вегенер» →
+  // целые концепт-группы (RU→EN и EN→RU), с ограничением количества, чтобы не раздувать запрос.
+  if (t.length >= 3) {
+    let prefix = 0;
+    for (const { keys } of wordsWithPrefix(t, 40)) {
+      for (const k of keys) {
+        if (k === t || set.has(k)) continue;
+        addGroup(k);
+        if (++prefix >= 10) break;
       }
+      if (prefix >= 10) break;
     }
   }
-  return [...set];
+  return [...set].slice(0, MAX_TERMS_PER_GROUP);
 }
 
 /**
@@ -340,11 +391,12 @@ function expandTerm(t: string): string[] {
  * Группы объединяются через AND в запросе (каждая — отдельное понятие).
  */
 export function expandQuery(q: string): string[][] {
-  const trimmed = q.trim();
+  // Защита от усиления нагрузки: ограничиваем длину и число токенов.
+  const trimmed = q.trim().slice(0, 200);
   if (!trimmed) return [];
   const lower = trimmed.toLowerCase();
   const phrase = SYNONYMS[lower];
-  if (phrase && phrase.length) return [[trimmed, ...phrase]];
-  const groups = tokenize(trimmed).map(expandTerm);
+  if (phrase && phrase.length) return [[trimmed, ...phrase.slice(0, MAX_TERMS_PER_GROUP - 1)]];
+  const groups = tokenize(trimmed).slice(0, MAX_TOKENS).map(expandTerm);
   return groups;
 }

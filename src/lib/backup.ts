@@ -67,9 +67,14 @@ export async function exportUserData(): Promise<UserBackupData> {
 }
 
 /**
- * Сохраняет резервную копию в локальный файл `backups/user_backup_latest.json`.
+ * Сохраняет резервную копию в файл `backups/user_backup_latest.json`.
+ *
+ * Каталог настраивается через BACKUP_DIR. Важно: в Docker по умолчанию смонтирован
+ * только volume PGlite, поэтому каталог бэкапов нужно либо вынести в volume
+ * (см. docker-compose.yml), либо задать BACKUP_DIR в уже смонтированный путь —
+ * иначе файл окажется эфемерным и исчезнет при пересоздании контейнера.
  */
-export async function writeBackupToFile(targetDir = "./backups"): Promise<string> {
+export async function writeBackupToFile(targetDir = process.env.BACKUP_DIR || "./backups"): Promise<string> {
   const data = await exportUserData();
   await mkdir(targetDir, { recursive: true });
   const filePath = join(targetDir, "user_backup_latest.json");

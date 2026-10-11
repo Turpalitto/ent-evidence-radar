@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listArticles, parseFilters } from "@/lib/queries";
 import { DESIGN_LABELS } from "@/lib/evidence/taxonomy";
+import { checkApiAuth } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,11 @@ function csvEscape(v: unknown) {
 }
 
 export async function GET(req: NextRequest) {
+  const auth = checkApiAuth(req);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status ?? 401 });
+  }
+
   const sp = req.nextUrl.searchParams;
   const format = sp.get("format") ?? "csv";
   const f = parseFilters(sp);

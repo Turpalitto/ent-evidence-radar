@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { topics } from "@/db/schema";
+import { checkApiAuth } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const auth = checkApiAuth(req);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status ?? 401 });
+  }
+
   const { id } = await ctx.params;
   const body = (await req.json()) as { name?: string; query?: string; subspecialty?: string; enabled?: boolean; lookbackDays?: number | null };
   const patch: Partial<typeof topics.$inferInsert> = {};
@@ -19,7 +25,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   return NextResponse.json(rows[0]);
 }
 
-export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const auth = checkApiAuth(req);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status ?? 401 });
+  }
+
   const { id } = await ctx.params;
   await db.delete(topics).where(eq(topics.id, Number(id)));
   return NextResponse.json({ ok: true });

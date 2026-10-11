@@ -26,6 +26,8 @@ async function api(path: string, init?: RequestInit): Promise<unknown> {
   return res.json();
 }
 
+const FIELD = "field w-full rounded-xl px-3 py-2 text-sm text-[color:var(--ink)]";
+
 export default function TopicsPage() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [form, setForm] = useState(empty);
@@ -90,35 +92,48 @@ export default function TopicsPage() {
     await load();
   }
 
+  const enabledCount = topics.filter((t) => t.enabled).length;
+
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Темы мониторинга</h1>
-        <p className="mt-1 text-muted-foreground">
+    <div className="mx-auto max-w-5xl space-y-6">
+      <div className="rise-in">
+        <p className="eyebrow">Мониторинг</p>
+        <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-[color:var(--ink)]">Темы мониторинга</h1>
+        <p className="mt-1 text-sm text-[color:var(--ink-muted)]">
           Поисковые запросы, которые собираются при каждом обновлении из PubMed / Europe PMC / ClinicalTrials.gov / medRxiv.
         </p>
+        {!loading && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="chip">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Активных тем: <span className="font-semibold">{enabledCount}</span>
+            </span>
+            <span className="chip">Всего: <span className="font-semibold">{topics.length}</span></span>
+          </div>
+        )}
       </div>
 
-      <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+      <form onSubmit={submit} className="card rise-in space-y-3.5 rounded-2xl p-5">
+        <h2 className="text-sm font-semibold text-[color:var(--ink)]">Новая тема</h2>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <input
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="Название (например, «Холестеатома у детей»)"
-            className="rounded-md border px-3 py-2 text-sm"
+            className={FIELD}
           />
           <input
             value={form.query}
             onChange={(e) => setForm({ ...form, query: e.target.value })}
             placeholder="Поисковый запрос (PubMed-строка: cholesteatoma AND child*)"
-            className="rounded-md border px-3 py-2 text-sm"
+            className={FIELD}
           />
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <select
             value={form.subspecialty}
             onChange={(e) => setForm({ ...form, subspecialty: e.target.value })}
-            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+            className={FIELD}
           >
             <option value="general">Общее</option>
             {SUBSPECIALTIES.map((s) => (
@@ -134,44 +149,47 @@ export default function TopicsPage() {
             value={form.lookbackDays}
             onChange={(e) => setForm({ ...form, lookbackDays: e.target.value })}
             placeholder="Глубина, дней (пусто = глобальная настройка)"
-            className="rounded-md border px-3 py-2 text-sm"
+            className={FIELD}
           />
         </div>
-        {error && <p className="text-sm text-rose-600">{error}</p>}
-        <button type="submit" className="rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700">
+        {error && <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+        <button type="submit" className="btn-brand rounded-xl px-4 py-2.5 text-sm font-semibold text-white">
           Добавить тему
         </button>
       </form>
 
-      <div className="rounded-xl border border-slate-200 bg-white">
+      <div className="card overflow-hidden rounded-2xl">
         {loading ? (
-          <p className="p-6 text-sm text-slate-500">Загрузка…</p>
+          <div className="space-y-2 p-5">
+            <div className="skeleton h-5 w-2/3" />
+            <div className="skeleton h-4 w-1/3" />
+          </div>
         ) : topics.length === 0 ? (
-          <p className="p-6 text-sm text-slate-500">Тем не найдено.</p>
+          <p className="p-6 text-sm text-[color:var(--ink-muted)]">Тем не найдено.</p>
         ) : (
-          <ul className="divide-y">
+          <ul className="divide-y divide-[color:var(--hairline)]">
             {topics.map((t) => (
-              <li key={t.id} className="flex items-center gap-3 px-4 py-3">
-                <input type="checkbox" checked={t.enabled} onChange={() => void toggle(t)} className="h-4 w-4" title={t.enabled ? "Выключить" : "Включить"} />
+              <li key={t.id} className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-[color:var(--surface-2)]">
+                <input type="checkbox" checked={t.enabled} onChange={() => void toggle(t)} className="h-4 w-4 accent-teal-600" title={t.enabled ? "Выключить" : "Включить"} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-medium">{t.name}</span>
-                    {t.isDefault && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">базовая</span>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate font-medium text-[color:var(--ink)]">{t.name}</span>
+                    {t.isDefault && <span className="chip">базовая</span>}
                     {t.subspecialty !== "general" && (
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{SUBSPECIALTY_SHORT[t.subspecialty] ?? t.subspecialty}</span>
+                      <span className="chip">{SUBSPECIALTY_SHORT[t.subspecialty] ?? t.subspecialty}</span>
                     )}
                   </div>
                   <input
                     defaultValue={t.query}
                     key={`q-${t.id}-${t.query}`}
                     onBlur={(e) => void updateQuery(t, e.target.value)}
-                    className="mt-0.5 w-full truncate rounded border-none bg-transparent px-2 py-0.5 text-sm font-mono text-slate-500 outline-none focus:bg-slate-100"
+                    className="mt-1 w-full truncate rounded-lg border border-transparent bg-transparent px-2 py-1 font-mono text-sm text-[color:var(--ink-muted)] outline-none transition hover:border-[color:var(--hairline)] focus:border-[color:var(--brand-a)] focus:bg-[color:var(--surface-1)] focus:text-[color:var(--ink)]"
                     title="Кликните, чтобы изменить запрос (сохранение при потере фокуса)"
                   />
                 </div>
                 <button
                   onClick={() => void remove(t)}
-                  className="text-sm text-rose-600 hover:underline"
+                  className="shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
                   title="Удалить тему"
                 >
                   Удалить

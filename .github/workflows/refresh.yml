@@ -16,4 +16,5 @@ jobs:
         run: |
           curl -fsS -X POST "${{ secrets.APP_URL }}/api/refresh" \
             -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer ${{ secrets.API_SECRET }}" \
             -w '\nHTTP %{http_code}\n'

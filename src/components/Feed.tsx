@@ -27,6 +27,7 @@ import { DESIGN_LABELS, DESIGN_SHORT, SOURCE_LABELS, SUBSPECIALTIES, EVIDENCE_LE
 import { extractConclusion } from "@/lib/evidence/abstract";
 import { DesignBadge, LevelBadge, SourceBadge, SubBadge, TierBadge, TrustScore, formatDate } from "./Badges";
 import { ArticleDrawer } from "./ArticleDrawer";
+import { useFocusTrap } from "./useFocusTrap";
 
 interface Filters {
   q: string;
@@ -125,6 +126,10 @@ function parseUrlSearch(): { f: Filters; page: number; q: string } {
   return { f, page, q: f.q };
 }
 
+/* ── Общие классы полей и кнопок (единый премиальный язык) ── */
+const SELECT_CLS = "field w-full rounded-xl px-2.5 py-1.5 text-sm text-[color:var(--ink-soft)]";
+const GHOST_BTN = "btn-ghost rounded-xl px-3 py-2.5 text-sm font-medium";
+
 export function Feed({ topics }: { topics: Topic[] }) {
   const [f, setF] = useState<Filters>(initial);
   const [q, setQ] = useState("");
@@ -144,8 +149,14 @@ export function Feed({ topics }: { topics: Topic[] }) {
   const ptrTriggered = useRef(false);
 
   const listRef = useRef<HTMLUListElement>(null);
+  const shortcutsRef = useRef<HTMLDivElement>(null);
+  const filtersRef = useRef<HTMLDivElement>(null);
   const aiConfiguredRef = useRef<boolean | null>(null);
   const notifyPerm = useSyncExternalStore(subscribeNotification, getNotificationSnapshot, getServerNotificationSnapshot);
+
+  // Удержание фокуса в открытых модалках/листах + возврат фокуса при закрытии.
+  useFocusTrap(shortcutsRef, showShortcutsModal);
+  useFocusTrap(filtersRef, showFilters);
 
   useEffect(() => {
     fetch("/api/ai")
@@ -395,11 +406,14 @@ export function Feed({ topics }: { topics: Topic[] }) {
   }, [focusedIdx]);
 
   const Sidebar = (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-5 text-sm">
       <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Быстрые фильтры</h3>
-          <button onClick={reset} className={`text-xs font-medium text-teal-700 hover:underline dark:text-teal-400 ${activeCount > 0 ? "" : "invisible"}`}>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="eyebrow">Быстрые фильтры</h3>
+          <button
+            onClick={reset}
+            className={`link-brand text-xs font-semibold hover:underline ${activeCount > 0 ? "" : "invisible"}`}
+          >
             Сбросить{activeCount > 0 ? ` (${activeCount})` : ""}
           </button>
         </div>
@@ -409,10 +423,10 @@ export function Feed({ topics }: { topics: Topic[] }) {
               key={p.label}
               title={p.hint}
               onClick={() => { reset(); set(p.f); if (p.f.q) setQ(p.f.q); }}
-              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+              className={`chip transition ${
                 presetActive(p.f)
-                  ? "border-teal-400 bg-teal-50 text-teal-700 dark:border-teal-600 dark:bg-teal-950/40 dark:text-teal-300"
-                  : "border-slate-200 bg-white text-slate-700 hover:border-teal-400 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-teal-400 dark:hover:text-teal-400"
+                  ? "chip-brand font-semibold shadow-[var(--shadow-glow)]"
+                  : "hover:border-[color:var(--brand-ring)] hover:text-[color:var(--brand-ink)]"
               }`}
             >
               {p.label}
@@ -422,48 +436,48 @@ export function Feed({ topics }: { topics: Topic[] }) {
       </div>
 
       <label className="block">
-        <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Субспециальность</span>
-        <select value={f.subspecialty} onChange={(e) => set({ subspecialty: e.target.value })} className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+        <span className="eyebrow mb-1.5 block">Субспециальность</span>
+        <select value={f.subspecialty} onChange={(e) => set({ subspecialty: e.target.value })} className={SELECT_CLS}>
           <option value="">Все</option>
           {SUBSPECIALTIES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
       </label>
 
       <label className="block">
-        <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Дизайн исследования</span>
-        <select value={f.design} onChange={(e) => set({ design: e.target.value })} className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+        <span className="eyebrow mb-1.5 block">Дизайн исследования</span>
+        <select value={f.design} onChange={(e) => set({ design: e.target.value })} className={SELECT_CLS}>
           <option value="">Все</option>
           {Object.entries(DESIGN_SHORT).map(([k, v]) => <option key={k} value={k} title={DESIGN_LABELS[k as keyof typeof DESIGN_LABELS]}>{v}</option>)}
         </select>
       </label>
 
       <label className="block">
-        <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Уровень доказательности (не ниже)</span>
-        <select value={f.level} onChange={(e) => set({ level: e.target.value })} className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+        <span className="eyebrow mb-1.5 block">Уровень доказательности (не ниже)</span>
+        <select value={f.level} onChange={(e) => set({ level: e.target.value })} className={SELECT_CLS}>
           <option value="">Любой</option>
           {[1, 2, 3, 4].map((l) => <option key={l} value={l} title={EVIDENCE_LEVEL_LABELS[l]}>Уровень {l}</option>)}
         </select>
       </label>
 
       <label className="block">
-        <span className="mb-1 flex justify-between text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <span className="eyebrow mb-1.5 flex justify-between">
           <span>Мин. индекс доверия</span>
-          <span className="text-slate-900 dark:text-slate-100">{f.minTrust}</span>
+          <span className="tabular-nums text-[color:var(--brand-ink)]">{f.minTrust}</span>
         </span>
         <input type="range" min={0} max={100} step={5} value={f.minTrust} onChange={(e) => set({ minTrust: Number(e.target.value) })} className="w-full accent-teal-600" />
       </label>
 
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Источник</span>
-          <select value={f.source} onChange={(e) => set({ source: e.target.value })} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+          <span className="eyebrow mb-1.5 block">Источник</span>
+          <select value={f.source} onChange={(e) => set({ source: e.target.value })} className={SELECT_CLS}>
             <option value="">Все</option>
             {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Период</span>
-          <select value={f.days} onChange={(e) => set({ days: e.target.value })} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+          <span className="eyebrow mb-1.5 block">Период</span>
+          <select value={f.days} onChange={(e) => set({ days: e.target.value })} className={SELECT_CLS}>
             <option value="">Всё</option>
             <option value="7">7 дней</option>
             <option value="14">14 дней</option>
@@ -475,8 +489,8 @@ export function Feed({ topics }: { topics: Topic[] }) {
       </div>
 
       <label className="block">
-        <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Тема (поисковый запрос)</span>
-        <select value={f.topicId} onChange={(e) => set({ topicId: e.target.value })} className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+        <span className="eyebrow mb-1.5 block">Тема (поисковый запрос)</span>
+        <select value={f.topicId} onChange={(e) => set({ topicId: e.target.value })} className={SELECT_CLS}>
           <option value="">Все темы</option>
           {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
@@ -484,51 +498,51 @@ export function Feed({ topics }: { topics: Topic[] }) {
 
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Год от</span>
-          <select value={f.fromYear} onChange={(e) => set({ fromYear: e.target.value, toYear: f.toYear && e.target.value && Number(e.target.value) > Number(f.toYear) ? e.target.value : f.toYear })} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+          <span className="eyebrow mb-1.5 block">Год от</span>
+          <select value={f.fromYear} onChange={(e) => set({ fromYear: e.target.value, toYear: f.toYear && e.target.value && Number(e.target.value) > Number(f.toYear) ? e.target.value : f.toYear })} className={SELECT_CLS}>
             <option value="">Все</option>
             {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Год до</span>
-          <select value={f.toYear} onChange={(e) => set({ toYear: e.target.value, fromYear: f.fromYear && e.target.value && Number(e.target.value) < Number(f.fromYear) ? e.target.value : f.fromYear })} className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+          <span className="eyebrow mb-1.5 block">Год до</span>
+          <select value={f.toYear} onChange={(e) => set({ toYear: e.target.value, fromYear: f.fromYear && e.target.value && Number(e.target.value) < Number(f.fromYear) ? e.target.value : f.fromYear })} className={SELECT_CLS}>
             <option value="">Все</option>
             {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </label>
       </div>
 
-      <div className="space-y-1.5 text-slate-700 dark:text-slate-300">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={f.unread} onChange={(e) => set({ unread: e.target.checked })} className="accent-teal-600" /> Только непрочитанные</label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={f.bookmarked} onChange={(e) => set({ bookmarked: e.target.checked })} className="accent-teal-600" /> Только избранное</label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={f.excludePreprints} onChange={(e) => set({ excludePreprints: e.target.checked })} className="accent-teal-600" /> Скрыть препринты</label>
+      <div className="space-y-2 text-[color:var(--ink-soft)]">
+        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.unread} onChange={(e) => set({ unread: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Только непрочитанные</label>
+        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.bookmarked} onChange={(e) => set({ bookmarked: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Только избранное</label>
+        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.excludePreprints} onChange={(e) => set({ excludePreprints: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Скрыть препринты</label>
       </div>
 
-      <div>
-        <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Экспорт выборки</span>
+      <div className="border-t border-[color:var(--hairline)] pt-4">
+        <span className="eyebrow mb-2 block">Экспорт выборки</span>
         <div className="flex gap-1.5">
           {(["csv", "ris", "json"] as const).map((fmt) => (
-            <a key={fmt} href={`/api/export?format=${fmt}&${exportParams}`} className="flex-1 rounded-lg border border-slate-200 bg-white py-1.5 text-center text-xs font-semibold uppercase text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+            <a key={fmt} href={`/api/export?format=${fmt}&${exportParams}`} className="btn-ghost flex-1 rounded-xl py-1.5 text-center text-xs font-semibold uppercase">
               {fmt}
             </a>
           ))}
         </div>
-        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">RIS — для Zotero / EndNote / Mendeley</p>
+        <p className="mt-1.5 text-[11px] text-[color:var(--ink-subtle)]">RIS — для Zotero / EndNote / Mendeley</p>
       </div>
     </div>
   );
 
   return (
     <div
-      className="grid gap-5 lg:grid-cols-[280px_1fr]"
+      className="grid gap-5 lg:grid-cols-[288px_1fr]"
       onTouchStart={handlePtrTouchStart}
       onTouchMove={handlePtrTouchMove}
       onTouchEnd={handlePtrTouchEnd}
     >
       {/* Desktop sidebar */}
       <aside className="hidden lg:block">
-        <div className="sticky top-[68px] rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">{Sidebar}</div>
+        <div className="card sticky top-[76px] rounded-2xl p-4">{Sidebar}</div>
       </aside>
 
       {/* Mobile filter bottom sheet */}
@@ -536,16 +550,21 @@ export function Feed({ topics }: { topics: Topic[] }) {
         <div className="fixed inset-0 z-40 flex items-end lg:hidden" onClick={() => setShowFilters(false)}>
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]" />
           <div
-            className="sheet-enter relative w-full overflow-y-auto overscroll-contain rounded-t-3xl bg-white px-4 pb-4 pt-3 shadow-2xl dark:bg-slate-900"
+            ref={filtersRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Фильтры ленты"
+            tabIndex={-1}
+            className="sheet-enter relative w-full overflow-y-auto overscroll-contain rounded-t-3xl bg-[color:var(--surface-1)] px-4 pb-4 pt-3 shadow-[var(--shadow-modal)] outline-none"
             style={{ maxHeight: "85dvh" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="sheet-handle mb-3 text-slate-400" />
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold text-slate-900 dark:text-slate-100">Фильтры</h2>
+              <h2 className="text-base font-semibold text-[color:var(--ink)]">Фильтры</h2>
               <button
                 onClick={() => setShowFilters(false)}
-                className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                className="rounded-xl p-2 text-[color:var(--ink-muted)] hover:bg-[color:var(--surface-3)]"
                 aria-label="Закрыть фильтры"
               >
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
@@ -554,7 +573,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
             {Sidebar}
             <button
               onClick={() => setShowFilters(false)}
-              className="mt-4 w-full rounded-xl bg-teal-600 py-3 text-sm font-semibold text-white active:bg-teal-700"
+              className="btn-brand mt-5 w-full rounded-xl py-3 text-sm font-semibold text-white"
             >
               Применить
             </button>
@@ -566,26 +585,27 @@ export function Feed({ topics }: { topics: Topic[] }) {
       <section className="min-w-0">
         {/* Pull-to-refresh indicator */}
         {ptrActive && (
-          <div className="mb-2 flex items-center justify-center gap-2 text-xs text-teal-600 dark:text-teal-400">
+          <div className="mb-2 flex items-center justify-center gap-2 text-xs text-[color:var(--brand-ink)]">
             <svg viewBox="0 0 24 24" className="h-4 w-4 ptr-spinning" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></svg>
             Обновляем…
           </div>
         )}
 
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        {/* ── Панель инструментов ── */}
+        <div className="card mb-3 flex flex-wrap items-center gap-2 rounded-2xl p-2">
           <div className="relative min-w-0 flex-1">
-            <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+            <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--ink-subtle)]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Поиск…"
-              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-8 text-sm focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+              placeholder="Поиск по названию, авторам, журналу…"
+              className="field w-full rounded-xl py-2.5 pl-9 pr-8 text-sm text-[color:var(--ink)]"
             />
             {q && (
               <button
                 onClick={() => setQ("")}
                 aria-label="Очистить поиск"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-[color:var(--ink-subtle)] hover:bg-[color:var(--surface-3)] hover:text-[color:var(--ink)]"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
@@ -596,14 +616,14 @@ export function Feed({ topics }: { topics: Topic[] }) {
             onClick={() => setShowFilters((s) => !s)}
             className={`flex items-center gap-1.5 rounded-xl border py-2.5 px-3 text-sm font-medium transition lg:hidden ${
               activeCount
-                ? "border-teal-400 bg-teal-50 text-teal-700 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-300"
-                : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                ? "border-[color:var(--brand-ring)] bg-[color:var(--brand-soft)] text-[color:var(--brand-ink)]"
+                : "btn-ghost"
             }`}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="12" y1="18" x2="12" y2="18" /></svg>
             {activeCount ? `Фильтры (${activeCount})` : "Фильтры"}
           </button>
-          <select value={f.sort} onChange={(e) => set({ sort: e.target.value as Filters["sort"] })} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+          <select value={f.sort} onChange={(e) => set({ sort: e.target.value as Filters["sort"] })} className="field rounded-xl px-3 py-2.5 text-sm text-[color:var(--ink-soft)]">
             <option value="date">Новые</option>
             <option value="fetched">Недавние</option>
             <option value="trust">По доверию</option>
@@ -611,9 +631,9 @@ export function Feed({ topics }: { topics: Topic[] }) {
           <button
             onClick={() => setShowShortcutsModal(true)}
             title="Горячие клавиши (?)"
-            className="hidden items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-600 hover:border-teal-400 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-teal-400 md:inline-flex"
+            className={`${GHOST_BTN} hidden items-center gap-1.5 md:inline-flex`}
           >
-            <kbd className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] dark:bg-slate-700">?</kbd>
+            <kbd className="rounded bg-[color:var(--surface-3)] px-1 py-0.5 font-mono text-[11px]">?</kbd>
             <span>Клавиши</span>
           </button>
           <button
@@ -623,22 +643,22 @@ export function Feed({ topics }: { topics: Topic[] }) {
                 ? "Уведомления о важных статьях включены"
                 : "Включить браузерные уведомления о статьях 1-го уровня"
             }
-            className={`hidden items-center gap-1 rounded-xl border px-2.5 py-2 text-xs font-medium transition md:inline-flex ${
+            className={`hidden items-center gap-1.5 rounded-xl border px-3 py-2.5 text-xs font-medium transition md:inline-flex ${
               notifyPerm === "granted"
-                ? "border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300"
-                : "border-slate-200 bg-white text-slate-600 hover:border-teal-400 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                ? "border-[color:var(--brand-ring)] bg-[color:var(--brand-soft)] text-[color:var(--brand-ink)]"
+                : "btn-ghost"
             }`}
           >
             <span>{notifyPerm === "granted" ? "🔔" : "🔕"}</span>
             <span>{notifyPerm === "granted" ? "Уведомления" : "Оповещения"}</span>
           </button>
-          <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
+          <span className="ml-auto shrink-0 pl-1 text-xs font-medium tabular-nums text-[color:var(--ink-muted)]">
             {loading ? "…" : `${data.total.toLocaleString("ru-RU")} ст.`}
           </span>
         </div>
 
         {loading && data.items.length === 0 && (
-          <div className="stagger space-y-2" aria-hidden>
+          <div className="stagger space-y-2.5" aria-hidden>
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} style={{ "--stagger-i": i } as CSSProperties} className="card rounded-2xl p-4">
                 <div className="flex gap-3.5">
@@ -660,9 +680,12 @@ export function Feed({ topics }: { topics: Topic[] }) {
         )}
 
         {error && !loading && (
-          <div className="card fade-in rounded-2xl border-rose-200 p-8 text-center dark:border-rose-900/50">
-            <p className="text-base font-semibold text-rose-800 dark:text-rose-300">Не удалось загрузить ленту</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{error}. Проверьте соединение и попробуйте ещё раз.</p>
+          <div className="card fade-in rounded-2xl border-rose-200/70 p-8 text-center dark:border-rose-900/50">
+            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-rose-50 dark:bg-rose-950/40">
+              <svg viewBox="0 0 24 24" className="h-6 w-6 text-rose-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 9v4M12 17h.01" /><circle cx="12" cy="12" r="9" /></svg>
+            </div>
+            <p className="text-base font-semibold text-[color:var(--ink)]">Не удалось загрузить ленту</p>
+            <p className="mt-1 text-sm text-[color:var(--ink-muted)]">{error}. Проверьте соединение и попробуйте ещё раз.</p>
             <button
               onClick={() => void load()}
               className="btn-brand mt-4 rounded-xl px-4 py-2 text-sm font-semibold text-white"
@@ -680,8 +703,8 @@ export function Feed({ topics }: { topics: Topic[] }) {
                 <path d="m21 21-4.3-4.3" />
               </svg>
             </div>
-            <p className="text-base font-semibold text-slate-800 dark:text-slate-200">Пока ничего не найдено</p>
-            <p className="mx-auto mt-1 max-w-md text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-base font-semibold text-[color:var(--ink)]">Пока ничего не найдено</p>
+            <p className="mx-auto mt-1 max-w-md text-sm text-[color:var(--ink-muted)]">
               {data.total === 0 && activeCount === 0 && !f.q
                 ? "База пуста. Запустите обновление — приложение опросит PubMed, Europe PMC, ClinicalTrials.gov и medRxiv (обычно 1–3 минуты)."
                 : "Попробуйте ослабить фильтры или изменить запрос."}
@@ -697,26 +720,46 @@ export function Feed({ topics }: { topics: Topic[] }) {
           </div>
         )}
 
-        <ul ref={listRef} className="stagger space-y-2">
+        <ul ref={listRef} className="stagger space-y-2.5">
           {data.items.map((a, idx) => {
             const isFocused = idx === focusedIdx;
             const conclusion = extractConclusion(a.abstract);
             return (
               <li
                 key={a.id}
-                className={`group cursor-pointer rounded-2xl border bg-white transition active:scale-[0.99] hover:border-teal-300 hover:shadow-sm dark:bg-slate-900 dark:hover:border-teal-500 ${
-                  isFocused ? "ring-2 ring-teal-500 border-teal-500 dark:border-teal-500" : ""
-                } ${a.isRead ? "border-slate-200 dark:border-slate-800" : "border-l-4 border-slate-200 border-l-teal-500 dark:border-slate-800 dark:border-l-teal-500"}`}
+                tabIndex={0}
+                aria-label={a.title}
+                className={`card card-lift card-sheen group relative cursor-pointer overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand-ring)] ${
+                  isFocused ? "ring-2 ring-[color:var(--brand-ring)]" : ""
+                }`}
                 onClick={() => {
                   setFocusedIdx(idx);
                   setSelected(a);
                 }}
+                onKeyDown={(e) => {
+                  // Enter/Space открывают статью прямо из сфокусированного элемента списка.
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setFocusedIdx(idx);
+                    setSelected(a);
+                  }
+                }}
               >
+                {/* Градиентный акцент для непрочитанных */}
+                {!a.isRead && (
+                  <span
+                    aria-hidden
+                    className="absolute inset-y-0 left-0 w-1"
+                    style={{ background: "linear-gradient(180deg, var(--brand-a), var(--brand-b))" }}
+                  />
+                )}
+
                 {/* Desktop layout */}
                 <div className="hidden gap-3.5 p-4 sm:flex">
                   <TrustScore score={a.trustScore} />
                   <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                       <DesignBadge design={a.studyDesign} />
                       <LevelBadge level={a.evidenceLevel} />
                       <TierBadge tier={a.journalTier} />
@@ -725,7 +768,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                       {a.isRetracted && <span title="Статья отозвана" className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">ОТОЗВАНА</span>}
                       <span className="ml-auto flex items-center gap-1">{a.sourceKeys.map((s) => <SourceBadge key={s} k={s} />)}</span>
                     </div>
-                    <h3 className={`text-[15px] leading-snug ${a.isRead ? "font-medium text-slate-700 dark:text-slate-300" : "font-semibold text-slate-900 dark:text-slate-100"} group-hover:text-teal-800 dark:group-hover:text-teal-400`}>
+                    <h3 className={`text-[15px] leading-snug transition-colors ${a.isRead ? "font-medium text-[color:var(--ink-soft)]" : "font-semibold text-[color:var(--ink)]"} group-hover:text-[color:var(--brand-ink)]`}>
                       {a.title}
                     </h3>
                     {conclusion ? (
@@ -736,16 +779,16 @@ export function Feed({ topics }: { topics: Topic[] }) {
                         </p>
                       </div>
                     ) : (
-                      <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-slate-600 dark:text-slate-400">{a.abstract || "Аннотация недоступна"}</p>
+                      <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-[color:var(--ink-muted)]">{a.abstract || "Аннотация недоступна"}</p>
                     )}
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-                      <span className="font-medium text-slate-700 dark:text-slate-300">{a.journal || "—"}</span>
+                    <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--ink-muted)]">
+                      <span className="font-medium text-[color:var(--ink-soft)]">{a.journal || "—"}</span>
                       <span>{formatDate(a.publishedAt)}</span>
                       {a.authors.length > 0 && <span className="truncate">{a.authors.slice(0, 3).join(", ")}{a.authors.length > 3 ? " и др." : ""}</span>}
                       {a.sampleSize && <span>n≈{a.sampleSize}</span>}
                       <span className="ml-auto flex gap-1">
-                        <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isBookmarked: !a.isBookmarked }); }} className={`rounded-md px-1.5 py-0.5 ${a.isBookmarked ? "text-amber-600 dark:text-amber-400" : "text-slate-400 hover:text-amber-600 dark:hover:text-amber-400"}`} title="Избранное (b)">{a.isBookmarked ? "★" : "☆"}</button>
-                        <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isRead: !a.isRead }); }} className="rounded-md px-1.5 py-0.5 text-slate-400 hover:text-teal-700 dark:hover:text-teal-400" title={a.isRead ? "Непрочитанным (r)" : "Прочитано (r)"}>{a.isRead ? "↺" : "✓"}</button>
+                        <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isBookmarked: !a.isBookmarked }); }} className={`rounded-md px-1.5 py-0.5 transition ${a.isBookmarked ? "text-amber-600 dark:text-amber-400" : "text-[color:var(--ink-subtle)] hover:text-amber-600 dark:hover:text-amber-400"}`} title="Избранное (b)">{a.isBookmarked ? "★" : "☆"}</button>
+                        <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isRead: !a.isRead }); }} className="rounded-md px-1.5 py-0.5 text-[color:var(--ink-subtle)] transition hover:text-[color:var(--brand-ink)]" title={a.isRead ? "Непрочитанным (r)" : "Прочитано (r)"}>{a.isRead ? "↺" : "✓"}</button>
                       </span>
                     </div>
                   </div>
@@ -764,13 +807,13 @@ export function Feed({ topics }: { topics: Topic[] }) {
                     {/* Large tap targets for mobile quick actions */}
                     <button
                       onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isBookmarked: !a.isBookmarked }); }}
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg ${a.isBookmarked ? "text-amber-500" : "text-slate-300"}`}
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg transition ${a.isBookmarked ? "text-amber-500" : "text-[color:var(--ink-subtle)]"}`}
                       aria-label="Избранное"
                     >
                       {a.isBookmarked ? "★" : "☆"}
                     </button>
                   </div>
-                  <h3 className={`text-sm leading-snug ${a.isRead ? "font-medium text-slate-600 dark:text-slate-400" : "font-semibold text-slate-900 dark:text-slate-100"}`}>
+                  <h3 className={`text-sm leading-snug ${a.isRead ? "font-medium text-[color:var(--ink-soft)]" : "font-semibold text-[color:var(--ink)]"}`}>
                     {a.title}
                   </h3>
                   {conclusion && (
@@ -781,10 +824,10 @@ export function Feed({ topics }: { topics: Topic[] }) {
                       </p>
                     </div>
                   )}
-                  <div className="mt-1.5 flex items-center gap-2 text-[12px] text-slate-500 dark:text-slate-400">
-                    <span className="min-w-0 truncate font-medium text-slate-600 dark:text-slate-300">{a.journal || "—"}</span>
+                  <div className="mt-1.5 flex items-center gap-2 text-[12px] text-[color:var(--ink-muted)]">
+                    <span className="min-w-0 truncate font-medium text-[color:var(--ink-soft)]">{a.journal || "—"}</span>
                     <span className="shrink-0">{formatDate(a.publishedAt)}</span>
-                    {a.isRead && <span className="ml-auto shrink-0 text-teal-600 dark:text-teal-400">✓</span>}
+                    {a.isRead && <span className="ml-auto shrink-0 text-[color:var(--brand-ink)]">✓</span>}
                   </div>
                 </div>
               </li>
@@ -793,19 +836,19 @@ export function Feed({ topics }: { topics: Topic[] }) {
         </ul>
 
         {totalPages > 1 && (
-          <div className="mt-4 flex items-center justify-center gap-2">
+          <div className="mt-5 flex items-center justify-center gap-2">
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
-              className="flex h-11 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              className="btn-ghost flex h-11 items-center gap-1.5 rounded-xl px-4 text-sm font-medium disabled:opacity-40"
             >
               ← Назад
             </button>
-            <span className="min-w-[80px] text-center text-sm text-slate-600 dark:text-slate-400">{page} / {totalPages}</span>
+            <span className="min-w-[80px] text-center text-sm font-medium tabular-nums text-[color:var(--ink-muted)]">{page} / {totalPages}</span>
             <button
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
-              className="flex h-11 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              className="btn-ghost flex h-11 items-center gap-1.5 rounded-xl px-4 text-sm font-medium disabled:opacity-40"
             >
               Вперёд →
             </button>
@@ -815,40 +858,40 @@ export function Feed({ topics }: { topics: Topic[] }) {
 
       {/* Модальное окно горячих клавиш */}
       {showShortcutsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]" onClick={() => setShowShortcutsModal(false)}>
-          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]" onClick={() => setShowShortcutsModal(false)}>
+          <div ref={shortcutsRef} role="dialog" aria-modal="true" aria-label="Горячие клавиши" tabIndex={-1} className="card overlay-enter w-full max-w-sm rounded-2xl p-5 shadow-[var(--shadow-modal)] outline-none" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100">Горячие клавиши</h3>
-              <button onClick={() => setShowShortcutsModal(false)} className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">✕</button>
+              <h3 className="text-base font-semibold text-[color:var(--ink)]">Горячие клавиши</h3>
+              <button onClick={() => setShowShortcutsModal(false)} className="rounded-lg p-1.5 text-[color:var(--ink-subtle)] hover:bg-[color:var(--surface-3)] hover:text-[color:var(--ink)]">✕</button>
             </div>
             <ul className="space-y-2 text-sm">
               <li className="flex items-center justify-between">
-                <span className="text-slate-600 dark:text-slate-300">Следующая статья</span>
-                <kbd className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs dark:bg-slate-800 dark:text-slate-200">j / ↓</kbd>
+                <span className="text-[color:var(--ink-soft)]">Следующая статья</span>
+                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">j / ↓</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-slate-600 dark:text-slate-300">Предыдущая статья</span>
-                <kbd className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs dark:bg-slate-800 dark:text-slate-200">k / ↑</kbd>
+                <span className="text-[color:var(--ink-soft)]">Предыдущая статья</span>
+                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">k / ↑</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-slate-600 dark:text-slate-300">Открыть подробности</span>
-                <kbd className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs dark:bg-slate-800 dark:text-slate-200">Enter</kbd>
+                <span className="text-[color:var(--ink-soft)]">Открыть подробности</span>
+                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">Enter</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-slate-600 dark:text-slate-300">В избранное / из избранного</span>
-                <kbd className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs dark:bg-slate-800 dark:text-slate-200">b</kbd>
+                <span className="text-[color:var(--ink-soft)]">В избранное / из избранного</span>
+                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">b</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-slate-600 dark:text-slate-300">Прочитано / непрочитано</span>
-                <kbd className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs dark:bg-slate-800 dark:text-slate-200">r</kbd>
+                <span className="text-[color:var(--ink-soft)]">Прочитано / непрочитано</span>
+                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">r</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-slate-600 dark:text-slate-300">Закрыть / сбросить фокус</span>
-                <kbd className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs dark:bg-slate-800 dark:text-slate-200">Esc</kbd>
+                <span className="text-[color:var(--ink-soft)]">Закрыть / сбросить фокус</span>
+                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">Esc</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-slate-600 dark:text-slate-300">Справка по клавишам</span>
-                <kbd className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs dark:bg-slate-800 dark:text-slate-200">?</kbd>
+                <span className="text-[color:var(--ink-soft)]">Справка по клавишам</span>
+                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">?</kbd>
               </li>
             </ul>
           </div>

@@ -1,10 +1,26 @@
 import { NextRequest } from "next/server";
 import { aiConfigured, warmAbstracts } from "@/lib/ai";
+import { checkApiAuth, getClientIp } from "@/lib/security";
+import { checkRateLimitShared } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
+  const auth = checkApiAuth(req);
+  if (!auth.ok) {
+    return Response.json({ ok: false, error: auth.error }, { status: auth.status ?? 401 });
+  }
+
+  const ip = getClientIp(req);
+  const rl = await checkRateLimitShared(`ai-warm:${ip}`, 20, 60_000);
+  if (!rl.allowed) {
+    return Response.json(
+      { ok: false, error: "Слишком много запросов прогрева. Подождите немного." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } },
+    );
+  }
+
   if (!aiConfigured()) {
     return Response.json({ ok: false, error: "AI не настроен: задайте AI_API_KEY" }, { status: 400 });
   }

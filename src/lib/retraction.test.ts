@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pickPmidsToRecheck, pickNewlyRetracted } from "@/lib/retraction";
+import { pickPmidsToRecheck, pickNewlyRetracted, nextCursor } from "@/lib/retraction";
 
 describe("pickPmidsToRecheck", () => {
   it("skips rows without pmid and already-retracted rows", () => {
@@ -43,5 +43,15 @@ describe("pickNewlyRetracted", () => {
       ["222", false],
     ]);
     expect(pickNewlyRetracted(["111", "222"], map)).toEqual([]);
+  });
+});
+
+describe("nextCursor (вращающееся сканирование)", () => {
+  it("advances to the last id of a full batch", () => {
+    expect(nextCursor(5000, 5000, 5000)).toBe(5000);
+  });
+
+  it("resets to 0 when the batch is partial (end of table reached)", () => {
+    expect(nextCursor(999, 100, 5000)).toBe(0);
   });
 });

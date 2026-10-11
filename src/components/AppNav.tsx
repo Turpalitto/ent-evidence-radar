@@ -72,19 +72,20 @@ function ThemeToggle({ compact = false }: { compact?: boolean }) {
     try { localStorage.setItem("ent-radar-theme", next ? "dark" : "light"); } catch {}
   }, []);
 
+  const icon = dark ? (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
+  ) : (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
+  );
+
   if (compact) {
     return (
       <button
         onClick={toggle}
-        className="flex flex-1 flex-col items-center gap-0.5 px-1 py-2 text-[10px] font-medium text-slate-500 transition dark:text-slate-400"
+        className="nav-item flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[10px] font-medium"
         aria-label="Переключить тему"
       >
-        <span className="rounded-lg p-1.5">
-          {dark
-            ? <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
-            : <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
-          }
-        </span>
+        <span className="rounded-lg p-1.5">{icon}</span>
         <span>{dark ? "Светлая" : "Тёмная"}</span>
       </button>
     );
@@ -93,14 +94,11 @@ function ThemeToggle({ compact = false }: { compact?: boolean }) {
   return (
     <button
       onClick={toggle}
-      className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+      className="btn-ghost rounded-xl p-2"
       title={dark ? "Светлая тема" : "Тёмная тема"}
       aria-label="Переключить тему"
     >
-      {dark
-        ? <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" /></svg>
-        : <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
-      }
+      {icon}
     </button>
   );
 }
@@ -111,32 +109,33 @@ export function AppNav() {
     <>
       {/* ── Верхний хедер ── */}
       <header className="glass-header sticky top-0 z-40">
-        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-2.5 sm:px-6">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-teal-500 to-sky-600 text-white shadow-md shadow-teal-600/25">
-              <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-3 sm:px-6">
+          <Link href="/" className="group flex items-center gap-2.5">
+            <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-teal-500 via-teal-600 to-sky-600 text-white shadow-lg shadow-teal-600/25 ring-1 ring-white/25 transition duration-300 group-hover:scale-105 group-hover:shadow-teal-600/40">
+              <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" />
                 <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
               </svg>
             </span>
-            <span className="text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-              ENT Evidence Radar
+            <span className="flex flex-col leading-none">
+              <span className="text-[15px] font-bold tracking-tight text-slate-900 dark:text-slate-50">
+                <span className="brand-gradient-text">ENT</span> Evidence Radar
+              </span>
+              <span className="mt-1 text-[9.5px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                Evidence Intelligence
+              </span>
             </span>
           </Link>
 
           {/* Desktop nav */}
-          <nav className="ml-4 hidden items-center gap-0.5 md:flex">
+          <nav className="nav-group ml-4 hidden items-center gap-1 rounded-full p-1 md:flex">
             {desktopLinks.map((l) => {
               const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
               return (
                 <Link
                   key={l.href}
                   href={l.href}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                    active
-                      ? "bg-gradient-to-b from-teal-500 to-teal-600 text-white shadow-sm shadow-teal-600/30"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                  }`}
+                  className={`rounded-full px-3.5 py-1.5 text-sm font-medium ${active ? "nav-item-active" : "nav-item"}`}
                 >
                   {l.label}
                 </Link>
@@ -144,7 +143,7 @@ export function AppNav() {
             })}
           </nav>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex items-center gap-2">
             {/* ThemeToggle только на десктопе — на мобиле он в нижнем баре */}
             <span className="hidden md:block"><ThemeToggle /></span>
             <RefreshButton />
@@ -153,19 +152,21 @@ export function AppNav() {
       </header>
 
       {/* ── Нижняя навигация (mobile only) ── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur pb-safe dark:border-slate-700 dark:bg-slate-900/95 md:hidden">
-        <div className="flex">
+      <nav className="mobile-nav fixed bottom-0 left-0 right-0 z-40 pb-safe md:hidden">
+        <div className="flex px-1">
           {navLinks.map((l) => {
             const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
             return (
               <Link
                 key={l.href}
                 href={l.href}
-                className={`flex flex-1 flex-col items-center gap-0.5 px-1 py-2 text-[10px] font-medium transition ${
-                  active ? "text-teal-600 dark:text-teal-400" : "text-slate-500 dark:text-slate-400"
+                className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[10px] font-medium transition ${
+                  active
+                    ? "text-teal-600 dark:text-teal-400"
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                 }`}
               >
-                <span className={`rounded-lg p-1.5 transition ${active ? "bg-teal-50 dark:bg-teal-950/40" : ""}`}>
+                <span className={`rounded-lg p-1.5 transition ${active ? "nav-icon-active" : ""}`}>
                   {l.icon}
                 </span>
                 <span>{l.label}</span>

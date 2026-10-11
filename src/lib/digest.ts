@@ -110,6 +110,26 @@ function link(a: DigestArticle): string {
   return a.url;
 }
 
+/**
+ * Экранирование для вставки в HTML письма.
+ * Заголовки/журналы приходят из внешних источников; stripTags снимает теги ДО декодирования
+ * сущностей, поэтому двойное кодирование (`&amp;lt;img …&amp;gt;`) даёт в БД сырой тег.
+ * Без экранирования это stored XSS в HTML-дайджесте.
+ */
+export function escapeHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Ссылка для href: только http(s), иначе — заглушка (защита от javascript:/data:). */
+function safeHref(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : "#";
+}
+
 export function renderDigest(data: DigestData): { html: string; text: string } {
   const top = data.highTrust.length
     ? data.highTrust.map((a) => `• ${a.title} — индекс доверия ${a.trustScore} (${link(a)})`).join("\n")
@@ -142,7 +162,7 @@ export function renderDigest(data: DigestData): { html: string; text: string } {
   const rowsHtml = data.articles
     .slice(0, 15)
     .map(
-      (a) => `<li>${a.trustScore}| ${a.isPreprint ? "Препринт " : ""}${a.isRetracted ? "Отозвана " : ""}<a href="${link(a)}">${a.title}</a> — ${a.journal || "—"} — ${formatDate(a.publishedAt)}</li>`,
+      (a) => `<li>${a.trustScore}| ${a.isPreprint ? "Препринт " : ""}${a.isRetracted ? "Отозвана " : ""}<a href="${escapeHtml(safeHref(link(a)))}">${escapeHtml(a.title)}</a> — ${escapeHtml(a.journal || "—")} — ${formatDate(a.publishedAt)}</li>`,
     )
     .join("");
 
@@ -150,12 +170,12 @@ export function renderDigest(data: DigestData): { html: string; text: string } {
 <h1>ENT Evidence Radar — дайджест</h1>
 <p class="muted">За последние <b>${data.days}</b> дн. · ${formatDate(new Date(data.generatedAt))}</p>
 <p>Всего новых: <b>${data.total}</b></p>
-<p class="muted">По дизайну: ${countLabel(data.byDesign)}</p>
-<p class="muted">По источнику: ${countLabel(data.bySource)}</p>
-<p class="muted">По подспециализации: ${countLabel(data.bySubspecialty)}</p>
+<p class="muted">По дизайну: ${escapeHtml(countLabel(data.byDesign))}</p>
+<p class="muted">По источнику: ${escapeHtml(countLabel(data.bySource))}</p>
+<p class="muted">По подспециализации: ${escapeHtml(countLabel(data.bySubspecialty))}</p>
 <p class="muted">Препринтов: ${data.preprints}</p>
 <h2>Топ по индексу доверия</h2>
-<ul>${data.highTrust.map((a) => `<li><a href="${link(a)}">${a.title}</a> — ${a.trustScore}</li>`).join("") || "<li>—</li>"}</ul>
+<ul>${data.highTrust.map((a) => `<li><a href="${escapeHtml(safeHref(link(a)))}">${escapeHtml(a.title)}</a> — ${a.trustScore}</li>`).join("") || "<li>—</li>"}</ul>
 <h2>Новые статьи</h2>
 <ul>${rowsHtml || "<li>—</li>"}</ul>
 <p class="muted">ENT Evidence Radar · автоматический мониторинг доказательной оториноларингологии</p>

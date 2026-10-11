@@ -38,11 +38,18 @@ npm run dev
 |---|---|
 | `DATABASE_URL` | Опционально. Если задан — используется внешний PostgreSQL (например `postgres://user:pass@host:5432/db`). Если пуст — встроенный PGlite. |
 | `NCBI_API_KEY` | Опционально. Поднимает лимит NCBI E-utilities с 3 до 10 запросов/с. |
+| `NCBI_EMAIL` | Опционально. Контактный e-mail для запросов к NCBI (требование их политики). Если не задан — служебный адрес по умолчанию. |
 | `AI_API_KEY` | Опционально. Ключ OpenAI-совместимого провайдера (по умолчанию OpenRouter) для ИИ-перевода и резюме аннотаций. Без ключа ИИ-функции просто скрыты. |
 | `AI_BASE_URL` | Опционально. Базовый URL OpenAI-совместимого API. Дефолт: `https://openrouter.ai/api/v1`. |
 | `AI_MODEL` | Опционально. Модель(и) через запятую — перебираются по кругу, при сбое автоматический fallback на следующую. |
 | `DEEPSEEK_API_KEY` | Опциональная альтернатива `AI_API_KEY` для DeepSeek напрямую (`AI_BASE_URL=https://api.deepseek.com`, `AI_MODEL=deepseek-chat`). |
-| `API_SECRET` | Опционально. Если задан — мутирующие API-эндпоинты (обновление данных, настройки, заметки/удаление статей, AI, дайджест) требуют Bearer-токен / `X-API-Key` либо same-origin браузерный запрос. Для локальной разработки можно не задавать. |
+| `API_SECRET` | Опционально. Если задан — мутирующие API-эндпоинты (обновление данных, настройки, темы, источники, заметки/удаление статей, AI, дайджест) и выгрузки (`/api/backup`, `/api/export`) требуют Bearer-токен / `X-API-Key` либо same-origin браузерный запрос. Для локальной разработки можно не задавать. |
+| `NEXT_PUBLIC_SITE_URL` | Опционально. Публичный адрес сайта — используется для `robots.txt`, `sitemap.xml` и `metadataBase` (Open Graph). Дефолт: `http://localhost:3000`. |
+| `TRUST_PROXY` | Опционально. `1`/`true` — приложение стоит за доверенным прокси (nginx/Vercel/traefik). Только тогда rate-limit берёт IP из `X-Forwarded-For`. Без флага заголовкам прокси не доверяем (лимит нельзя обойти подделкой заголовка). |
+| `TRUSTED_PROXIES` | Опционально. Список IP/CIDR прокси-хостов через запятую (например `10.0.0.0/8,172.16.0.0/12`) — нужен, если хопов несколько, чтобы прокси не был принят за клиента. |
+| `CLIENT_IP_HEADER` | Опционально. Заголовок, который прокси гарантированно перезаписывает (например `cf-connecting-ip`). Приоритетнее `X-Forwarded-For`. |
+| `DISABLE_CSP` | Опционально. `1`/`true` — отключает Content-Security-Policy (если CSP задаёт внешний прокси/CDN). |
+| `BACKUP_DIR` | Опционально. Каталог для файла резервной копии. Дефолт: `./backups`. В Docker должен лежать внутри смонтированного volume. |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | Опционально. Настройки SMTP для email-дайджеста (`POST /api/digest`). Без них отправка работает в dry-run. |
 | `DIGEST_RECIPIENTS` | Опционально. Адреса получателей дайджеста через запятую. |
 
@@ -86,7 +93,7 @@ src/
 docker compose up -d --build
 ```
 
-Приложение на http://localhost:3000. Данные (встроенный PGlite) — в `./docker-data`. Конфигурация через переменные окружения в `docker-compose.yml` (ключи AI, `API_SECRET`, `NCBI_API_KEY`); внешний PostgreSQL — раскомментируйте сервис `db` и `DATABASE_URL`.
+Приложение на http://localhost:3000. Данные (встроенный PGlite) — в `./docker-data`, файл резервной копии — в `./backups` (оба смонтированы как volume). Конфигурация через переменные окружения в `docker-compose.yml` (ключи AI, `API_SECRET`, `NCBI_API_KEY`); внешний PostgreSQL — раскомментируйте сервис `db` и `DATABASE_URL`.
 
 Образ собирается в два этапа на базе `node:22-alpine`: standalone-сборка Next.js, непривилегированный пользователь, healthcheck по `/api/health`, volume для данных PGlite.
 
@@ -99,10 +106,15 @@ docker compose up -d --build
 `instrumentation` на serverless не жить. Используйте внешний расписатель — cron, GitHub Actions (`/.github/workflows/refresh.yml`) — который вызывает готовый эндпоинт:
 
 ```bash
-curl -X POST https://<ваш-домен>/api/refresh
+curl -X POST https://<ваш-домен>/api/refresh \
+  -H "Authorization: Bearer $API_SECRET"
 ```
 
 Состояние и последние ошибки источников смотрите в `GET /api/status`.
+
+> Если на сервере задан `API_SECRET`, внешний расписатель обязан передавать его в заголовке
+> `Authorization: Bearer …` (или `X-API-Key`) — иначе эндпоинт вернёт 401. В репозиторных
+> GitHub Actions (`refresh.yml`, `digest.yml`) для этого нужны секреты `APP_URL` **и** `API_SECRET`.
 
 ## Надёжность в продакшене
 
@@ -110,7 +122,7 @@ curl -X POST https://<ваш-домен>/api/refresh
 2. **API-ключ NCBI (`NCBI_API_KEY`)** поднимает лимит E-utilities с 3 до 10 запросов/с — это ускоряет опрос PubMed и снижает шанс HTTP 429.
 3. **Кросс-инстансная блокировка запуска.** Автообновление защищено не только внутрипроцессным мутексом, но и DB-локом (строка `lock_refresh` в `settings`): даже если запущено несколько инстансов или параллельно приходит внешний cron, рефреш выполнит только один из них — остальные получат `skipped`. Если процесс-«держатель» аварийно завершится, срок аренды (6 мин) истекает, и запуск продолжается автоматически.
 4. **Изоляция ошибок источников.** Сбой одиночного источника не прерывает запуск: ошибка пишется в `source.lastStatus`/`lastError`, запуск получает статус `partial`, остальные источники продолжают сбор. Диагностика — `GET /api/status`.
-5. **Serverless без своего cron.** `instrumentation.ts` живёт только в долгоживущем процессе. Если приложение хостится на serverless — внешний расписатель (GitHub Actions `refresh.yml`) по cron вызывает `POST /api/refresh` (нужен секрет `APP_URL`).
+5. **Serverless без своего cron.** `instrumentation.ts` живёт только в долгоживущем процессе. Если приложение хостится на serverless — внешний расписатель (GitHub Actions `refresh.yml`) по cron вызывает `POST /api/refresh` (нужны секреты `APP_URL` и, если задан `API_SECRET`, — `API_SECRET`).
 
 ## Тесты и CI
 

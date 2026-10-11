@@ -18,8 +18,16 @@ services:
       # --- Защита мутаций API (рекомендуется для публичного хостинга) ---
       # API_SECRET: ${API_SECRET}
       # NCBI_API_KEY: ${NCBI_API_KEY}
+      # NCBI_EMAIL: ${NCBI_EMAIL}
+      # --- IP клиента за обратным прокси (иначе rate-limit не различает клиентов) ---
+      # TRUST_PROXY: "1"
+      # TRUSTED_PROXIES: 10.0.0.0/8
+      # --- Каталог резервных копий (должен лежать в смонтированном volume) ---
+      # BACKUP_DIR: /app/backups
     volumes:
       - ./docker-data:/app/.pglite
+      # Персистентный каталог для бэкапов (см. BACKUP_DIR) — иначе файл эфемерный.
+      - ./backups:/app/backups
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]

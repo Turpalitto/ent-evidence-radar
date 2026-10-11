@@ -93,3 +93,22 @@ describe("formatDate", () => {
     expect(formatDate(new Date(2026, 7, 1))).toContain("августа");
   });
 });
+
+describe("digest renderDigest — экранирование HTML", () => {
+  it("экранирует разметку в заголовке и журнале", () => {
+    const { html } = renderDigest(
+      summarize([row({ title: "<img src=x onerror=alert(1)>", journal: "A & B <i>" })], 7),
+    );
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img src=x");
+    expect(html).toContain("A &amp; B &lt;i&gt;");
+  });
+
+  it("не пропускает javascript:-ссылку в href", () => {
+    const { html } = renderDigest(
+      summarize([row({ doi: null, pmid: null, url: "javascript:alert(1)" })], 7),
+    );
+    expect(html).not.toContain("href=\"javascript:");
+    expect(html).toContain('href="#"');
+  });
+});
