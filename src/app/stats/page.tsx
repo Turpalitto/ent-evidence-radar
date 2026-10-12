@@ -1,11 +1,20 @@
 import type { CSSProperties } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ensureSeeded } from "@/lib/refresh";
 import { getStats } from "@/lib/stats";
 import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import type { StudyDesign } from "@/db/schema";
+import { pageMetadata } from "@/lib/metadata";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Аналитика базы доказательств",
+  description:
+    "Структура накопленных публикаций по дизайну исследования, уровню доказательности, субспециальностям, источникам и распределению индекса доверия.",
+  path: "/stats",
+});
 
 function Bars({ rows, labelOf, color }: { rows: { key: string | number; count: number }[]; labelOf: (k: string | number) => string; color: string }) {
   const max = Math.max(1, ...rows.map((r) => r.count));

@@ -127,6 +127,28 @@ body {
   outline-offset: 2px;
 }
 
+/* Skip-link: видим только при фокусе с клавиатуры */
+.skip-link {
+  position: fixed;
+  left: 0.75rem;
+  top: 0.75rem;
+  z-index: 200;
+  transform: translateY(-160%);
+  border-radius: 0.75rem;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-1);
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand-ink);
+  box-shadow: var(--inset-highlight), var(--shadow-lift);
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: none;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
@@ -465,7 +487,8 @@ button, a, [role="button"] { touch-action: manipulation; }
 
 /* ═══ Доступность: уважаем reduced motion ═══ */
 @media (prefers-reduced-motion: reduce) {
-  .rise-in, .fade-in, .stagger > *, .sheet-enter, .drawer-enter, .overlay-enter, .aura, .card-sheen::after {
+  .rise-in, .fade-in, .stagger > *, .sheet-enter, .drawer-enter, .overlay-enter, .aura, .card-sheen::after,
+  .skeleton, .pulse-ring, .ptr-spinning {
     animation: none !important;
   }
   .card-lift, .btn-brand, .card-sheen::after {

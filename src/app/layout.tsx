@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AppNav } from "@/components/AppNav";
+import { OG_IMAGE } from "@/lib/metadata";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -37,11 +38,13 @@ export const metadata: Metadata = {
     type: "website",
     locale: "ru_RU",
     siteName: "ENT Evidence Radar",
+    images: [OG_IMAGE],
   },
   twitter: {
     card: "summary_large_image",
     title: "ENT Evidence Radar",
     description: "Доказательная оториноларингология — автоматически, из первоисточников.",
+    images: [OG_IMAGE],
   },
   robots: { index: true, follow: true },
   formatDetection: { telephone: false },
@@ -57,8 +60,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('ent-radar-theme');if(t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')}catch(e){}})()` }} />
       </head>
       <body className="app-bg min-h-screen antialiased">
+        <a href="#main" className="skip-link">
+          Перейти к содержимому
+        </a>
         <AppNav />
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-6 pb-24 sm:px-6 md:pb-10">{children}</div>
+        <div id="main" tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-6 pb-24 outline-none sm:px-6 md:pb-10">
+          {children}
+        </div>
         <footer className="mx-auto max-w-[1600px] px-6 pb-24 pt-2 md:pb-10">
           <hr className="divider mb-4" />
           <div className="flex flex-col gap-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 sm:flex-row sm:items-start sm:justify-between">

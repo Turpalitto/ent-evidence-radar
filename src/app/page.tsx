@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import type { Metadata } from "next";
 import { asc, desc, sql } from "drizzle-orm";
 import Link from "next/link";
 import { db } from "@/db";
@@ -6,8 +7,17 @@ import { articles, fetchRuns, topics } from "@/db/schema";
 import { ensureSeeded, getSettings } from "@/lib/refresh";
 import { Feed } from "@/components/Feed";
 import { formatDateTime } from "@/components/Badges";
+import { pageMetadata } from "@/lib/metadata";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Лента доказательных публикаций",
+  absolute: "ENT Evidence Radar — мониторинг доказательной оториноларингологии",
+  description:
+    "Лента свежих систематических обзоров, РКИ и клинических руководств по оториноларингологии из PubMed, Cochrane, Europe PMC, ClinicalTrials.gov и medRxiv — с оценкой дизайна, уровня доказательности и индекса доверия.",
+  path: "/",
+});
 
 const RUN_STATUS: Record<string, { label: string; dot: string; text: string }> = {
   success: { label: "успешно", dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-400" },

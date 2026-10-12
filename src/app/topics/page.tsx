@@ -95,7 +95,7 @@ export default function TopicsPage() {
   const enabledCount = topics.filter((t) => t.enabled).length;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <main className="mx-auto max-w-5xl space-y-6">
       <div className="rise-in">
         <p className="eyebrow">Мониторинг</p>
         <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-[color:var(--ink)]">Темы мониторинга</h1>
@@ -199,6 +199,6 @@ export default function TopicsPage() {
           </ul>
         )}
       </div>
-    </div>
+    </main>
   );
 }

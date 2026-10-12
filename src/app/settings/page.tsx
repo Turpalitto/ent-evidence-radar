@@ -1,6 +1,14 @@
+import type { Metadata } from "next";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { pageMetadata } from "@/lib/metadata";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Настройки",
+  description: "Расписание автообновления, источники, темы мониторинга и прозрачная формула индекса доверия.",
+  path: "/settings",
+});
 
 export default function SettingsPage() {
   return (

@@ -4,6 +4,10 @@ const nextConfig: NextConfig = {
   // Самодостаточная сборка .next/standalone для Docker (см. Dockerfile). Обычному `next start` не мешает.
   output: "standalone",
   serverExternalPackages: ["@electric-sql/pglite", "pg"],
+  // Разрешаем обращаться к dev-серверу и по localhost, и по 127.0.0.1: Next 16 иначе
+  // блокирует cross-origin dev-ресурсы (HMR), и клиент не гидрируется, если хост
+  // в адресной строке не совпадает с тем, на котором слушает сервер.
+  allowedDevOrigins: ["localhost", "127.0.0.1"],
   async headers() {
     return [
       {

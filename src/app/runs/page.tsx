@@ -1,12 +1,20 @@
 import type { CSSProperties } from "react";
+import type { Metadata } from "next";
 import { desc } from "drizzle-orm";
 import { db } from "@/db";
 import { fetchRuns, sources } from "@/db/schema";
 import { SOURCE_LABELS } from "@/lib/evidence/taxonomy";
 import { formatDateTime } from "@/components/Badges";
 import { ensureSeeded } from "@/lib/refresh";
+import { pageMetadata } from "@/lib/metadata";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Журнал запусков",
+  description: "История ручных и плановых обновлений: сколько найдено, сколько добавлено, длительность и ошибки по каждому источнику.",
+  path: "/runs",
+});
 
 const statusLabel: Record<string, { text: string; cls: string }> = {
   success: { text: "Успешно", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" },
