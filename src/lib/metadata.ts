@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { FEED_TYPES } from "@/lib/site";
 
 /** Брендовая карточка для превью ссылок — статический PNG 1200×630 в /public. */
 export const OG_IMAGE = {
@@ -20,7 +21,7 @@ export function pageMetadata(opts: { title: string; description: string; path: s
   return {
     title: opts.absolute ? { absolute: opts.absolute } : opts.title,
     description: opts.description,
-    alternates: { canonical: opts.path },
+    alternates: { canonical: opts.path, types: FEED_TYPES },
     openGraph: {
       title: ogTitle,
       description: opts.description,

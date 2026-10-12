@@ -128,13 +128,14 @@ export function AppNav() {
           </Link>
 
           {/* Desktop nav */}
-          <nav className="nav-group ml-4 hidden items-center gap-1 rounded-full p-1 md:flex">
+          <nav aria-label="Основная навигация" className="nav-group ml-4 hidden items-center gap-1 rounded-full p-1 md:flex">
             {desktopLinks.map((l) => {
               const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
               return (
                 <Link
                   key={l.href}
                   href={l.href}
+                  aria-current={active ? "page" : undefined}
                   className={`rounded-full px-3.5 py-1.5 text-sm font-medium ${active ? "nav-item-active" : "nav-item"}`}
                 >
                   {l.label}
@@ -152,7 +153,7 @@ export function AppNav() {
       </header>
 
       {/* ── Нижняя навигация (mobile only) ── */}
-      <nav className="mobile-nav fixed bottom-0 left-0 right-0 z-40 pb-safe md:hidden">
+      <nav aria-label="Мобильная навигация" className="mobile-nav fixed bottom-0 left-0 right-0 z-40 pb-safe md:hidden">
         <div className="flex px-1">
           {navLinks.map((l) => {
             const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
@@ -160,6 +161,7 @@ export function AppNav() {
               <Link
                 key={l.href}
                 href={l.href}
+                aria-current={active ? "page" : undefined}
                 className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[10px] font-medium transition ${
                   active
                     ? "text-teal-600 dark:text-teal-400"
