@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { buildRetractedTerm, parseEsearchIdList, parsePubmedArticlesXml, parsePubmedRetractionsXml, pubmedRetractedSet, EDITORIAL_NOTICE_RE } from "@/lib/sources/pubmed";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { buildRetractedTerm, fetchPubmed, parseEsearchIdList, parsePubmedArticlesXml, parsePubmedRetractionsXml, pubmedRetractedSet, pubmedRetractionMap, pubmedSearch, EDITORIAL_NOTICE_RE } from "@/lib/sources/pubmed";
 
 /**
  * Фрагмент реального формата efetch (PubmedArticleSet) со всеми «неудобными» местами:
@@ -192,6 +192,82 @@ describe("лёгкая перепроверка отзывов через esearc
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("контракт E-utilities: esearch → efetch", () => {
+  const record = (pmid: string, title: string, extra = "") => `<PubmedArticle><MedlineCitation><PMID>${pmid}</PMID><Article>
+    <Journal><Title>J</Title><JournalIssue><PubDate><Year>2026</Year></PubDate></JournalIssue></Journal><ArticleTitle>${title}</ArticleTitle>
+    <PublicationTypeList><PublicationType>Journal Article</PublicationType>${extra}</PublicationTypeList></Article></MedlineCitation></PubmedArticle>`;
+  const xmlOf = (...recs: string[]) => `<?xml version="1.0"?><PubmedArticleSet>${recs.join("")}</PubmedArticleSet>`;
+
+  function stubFetch(handler: (url: URL, init?: RequestInit) => Response) {
+    const calls: { url: URL; init?: RequestInit }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        calls.push({ url, init });
+        return handler(url, init);
+      }),
+    );
+    return calls;
+  }
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  const xml = (body: string) => new Response(body, { status: 200, headers: { "Content-Type": "text/xml" } });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.NCBI_API_KEY;
+  });
+
+  it("pubmedSearch: параметры окна по дате поступления (edat/reldate), tool/email, api_key только при ключе; ERROR → исключение", async () => {
+    const calls = stubFetch(() => json({ esearchresult: { idlist: ["11", "12"] } }));
+    expect(await pubmedSearch("otitis media", 30, 50)).toEqual(["11", "12"]);
+    const q = calls[0].url.searchParams;
+    expect(calls[0].url.pathname).toMatch(/esearch\.fcgi$/);
+    expect(Object.fromEntries(q)).toMatchObject({ db: "pubmed", term: "otitis media", retmax: "50", retmode: "json", sort: "date", datetype: "edat", reldate: "30" });
+    expect(q.get("tool")).toBeTruthy();
+    expect(q.get("email")).toBeTruthy();
+    expect(q.has("api_key")).toBe(false);
+
+    process.env.NCBI_API_KEY = "k-123";
+    await pubmedSearch("tinnitus", 7, 10);
+    expect(calls[1].url.searchParams.get("api_key")).toBe("k-123");
+
+    vi.unstubAllGlobals();
+    stubFetch(() => json({ esearchresult: { ERROR: "Invalid query: unbalanced parentheses" } }));
+    await expect(pubmedSearch("(otitis", 30, 10)).rejects.toThrow(/unbalanced parentheses/);
+  });
+
+  it("fetchPubmed: пустая выдача не ходит в efetch; id режутся пачками по 200; записи из всех пачек склеиваются", async () => {
+    const calls = stubFetch((url) => {
+      if (/esearch/.test(url.pathname)) return json({ esearchresult: { idlist: Array.from({ length: 250 }, (_, i) => String(i + 1)) } });
+      const ids = (url.searchParams.get("id") ?? "").split(",");
+      return xml(xmlOf(...ids.slice(0, 2).map((id) => record(id, `Title ${id}`))));
+    });
+    const items = await fetchPubmed("otitis", 30, 300);
+    const efetch = calls.filter((c) => /efetch/.test(c.url.pathname));
+    expect(efetch).toHaveLength(2);
+    expect(efetch[0].url.searchParams.get("id")!.split(",")).toHaveLength(200);
+    expect(efetch[1].url.searchParams.get("id")!.split(",")).toHaveLength(50);
+    expect(efetch[0].url.searchParams.get("retmode")).toBe("xml");
+    expect(items.map((a) => a.pmid)).toEqual(["1", "2", "201", "202"]);
+
+    vi.unstubAllGlobals();
+    const empty = stubFetch(() => json({ esearchresult: { idlist: [] } }));
+    expect(await fetchPubmed("nothing", 30, 10)).toEqual([]);
+    expect(empty).toHaveLength(1); // только esearch
+  });
+
+  it("pubmedRetractionMap: резервный путь через efetch отмечает отозванные по типу публикации", async () => {
+    stubFetch((url) => {
+      const ids = (url.searchParams.get("id") ?? "").split(",");
+      return xml(xmlOf(record(ids[0]!, "Fine"), record(ids[1]!, "Bad", "<PublicationType>Retracted Publication</PublicationType>")));
+    });
+    const map = await pubmedRetractionMap(["501", "502"]);
+    expect(map.get("501")).toBe(false);
+    expect(map.get("502")).toBe(true);
   });
 });
 
