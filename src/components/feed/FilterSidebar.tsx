@@ -52,6 +52,7 @@ export function FilterSidebar({ f, topics, issuers, yearOptions, activeCount, us
               key={p.label}
               title={t(p.hint, p.params)}
               onClick={() => onApplyPreset(p.f)}
+              aria-pressed={presetActive(f, p.f)}
               className={`chip transition ${
                 presetActive(f, p.f)
                   ? "chip-brand font-semibold shadow-[var(--shadow-glow)]"
@@ -70,6 +71,7 @@ export function FilterSidebar({ f, topics, issuers, yearOptions, activeCount, us
                 type="button"
                 title={t("Применить сохранённый фильтр «{name}»", { name: p.name })}
                 onClick={() => onApplyPreset(p.f)}
+                aria-pressed={presetActive(f, p.f)}
                 className={`px-2.5 py-1 text-xs transition ${presetActive(f, p.f) ? "bg-[color:var(--brand-soft)] font-semibold text-[color:var(--brand-ink)]" : "hover:text-[color:var(--brand-ink)]"}`}
               >
                 ★ {p.name}

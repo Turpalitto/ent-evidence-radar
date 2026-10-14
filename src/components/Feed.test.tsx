@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Feed } from "./Feed";
 import { makeArticle, mockFetch, TOPICS } from "@/test/fixtures";
@@ -13,8 +13,8 @@ const ARTICLES = [
   makeArticle({ id: 1, title: "Tympanostomy tubes versus watchful waiting", isRead: false, topicIds: [1] }),
   makeArticle({ id: 2, title: "Dupilumab for nasal polyps", isRead: false, subspecialties: ["rhinology"], topicIds: [2], trialInfo: { status: "COMPLETED", hasResults: true, resultsFirstPosted: "2026-09-30", checkedAt: "2026-10-14T00:00:00Z", events: [{ at: "2026-10-10T00:00:00Z", kind: "results", from: null, to: "2026-09-30" }] } }),
   makeArticle({ id: 4, title: "Clinical Practice Guideline: Tinnitus", isRead: true, studyDesign: "guideline", evidenceLevel: 1, trustScore: 80, guidelineIssuer: "aao-hns" }),
-  makeArticle({ id: 5, title: "Consensus without issuer", isRead: true, studyDesign: "guideline", evidenceLevel: 1, trustScore: 60, guidelineIssuer: null }),
-  makeArticle({ id: 3, title: "Already read cohort", isRead: true, studyDesign: "cohort", evidenceLevel: 3, trustScore: 40, notes: "Проверить дозу будесонида", editorialNotice: { type: "expression_of_concern", noticeDoi: "10.1/eoc", date: "2025-01-02", source: "crossref", checkedAt: "2026-10-14T00:00:00Z" } }),
+  makeArticle({ id: 5, title: "Consensus without issuer", isRead: true, studyDesign: "guideline", evidenceLevel: 1, trustScore: 60, guidelineIssuer: null, publishedAt: new Date(Date.UTC(new Date().getFullYear() - 1, 5, 1)) }),
+  makeArticle({ id: 3, title: "Already read cohort", isRead: true, studyDesign: "cohort", evidenceLevel: 3, trustScore: 40, notes: "Проверить дозу будесонида", publishedAt: new Date(Date.UTC(new Date().getFullYear() - 2, 2, 1)), editorialNotice: { type: "expression_of_concern", noticeDoi: "10.1/eoc", date: "2025-01-02", source: "crossref", checkedAt: "2026-10-14T00:00:00Z" } }),
 ];
 
 function setup(items = ARTICLES) {
@@ -107,6 +107,56 @@ describe("<Feed />", () => {
     await user.click(screen.getAllByRole("button", { name: /Сбросить/ })[0]);
     await waitFor(() => expect(seen("Tympanostomy tubes versus watchful waiting")).toBe(true));
     expect(new URLSearchParams(window.location.search).get("subspecialty")).toBeNull();
+  });
+
+  it("остальные контролы сайдбара уходят в запрос: уровень, доверие, источник, период, тема, годы (с автокоррекцией), флажки; встроенный пресет; Enter на карточке открывает её", async () => {
+    const user = userEvent.setup();
+    const { calls } = setup();
+    await findTitle("Dupilumab for nasal polyps");
+    const last = () => calls.filter((c) => c.url.pathname === "/api/articles").at(-1)!.url.searchParams;
+    const select = (label: string) => within(screen.getAllByText(label)[0].closest("label")!).getByRole("combobox");
+    await user.selectOptions(select("Уровень доказательности (не ниже)"), "2");
+    await waitFor(() => expect(last().get("level")).toBe("2"));
+    await user.selectOptions(select("Источник"), "pubmed");
+    await waitFor(() => expect(last().get("source")).toBe("pubmed"));
+    await user.selectOptions(select("Период"), "30");
+    await waitFor(() => expect(last().get("days")).toBe("30"));
+    await user.selectOptions(select("Тема (поисковый запрос)"), "1");
+    await waitFor(() => expect(last().get("topicId")).toBe("1"));
+    const year = new Date().getFullYear();
+    await user.selectOptions(select("Год до"), String(year - 2));
+    await waitFor(() => expect(last().get("toYear")).toBe(String(year - 2)));
+    // «от» позже «до» — «до» подтягивается, чтобы диапазон не был пустым
+    await user.selectOptions(select("Год от"), String(year));
+    await waitFor(() => expect(last().get("fromYear")).toBe(String(year)));
+    expect(last().get("toYear")).toBe(String(year));
+    // и наоборот
+    await user.selectOptions(select("Год до"), String(year - 1));
+    await waitFor(() => expect(last().get("toYear")).toBe(String(year - 1)));
+    expect(last().get("fromYear")).toBe(String(year - 1));
+
+    const slider = screen.getAllByRole("slider")[0];
+    fireEvent.change(slider, { target: { value: "70" } });
+    await waitFor(() => expect(last().get("minTrust")).toBe("70"));
+
+    for (const [label, key] of [["Только непрочитанные", "unread"], ["Только избранное", "bookmarked"], ["Скрыть препринты", "excludePreprints"], ["Показать скрытые мной", "hidden"]] as const) {
+      await user.click(screen.getByLabelText(label));
+      await waitFor(() => expect(last().get(key)).toBe("1"));
+    }
+    expect(screen.getAllByRole("button", { name: /Сбросить/ })[0]).toHaveTextContent(/1[01]/); // счётчик активных фильтров
+
+    // Встроенный пресет: заменяет фильтры целиком
+    await user.click(screen.getByRole("button", { name: "Свежие РКИ" }));
+    await waitFor(() => expect(last().get("design")).toBe("rct"));
+    expect(last().get("days")).toBe("30");
+    expect(last().get("level")).toBeNull();
+    expect(screen.getByRole("button", { name: "Свежие РКИ" })).toHaveAttribute("aria-pressed", "true");
+
+    // Enter/Space на сфокусированной карточке открывают её
+    const card = screen.getAllByRole("listitem", { name: "Tympanostomy tubes versus watchful waiting" })[0];
+    card.focus();
+    await user.keyboard("{Enter}");
+    expect((await screen.findAllByRole("dialog")).length).toBeGreaterThan(0);
   });
 
   it("пользовательский пресет: сохраняется в localStorage, применяется и удаляется", async () => {
