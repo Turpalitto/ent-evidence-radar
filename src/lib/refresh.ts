@@ -1,4 +1,5 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { isShuttingDown } from "@/lib/shutdown";
 import { db } from "@/db";
 import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail, type ManualOverrides } from "@/db/schema";
 import { CLASSIFIER_VERSION, classify, dedupKeyFor, normalizeIds, type RawArticle } from "@/lib/evidence/classify";
@@ -25,7 +26,7 @@ export interface CurrentRefresh {
 const g = globalThis as typeof globalThis & {
   __entRadarRunning?: boolean;
   __entRadarSeeded?: boolean;
-  __entRadarCurrentRun?: CurrentRefresh & { done: Promise<{ runId: number }> };
+  __entRadarCurrentRun?: CurrentRefresh & { done: Promise<{ runId: number }>; holder?: string; heartbeat?: ReturnType<typeof setInterval> };
 };
 
 export function isRefreshRunning() {
@@ -395,6 +396,8 @@ export interface RefreshStart {
 export async function startRefresh(trigger: "manual" | "scheduled"): Promise<RefreshStart> {
   const noop = Promise.resolve({ runId: -1 });
   if (g.__entRadarRunning) return { runId: g.__entRadarCurrentRun?.runId ?? -1, skipped: true, done: g.__entRadarCurrentRun?.done ?? noop };
+  // Процесс останавливается — новую работу не начинаем, её подхватит следующий инстанс/тик.
+  if (isShuttingDown()) return { runId: -1, skipped: true, done: noop };
   const holder = `proc-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
   if (!(await acquireLock(holder))) return { runId: -1, skipped: true, done: noop };
   g.__entRadarRunning = true;
@@ -439,8 +442,29 @@ export async function startRefresh(trigger: "manual" | "scheduled"): Promise<Ref
     await evaluateRunAlerts().catch((e) => log.warn("alert.evaluate_failed", { error: e instanceof Error ? e.message : String(e) }));
     return r;
   });
-  g.__entRadarCurrentRun = { runId: run.id, trigger, startedAt: Date.now(), done };
+  g.__entRadarCurrentRun = { runId: run.id, trigger, startedAt: Date.now(), done, holder, heartbeat };
   return { runId: run.id, done };
+}
+
+/**
+ * Штатная остановка процесса во время запуска: помечаем запуск failed с понятной причиной
+ * и снимаем кросс-процессную блокировку, чтобы следующий инстанс не ждал истечения аренды.
+ * Сам сбор в памяти завершится вместе с процессом — его результаты не записываются.
+ */
+export async function abortCurrentRefresh(reason = "Процесс остановлен (SIGTERM) до завершения запуска"): Promise<boolean> {
+  const c = g.__entRadarCurrentRun;
+  if (!c) return false;
+  if (c.heartbeat) clearInterval(c.heartbeat);
+  await db
+    .update(fetchRuns)
+    .set({ status: "failed", finishedAt: new Date(), errorMessage: reason })
+    .where(and(eq(fetchRuns.id, c.runId), eq(fetchRuns.status, "running")))
+    .catch(() => {});
+  if (c.holder) await releaseLock(c.holder).catch(() => {});
+  g.__entRadarRunning = false;
+  g.__entRadarCurrentRun = undefined;
+  log.warn("refresh.aborted_on_shutdown", { runId: c.runId, trigger: c.trigger });
+  return true;
 }
 
 /** Синхронный вариант: дождаться завершения (планировщик, скрипты, тесты). */

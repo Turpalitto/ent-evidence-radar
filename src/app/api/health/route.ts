@@ -7,6 +7,7 @@ import { getAiUsage } from "@/lib/ai";
 import { metrics } from "@/lib/metrics";
 import { alertsConfigured } from "@/lib/alerts";
 import { checkApiAuth } from "@/lib/security";
+import { isShuttingDown } from "@/lib/shutdown";
 import pkg from "../../../../package.json";
 
 export const dynamic = "force-dynamic";
@@ -63,12 +64,14 @@ export async function GET(req: NextRequest) {
   const running = currentRefresh();
 
   const problems: string[] = [];
+  if (isShuttingDown()) problems.push("shutting_down");
   if (schedulerStarted && schedulerAlive === false) problems.push("scheduler_dead");
   if (last?.status === "failed") problems.push("last_run_failed");
   if (refreshStale) problems.push("refresh_stale");
 
+  const shuttingDown = isShuttingDown();
   const body: Record<string, unknown> = {
-    ok: !strict || problems.length === 0,
+    ok: !shuttingDown && (!strict || problems.length === 0),
     db: dbOk,
     dbKind,
     version: pkg.version,

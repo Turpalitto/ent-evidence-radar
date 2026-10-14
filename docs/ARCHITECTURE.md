@@ -120,6 +120,7 @@ included» → контекст даты игнорируется) и диапа
 | ИИ-бюджет | `settings.ai_usage` (счётчик за сутки, общий для инстансов) + `ai_cache` (ответы) | `AI_DAILY_BUDGET`, `AI_MAX_CONCURRENCY`; LRU в памяти поверх таблицы |
 | Rate-limit | таблица `rate_limits` (`rate-limit.ts`), fallback — in-memory | login 10/10 мин по IP; `/api/ai` 30/мин; `/api/refresh` 5/мин |
 | TTL-кэш агрегатов | память процесса (`cache.ts`, префикс `articles:`) | итоги на главной 30 с; **инвалидируется событиями** (PATCH/DELETE/bulk, конец обновления), не только по времени |
+| Остановка процесса | `src/lib/shutdown.ts` (реестр хуков, флаг `isShuttingDown`) | SIGTERM/SIGINT → health 503 → дренаж 1,5 с → хуки по порядку: планировщик, прерывание refresh (`abortCurrentRefresh`: run → failed, лок снят), закрытие БД; в Docker `NEXT_MANUAL_SIG_HANDLE=true` |
 | Миграции | `pg_advisory_lock(727272001)` | несколько реплик не применяют одну миграцию одновременно; перед новыми миграциями — снимок в `BACKUP_DIR` |
 
 Все состояния, которые должны быть общими для нескольких инстансов, лежат в БД; в памяти —

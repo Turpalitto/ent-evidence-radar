@@ -6,7 +6,8 @@ export async function register() {
   if (g.__entRadarScheduler) return;
   g.__entRadarScheduler = true;
 
-  const { getSettings, runRefreshSafe, isRefreshRunning, ensureSeeded, recoverStaleRuns, lockStatus } = await import("@/lib/refresh");
+  const { getSettings, runRefreshSafe, isRefreshRunning, ensureSeeded, recoverStaleRuns, lockStatus, abortCurrentRefresh } = await import("@/lib/refresh");
+  const { installSignalHandlers, onShutdown, isShuttingDown, SHUTDOWN_ORDER } = await import("@/lib/shutdown");
   const { lastBackupAt, writeBackupToFile } = await import("@/lib/backup");
   const { maybeSendScheduledDigest } = await import("@/lib/digest-schedule");
   const { log } = await import("@/lib/log");
@@ -31,8 +32,20 @@ export async function register() {
     log.info("backup.auto_written", { file });
   };
 
+  // Тики не должны накладываться: долгий refresh внутри тика иначе породил бы параллельные
+  // проверки бэкапа/дайджеста. Пропущенный тик ничего не теряет — следующий через минуту.
+  let inTick = false;
   const tick = async () => {
+    if (inTick || isShuttingDown()) return;
+    inTick = true;
     g.__entRadarSchedulerLastTick = Date.now();
+    try {
+      await tickBody();
+    } finally {
+      inTick = false;
+    }
+  };
+  const tickBody = async () => {
     try {
       const cfg = await getSettings();
       if (cfg.autoRefreshEnabled && !isRefreshRunning()) {
@@ -81,6 +94,11 @@ export async function register() {
     }
 
     await tick();
-    setInterval(tick, 60_000);
+    const timer = setInterval(tick, 60_000);
+    onShutdown("scheduler", () => clearInterval(timer), SHUTDOWN_ORDER.scheduler);
   }, 20_000);
+
+  // Штатная остановка: прервать текущий запуск (снять блокировку, пометить failed), закрыть БД.
+  onShutdown("refresh", async () => void (await abortCurrentRefresh()), SHUTDOWN_ORDER.refresh);
+  installSignalHandlers({ logger: log });
 }

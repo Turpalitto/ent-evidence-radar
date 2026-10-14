@@ -22,7 +22,9 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    GIT_SHA=$GIT_SHA
+    GIT_SHA=$GIT_SHA \
+    # Сигналы обрабатывает приложение (src/lib/shutdown.ts): прервать refresh, снять блокировку, закрыть PGlite
+    NEXT_MANUAL_SIG_HANDLE=true
 
 # Непривилегированный пользователь с ФИКСИРОВАННЫМ UID/GID 1001 (аудит F-17): bind-mount
 # каталогов ./docker-data и ./backups с хоста требует предсказуемого владельца —

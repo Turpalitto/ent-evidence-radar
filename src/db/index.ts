@@ -8,6 +8,18 @@ import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import { MIGRATION_LOCK_KEY, pendingMigrations, preMigrationBackup, shouldMigrateOnStart } from "./migrate-guard";
+import { onShutdown, SHUTDOWN_ORDER } from "@/lib/shutdown";
+
+/** Закрыть соединения с БД (PGlite — обязательно, иначе возможна порча каталога; pg — освобождает пул). */
+export async function closeDb(): Promise<void> {
+  const pglite = g.__entRadarPglite;
+  const pool = g.__entRadarPgPool;
+  g.__entRadarPglite = undefined;
+  g.__entRadarPgPool = undefined;
+  g.__entRadarDb = undefined;
+  if (pglite) await pglite.close();
+  if (pool) await pool.end();
+}
 
 const databaseUrl = process.env.DATABASE_URL;
 const migrationsFolder = path.join(process.cwd(), "drizzle");
@@ -104,13 +116,11 @@ async function initDb() {
     try { fs.unlinkSync(pidFile); } catch {}
   }
 
-  // Штатная остановка (Ctrl+C / SIGTERM) должна закрывать PGlite, иначе каталог повреждается
+  // Штатная остановка (Ctrl+C / SIGTERM) должна закрывать PGlite, иначе каталог повреждается.
+  // Закрытие идёт последним хуком остановки (src/lib/shutdown.ts), после прерывания refresh.
   if (!g.__entRadarClosed) {
     g.__entRadarClosed = true;
-    const close = () => g.__entRadarPglite?.close().catch(() => {});
-    process.once("SIGINT", close);
-    process.once("SIGTERM", close);
-    process.once("exit", close);
+    onShutdown("db", closeDb, SHUTDOWN_ORDER.db);
   }
 
   async function open() {
