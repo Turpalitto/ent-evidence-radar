@@ -36,7 +36,7 @@ export function alertRecipients(): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  return own.length ? own : getRecipients();
+  return own.length ? own : getRecipients(null);
 }
 
 export interface AlertMessage {

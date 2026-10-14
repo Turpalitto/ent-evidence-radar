@@ -75,9 +75,15 @@ export function buildMessage(to: string[], subject: string, html: string, text: 
   return { from: cfg.from, to: cfg.from, bcc: to, subject, html, text };
 }
 
-export function getRecipients(cfg: MailerConfig = getMailerConfig()): string[] {
-  return (process.env.DIGEST_RECIPIENTS ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+/** Получатели дайджеста: из настроек (A-09), иначе из DIGEST_RECIPIENTS. */
+export function getRecipients(fromSettings?: string | null): string[] {
+  const src = fromSettings?.trim() ? fromSettings : (process.env.DIGEST_RECIPIENTS ?? "");
+  return Array.from(
+    new Set(
+      src
+        .split(/[,;\s]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
 }

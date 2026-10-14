@@ -184,6 +184,14 @@ const SETTINGS_RULES: Record<keyof AppSettings, (v: unknown) => AppSettings[keyo
   lookbackDays: (v) => (typeof v === "number" && Number.isFinite(v) ? Math.max(1, Math.min(365, Math.round(v))) : undefined),
   maxPerTopic: (v) => (typeof v === "number" && Number.isFinite(v) ? Math.max(5, Math.min(300, Math.round(v))) : undefined),
   minTrustToStore: (v) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : undefined),
+  digestEnabled: (v) => (typeof v === "boolean" ? v : undefined),
+  digestRecipients: (v) =>
+    typeof v === "string" && v.length <= 2000
+      ? Array.from(new Set(v.split(/[,;\s]+/).map((e) => e.trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))).slice(0, 50).join(", ")
+      : undefined,
+  digestWeekday: (v) => (typeof v === "number" && Number.isFinite(v) ? Math.max(-1, Math.min(6, Math.round(v))) : undefined),
+  digestHour: (v) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(23, Math.round(v))) : undefined),
+  digestDays: (v) => (typeof v === "number" && Number.isFinite(v) ? Math.max(1, Math.min(60, Math.round(v))) : undefined),
 };
 
 /** Слияние заметок: пустая → берём из бэкапа; одинаковые → без изменений; разные → дописываем блоком. */

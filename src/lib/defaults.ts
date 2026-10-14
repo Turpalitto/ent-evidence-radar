@@ -94,6 +94,16 @@ export interface AppSettings {
   minTrustToStore: number;
   includePreprints: boolean;
   englishOnly: boolean;
+  /** Email-дайджест по расписанию (аудит A-09): настраивается в UI, а не только через env. */
+  digestEnabled: boolean;
+  /** Получатели через запятую; пусто — берутся из DIGEST_RECIPIENTS. */
+  digestRecipients: string;
+  /** День недели отправки: 0 — воскресенье … 6 — суббота (как в JS `getDay()`); -1 — ежедневно. */
+  digestWeekday: number;
+  /** Час отправки (0–23) по времени сервера. */
+  digestHour: number;
+  /** За сколько дней собирать дайджест. */
+  digestDays: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -104,6 +114,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   minTrustToStore: 0,
   includePreprints: true,
   englishOnly: false,
+  digestEnabled: false,
+  digestRecipients: "",
+  digestWeekday: 1,
+  digestHour: 8,
+  digestDays: 7,
 };
 
 export const DEFAULT_SOURCES = [

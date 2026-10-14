@@ -18,6 +18,22 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
+interface DigestInfo {
+  enabled: boolean;
+  recipients: string[];
+  recipientsSource: "settings" | "env" | "none";
+  weekday: number;
+  hour: number;
+  serverTime: string;
+  serverTimezone?: string;
+  smtpConfigured: boolean;
+  lastSentAt?: string;
+  lastRecipients?: string[];
+  lastTotal?: number;
+  lastDryRun?: boolean;
+  lastError?: string;
+}
+
 export function SettingsPanel() {
   const [cfg, setCfg] = useState<AppSettings | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
@@ -57,6 +73,55 @@ export function SettingsPanel() {
       flash("Настройки сохранены");
     } catch (e) {
       flash(`Не сохранено: ${e instanceof Error ? e.message : "ошибка сети"}`);
+    }
+  };
+
+  // ── Email-дайджест (A-09): состояние подписки, предпросмотр, отправка сейчас
+  const [digestInfo, setDigestInfo] = useState<DigestInfo | null>(null);
+  const [digestPreview, setDigestPreview] = useState<string | null>(null);
+  const [digestBusy, setDigestBusy] = useState(false);
+
+  const loadDigestInfo = useCallback(async () => {
+    try {
+      const r = await fetch("/api/digest?days=1", { cache: "no-store" });
+      if (!r.ok) return;
+      const j = (await r.json()) as { subscription?: DigestInfo };
+      if (j.subscription) setDigestInfo(j.subscription);
+    } catch {
+      /* офлайн/не авторизован — блок просто без статуса */
+    }
+  }, []);
+  useEffect(() => {
+    const t = setTimeout(() => void loadDigestInfo(), 0);
+    return () => clearTimeout(t);
+  }, [loadDigestInfo]);
+
+  const previewDigest = async () => {
+    setDigestBusy(true);
+    try {
+      const r = await fetch("/api/digest", { cache: "no-store" });
+      const j = (await r.json().catch(() => null)) as { html?: string; error?: string; subscription?: DigestInfo } | null;
+      if (!r.ok || !j?.html) {
+        flash(j?.error ? `Предпросмотр недоступен: ${j.error}` : `Предпросмотр недоступен (ошибка ${r.status})`);
+        return;
+      }
+      setDigestPreview(j.html);
+      if (j.subscription) setDigestInfo(j.subscription);
+    } finally {
+      setDigestBusy(false);
+    }
+  };
+
+  const sendDigest = async () => {
+    setDigestBusy(true);
+    try {
+      const r = await fetch("/api/digest", { method: "POST" });
+      const j = (await r.json().catch(() => null)) as { ok?: boolean; error?: string; to?: string[]; dryRun?: boolean; total?: number } | null;
+      if (!r.ok || !j?.ok) flash(j?.error ? `Не отправлено: ${j.error}` : `Не отправлено (ошибка ${r.status})`);
+      else flash(j.dryRun ? `SMTP не настроен — письмо сформировано в dry-run (${j.total ?? 0} записей)` : `Отправлено: ${j.to?.join(", ")} (${j.total ?? 0} записей)`);
+      await loadDigestInfo();
+    } finally {
+      setDigestBusy(false);
     }
   };
 
@@ -186,6 +251,74 @@ export function SettingsPanel() {
             </label>
           ))}
         </div>
+      </Section>
+
+      <Section
+        title="Email-дайджест по расписанию"
+        hint="Письмо с новыми записями за период: что добавилось, лучшие по доверию, руководства и отзывы. Получатели и время задаются здесь; без настроенного SMTP письмо формируется в режиме dry-run (видно в предпросмотре)."
+      >
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label className={`flex items-center justify-between gap-3 ${field}`}>
+            <span>
+              <span className="block text-sm font-medium text-[color:var(--ink)]">Отправлять по расписанию</span>
+              <span className="block text-xs text-[color:var(--ink-muted)]">Планировщик сервера, раз в неделю или ежедневно</span>
+            </span>
+            <input type="checkbox" checked={cfg.digestEnabled} onChange={(e) => saveCfg({ digestEnabled: e.target.checked })} className="h-5 w-5 accent-teal-600" />
+          </label>
+          <label className={`${field} sm:col-span-2`}>
+            <span className="block text-sm font-medium text-[color:var(--ink)]">Получатели</span>
+            <span className="block text-xs text-[color:var(--ink-muted)]">E-mail через запятую (до 50). Пусто — берутся из переменной DIGEST_RECIPIENTS</span>
+            <input type="text" inputMode="email" placeholder="doctor@clinic.ru, colleague@clinic.ru" defaultValue={cfg.digestRecipients} onBlur={(e) => e.target.value !== cfg.digestRecipients && saveCfg({ digestRecipients: e.target.value })} className={input} />
+          </label>
+          <label className={field}>
+            <span className="block text-sm font-medium text-[color:var(--ink)]">День недели</span>
+            <select value={cfg.digestWeekday} onChange={(e) => saveCfg({ digestWeekday: Number(e.target.value) })} className={input}>
+              <option value={-1}>Ежедневно</option>
+              {["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"].map((d, i) => (
+                <option key={d} value={i}>{d}</option>
+              ))}
+            </select>
+          </label>
+          <label className={field}>
+            <span className="block text-sm font-medium text-[color:var(--ink)]">Час отправки</span>
+            <span className="block text-xs text-[color:var(--ink-muted)]">По времени сервера{digestInfo?.serverTimezone ? ` (${digestInfo.serverTimezone})` : ""}</span>
+            <select value={cfg.digestHour} onChange={(e) => saveCfg({ digestHour: Number(e.target.value) })} className={input}>
+              {Array.from({ length: 24 }, (_, h) => (
+                <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+              ))}
+            </select>
+          </label>
+          <label className={field}>
+            <span className="block text-sm font-medium text-[color:var(--ink)]">Период, дней</span>
+            <span className="block text-xs text-[color:var(--ink-muted)]">Какие записи попадут в письмо (1–60)</span>
+            <input type="number" min={1} max={60} defaultValue={cfg.digestDays} onBlur={(e) => Number(e.target.value) !== cfg.digestDays && saveCfg({ digestDays: Number(e.target.value) })} className={input} />
+          </label>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => void previewDigest()} disabled={digestBusy} className="btn-ghost rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-60">
+            {digestBusy ? "…" : "Предпросмотр"}
+          </button>
+          <button type="button" onClick={() => void sendDigest()} disabled={digestBusy} className="btn-brand rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+            Отправить сейчас
+          </button>
+          {digestInfo && (
+            <span className="text-xs text-[color:var(--ink-subtle)]">
+              SMTP: {digestInfo.smtpConfigured ? "настроен" : "не настроен (dry-run)"}
+              {digestInfo.recipients?.length ? ` · получателей: ${digestInfo.recipients.length}` : " · получатели не заданы"}
+              {digestInfo.lastSentAt ? ` · последняя отправка: ${formatDateTime(digestInfo.lastSentAt)}${digestInfo.lastDryRun ? " (dry-run)" : ""}` : ""}
+              {digestInfo.lastError ? <span className="text-rose-600 dark:text-rose-400"> · ошибка: {digestInfo.lastError}</span> : null}
+            </span>
+          )}
+        </div>
+        {digestPreview && (
+          <div className="mt-3 overflow-hidden rounded-xl border border-[color:var(--hairline)]">
+            <div className="flex items-center justify-between bg-[color:var(--surface-2)] px-3 py-1.5 text-xs text-[color:var(--ink-muted)]">
+              <span>Предпросмотр письма</span>
+              <button type="button" onClick={() => setDigestPreview(null)} className="font-semibold hover:text-[color:var(--ink)]">Закрыть</button>
+            </div>
+            <iframe title="Предпросмотр дайджеста" sandbox="" srcDoc={digestPreview} className="h-[480px] w-full bg-white" />
+          </div>
+        )}
       </Section>
 
       <Section title="Темы мониторинга (PubMed-запросы)">

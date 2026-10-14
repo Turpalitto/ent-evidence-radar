@@ -23,6 +23,16 @@ const SettingsPatchSchema = z
     lookbackDays: clamped(1, 365),
     maxPerTopic: clamped(5, 300),
     minTrustToStore: clamped(0, 100),
+    digestEnabled: z.boolean(),
+    digestRecipients: z
+      .string()
+      .max(2000)
+      .transform((s) => s.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean))
+      .refine((list) => list.length <= 50 && list.every((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)), { message: "Получатели: до 50 корректных e-mail через запятую" })
+      .transform((list) => Array.from(new Set(list.map((e) => e.toLowerCase()))).join(", ")),
+    digestWeekday: clamped(-1, 6),
+    digestHour: clamped(0, 23),
+    digestDays: clamped(1, 60),
   })
   .partial()
   .refine((p) => Object.keys(p).length > 0, { message: "Нет допустимых полей для изменения" });

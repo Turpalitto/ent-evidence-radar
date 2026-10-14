@@ -8,6 +8,7 @@ export async function register() {
 
   const { getSettings, runRefreshSafe, isRefreshRunning, ensureSeeded, recoverStaleRuns, lockStatus } = await import("@/lib/refresh");
   const { lastBackupAt, writeBackupToFile } = await import("@/lib/backup");
+  const { maybeSendScheduledDigest } = await import("@/lib/digest-schedule");
   const { log } = await import("@/lib/log");
   const { db } = await import("@/db");
   const { fetchRuns } = await import("@/db/schema");
@@ -51,6 +52,12 @@ export async function register() {
       await maybeBackup();
     } catch (e) {
       log.error("backup.auto_failed", { error: e instanceof Error ? e.message : String(e) });
+    }
+    // Email-дайджест по расписанию из настроек (A-09).
+    try {
+      await maybeSendScheduledDigest(await getSettings());
+    } catch (e) {
+      log.error("digest.scheduled_failed", { error: e instanceof Error ? e.message : String(e) });
     }
   };
 
