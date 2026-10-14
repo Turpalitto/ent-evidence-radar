@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { headers } from "next/headers";
 import "./globals.css";
 import { AppNav } from "@/components/AppNav";
+import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { OG_IMAGE } from "@/lib/metadata";
 import { FEED_TYPES } from "@/lib/site";
 
@@ -62,6 +63,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           Перейти к содержимому
         </a>
         <AppNav />
+        <ServiceWorkerRegistrar enabled={process.env.NODE_ENV === "production" && !/^(1|true|yes|on)$/i.test(process.env.DISABLE_SW ?? "")} />
         <div id="main" tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-6 pb-24 outline-none sm:px-6 md:pb-10">
           {children}
         </div>

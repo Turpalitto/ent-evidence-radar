@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { EditorialNotice, StudyDesign, TrialInfo } from "@/db/schema";
-import { NEGATIVE_STATUSES, trialStatusLabel } from "@/lib/trials";
+import { NEGATIVE_STATUSES, trialStatusLabel } from "@/lib/evidence/trial-status";
 import { DESIGN_LABELS, DESIGN_SHORT, SUBSPECIALTY_LABELS, SUBSPECIALTY_SHORT, SOURCE_LABELS, EVIDENCE_LEVEL_LABELS } from "@/lib/evidence/taxonomy";
 import { guidelineIssuerLabel } from "@/lib/evidence/guidelines";
 

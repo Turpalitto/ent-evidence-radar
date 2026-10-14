@@ -20,31 +20,8 @@ export const MAX_TRIALS_PER_RUN = 300;
 const CURSOR_KEY = "trials_cursor";
 const MAX_EVENTS = 10;
 
-/** Человекочитаемые статусы реестра. */
-export const TRIAL_STATUS_LABELS: Record<string, string> = {
-  NOT_YET_RECRUITING: "набор не начат",
-  RECRUITING: "идёт набор",
-  ENROLLING_BY_INVITATION: "набор по приглашению",
-  ACTIVE_NOT_RECRUITING: "идёт, набор закрыт",
-  COMPLETED: "завершено",
-  SUSPENDED: "приостановлено",
-  TERMINATED: "прекращено досрочно",
-  WITHDRAWN: "отозвано до набора",
-  UNKNOWN: "статус неизвестен",
-  AVAILABLE: "доступно (expanded access)",
-  NO_LONGER_AVAILABLE: "более недоступно",
-  TEMPORARILY_NOT_AVAILABLE: "временно недоступно",
-  APPROVED_FOR_MARKETING: "одобрено к применению",
-  WITHHELD: "скрыто",
-};
-
-export function trialStatusLabel(status: string | null | undefined): string {
-  if (!status) return "—";
-  return TRIAL_STATUS_LABELS[status] ?? status.toLowerCase().replace(/_/g, " ");
-}
-
-/** Статусы, которые для читателя означают «исследование не состоится / остановлено». */
-export const NEGATIVE_STATUSES = new Set(["TERMINATED", "WITHDRAWN", "SUSPENDED"]);
+// Подписи статусов живут в клиентски-безопасном модуле; реэкспорт — для обратной совместимости.
+export { NEGATIVE_STATUSES, TRIAL_STATUS_LABELS, trialStatusLabel } from "@/lib/evidence/trial-status";
 
 export interface TrialRecheckResult {
   checked: number;

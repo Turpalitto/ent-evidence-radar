@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { clearServiceWorkerCache } from "@/components/ServiceWorkerRegistrar";
 
 type AuthState = { required: boolean; authenticated: boolean };
 
@@ -50,6 +51,7 @@ export function AuthStatus() {
 
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    clearServiceWorkerCache(); // офлайн-кэш ответов API не должен переживать выход из аккаунта
     setState({ required: true, authenticated: false });
     window.dispatchEvent(new Event("ent-radar:auth"));
     router.refresh();

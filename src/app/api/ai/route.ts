@@ -14,7 +14,8 @@ export const maxDuration = 150;
 /** GET — настроен ли AI и дневной расход (для индикатора в UI). */
 export async function GET() {
   const configured = aiConfigured();
-  return Response.json({ ok: true, configured, usage: configured ? await getAiUsage() : null });
+  // /api/ai исключён из общего `no-store` в next.config (ради SSE), поэтому ставим заголовок сами.
+  return Response.json({ ok: true, configured, usage: configured ? await getAiUsage() : null }, { headers: { "Cache-Control": "no-store" } });
 }
 
 function sse(stream: AsyncGenerator<string>): Response {

@@ -109,8 +109,10 @@ export async function writeBackupToFile(
   const dated = join(targetDir, backupFileName());
   await writeFile(dated, json, "utf8");
   await writeFile(join(targetDir, "user_backup_latest.json"), json, "utf8");
-  for (const f of pickBackupsToDelete(await readdir(targetDir), keep)) {
-    await unlink(join(targetDir, f)).catch(() => {});
+  // Каталог задаётся в рантайме (BACKUP_DIR): без turbopackIgnore сборщик трассирует «весь проект»
+  // в standalone-вывод. Путь склеиваем шаблоном — `join()` внутри аргумента анализатор всё равно помечает.
+  for (const f of pickBackupsToDelete(await readdir(/* turbopackIgnore: true */ targetDir), keep)) {
+    await unlink(/* turbopackIgnore: true */ `${targetDir}/${f}`).catch(() => {});
   }
   return dated;
 }
@@ -118,7 +120,7 @@ export async function writeBackupToFile(
 /** Время последнего датированного бэкапа в каталоге (для автобэкапа по расписанию), либо null. */
 export async function lastBackupAt(targetDir = process.env.BACKUP_DIR || "./backups"): Promise<Date | null> {
   try {
-    const files = (await readdir(targetDir)).filter((f) => /^user_backup_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/.test(f)).sort();
+    const files = (await readdir(/* turbopackIgnore: true */ targetDir)).filter((f) => /^user_backup_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/.test(f)).sort();
     const last = files.at(-1);
     if (!last) return null;
     const iso = last.slice("user_backup_".length, -".json".length).replace(/T(\d{2})-(\d{2})-(\d{2})$/, "T$1:$2:$3Z");

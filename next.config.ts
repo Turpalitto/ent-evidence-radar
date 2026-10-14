@@ -28,11 +28,25 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
       {
-        // API не индексируем и не кэшируем: ответы динамические и могут содержать персональные данные.
+        // API не индексируем.
         source: "/api/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex" }],
+      },
+      {
+        // API по умолчанию не кэшируем: ответы динамические и могут содержать персональные данные.
+        // Заголовок из конфига перекрывает заголовки маршрута, поэтому исключаем те, что управляют
+        // кэшированием сами: публичные GET с ETag/304 (`conditionalJson` → `private, no-cache`)
+        // и SSE-поток /api/ai (`no-cache, no-transform`, чтобы прокси не буферизовали и не сжимали).
+        source: "/api/:path((?!articles$|articles/\\d+/related$|ai$).*)",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+      {
+        // Service worker (A-15): браузер должен перепроверять файл при каждом заходе, иначе новая версия
+        // кэш-стратегий доедет до клиентов с опозданием до суток.
+        source: "/sw.js",
         headers: [
-          { key: "X-Robots-Tag", value: "noindex" },
-          { key: "Cache-Control", value: "no-store" },
+          { key: "Cache-Control", value: "no-cache, max-age=0, must-revalidate" },
+          { key: "Service-Worker-Allowed", value: "/" },
         ],
       },
     ];

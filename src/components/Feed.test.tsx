@@ -171,3 +171,42 @@ describe("<Feed />", () => {
     expect(screen.queryByTestId("issuer-facet")).toBeNull();
   });
 });
+
+describe("<Feed /> офлайн (A-15)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("ответ из кэша service worker помечается баннером с датой сохранения", async () => {
+    const { fn } = mockFetch({
+      "GET /api/ai": () => ({ configured: false }),
+      "GET /api/articles": () =>
+        new Response(JSON.stringify({ items: ARTICLES, total: ARTICLES.length, page: 1, pageSize: 30, searchTerms: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json", "x-sw-cache": "hit", "x-sw-cached-at": "2026-10-13T08:15:00.000Z" },
+        }),
+    });
+    vi.stubGlobal("fetch", fn);
+    render(<Feed topics={TOPICS} />);
+    await findTitle("Tympanostomy tubes versus watchful waiting");
+    const banner = await screen.findByRole("status");
+    expect(banner).toHaveTextContent("Данные из офлайн-кэша");
+    expect(banner).toHaveTextContent(/сохранённая .*13 окт/);
+  });
+
+  it("при потере сети показывает «Нет соединения», при восстановлении — скрывает", async () => {
+    setup();
+    await findTitle("Tympanostomy tubes versus watchful waiting");
+    expect(screen.queryByRole("status")).toBeNull();
+
+    Object.defineProperty(navigator, "onLine", { value: false, configurable: true });
+    window.dispatchEvent(new Event("offline"));
+    const banner = await screen.findByRole("status");
+    expect(banner).toHaveTextContent("Нет соединения");
+
+    Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
+    window.dispatchEvent(new Event("online"));
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  });
+});

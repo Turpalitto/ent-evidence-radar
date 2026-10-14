@@ -34,6 +34,7 @@
 - CI (lint, typecheck, drizzle check, тесты, build, docker smoke), Dependabot, `npm run db:migrate` с advisory-lock (I-10, I-15).
 - Atom-лента с фильтрами — подписка на сохранённый поиск (`/feed.xml?subspecialty=…&design=…&minTrust=…`, `?topicId=`, `?q=`), ссылка «RSS для этого фильтра» в боковой панели.
 - Документация: `docs/ARCHITECTURE.md`, `SECURITY.md`, `docs/openapi.yaml`, этот CHANGELOG (I-16, A-14).
+- Офлайн-режим PWA (A-15): service worker `public/sw.js` (оболочка и статика — cache-first, публичные GET API — network-first с меткой `x-sw-cached-at`, лимит 80 записей, страница `/offline`), регистрация только в продакшене (`DISABLE_SW=1` отключает), очистка кэша API при выходе; в ленте — баннер офлайна/кэша по `navigator.onLine` и заголовкам ответа. Тесты: воркер в vm-песочнице (7), баннер ленты (2).
 
 ### Changed
 - Авторизация: подписанная httpOnly-cookie после `/login`, Bearer / `X-API-Key` для скриптов, same-origin для изменяющих запросов (F-01).
@@ -53,6 +54,8 @@
 - CSV-экспорт экранирует формулы; дайджест рассылается через BCC (F-20, F-21).
 - Статус PubMed «partial», если упала часть тем; гонка запросов и тройная загрузка ленты на маунте (F-18, F-19).
 - Согласована схема drizzle и снапшоты миграций (`npm run db:check`) (F-16).
+- Продакшен-сборка падала на `dns`/`net`/`tls`: клиентская карточка импортировала подписи статусов КИ из `@/lib/trials`, который тянет `@/db`. Подписи вынесены в `src/lib/evidence/trial-status.ts`; добавлен тест-страж границы клиент/сервер (обход графа импортов всех `"use client"`-файлов). Устранены предупреждения Turbopack о трассировке всего проекта из-за `readdir(BACKUP_DIR)`.
+- `Cache-Control: no-store` из `next.config` перекрывал заголовки маршрутов: `ETag`/304 для `/api/articles` и `/api/articles/:id/related` не работали в браузере, а SSE `/api/ai` терял `no-transform`. Правило теперь исключает эти маршруты (тест на итоговые заголовки через path-to-regexp Next).
 
 ### Security
 - Session cookie `httpOnly`/`SameSite=Lax`/`Secure`, rate-limit входа 10/10 мин, `timingSafeEqual` (F-01).

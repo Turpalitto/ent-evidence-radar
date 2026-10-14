@@ -28,7 +28,7 @@
 | Каталог | Назначение |
 | --- | --- |
 | `src/app/` | страницы (`/`, `/settings`, `/login`, `/stats`, `/runs`, `/topics`), REST API `src/app/api/**/route.ts`, Atom `feed.xml`, `sitemap`, `og.png` |
-| `src/components/` | клиентские компоненты: `Feed` (лента, фильтры, пресеты, горячие клавиши), `ArticleDrawer` (карточка, ИИ, правки, цитаты), `SettingsPanel`, `RefreshButton` |
+| `src/components/` | клиентские компоненты: `Feed` (лента, фильтры, пресеты, горячие клавиши), `ArticleDrawer` (карточка, ИИ, правки, цитаты), `SettingsPanel`, `RefreshButton`, `ServiceWorkerRegistrar` (офлайн-режим, см. § 6a) |
 | `src/db/` | `index.ts` — выбор движка и миграции при старте; `schema.ts` — единственный источник правды о таблицах |
 | `src/lib/evidence/` | чистое ядро без I/O: `classify.ts` (дизайн, уровень, доверие, нормализация идентификаторов, ключ дедупликации), `journals.ts` (белый список журналов по tier + список сомнительных издательств), `guidelines.ts` (органы-издатели руководств), `taxonomy.ts` (метки) |
 | `src/lib/sources/` | адаптеры источников: `pubmed`, `europepmc`, `clinicaltrials`, `medrxiv`; `crossref` (редакционные уведомления по DOI); общий `http.ts` (таймауты, повторы, `Retry-After`, метрики) |
@@ -163,6 +163,31 @@ included» → контекст даты игнорируется) и диапа
 автообновление, если прошло `refreshIntervalMinutes` → автобэкап раз в `AUTO_BACKUP_HOURS` →
 дайджест (`isDigestDue`). На serverless планировщик не живёт — внешний cron вызывает `POST /api/refresh`
 (см. `.github/workflows/refresh.yml`). Состояние планировщика видно в `/api/health` и диагностике.
+
+## 6a. Офлайн-режим: service worker (`public/sw.js`)
+
+Обычный JS без сборки (Turbopack его не трогает), версия в константе `VERSION` — её смена
+инвалидирует все кэши `radar-*` на активации. Регистрирует `ServiceWorkerRegistrar` (в `layout.tsx`)
+только при `NODE_ENV=production` и без `DISABLE_SW=1`; иначе снимает регистрацию, чтобы
+dev-сервер и HMR не конфликтовали с кэшем.
+
+| Запрос | Стратегия | Кэш |
+| --- | --- | --- |
+| Навигация (`mode: navigate`) | сеть (таймаут 8 с) → копия той же страницы → `/offline` | `radar-shell-*`, кэшируются только `/`, `/stats`, `/runs`, `/topics`, `/offline` (не `/login`, `/settings`) |
+| `/_next/static/*`, `/fonts/*` | cache-first (имена файлов хэшированы) | `radar-static-*` |
+| manifest, иконки, `og.png` | stale-while-revalidate | `radar-static-*` |
+| Публичные GET: `/api/articles`, `/api/articles/:id`, `/api/articles/:id/related`, `/api/topics`, `/api/sources`, `/api/stats` | network-first; при сбое — копия с `x-sw-cache: hit` и `x-sw-cached-at` | `radar-api-*`, ≤ 80 записей (вытесняются самые старые) |
+| Всё остальное (не-GET, чужой origin, auth/admin/ai/runs/health/export/backup, `/sw.js`) | мимо воркера | — |
+
+Кэшируются только ответы `200` (не `opaque`, не 304). Сообщение `{type: "clear-cache"}` удаляет кэши API
+и оболочки — его шлёт `AuthStatus` при выходе, чтобы на общем устройстве не остались закладки/заметки
+из ответов ленты. Лента (`Feed.tsx`) читает заголовки `x-sw-*` и `navigator.onLine` и показывает
+баннер «Нет соединения» / «Данные из офлайн-кэша» с датой сохранения. `/sw.js` отдаётся с
+`Cache-Control: no-cache`, чтобы новая версия доезжала сразу (правило в `next.config.ts`).
+
+Граница клиент/сервер охраняется тестом `src/lib/client-boundary.test.ts`: клиентский компонент,
+транзитивно импортирующий `@/db`, `pg`, PGlite или node-модули, ломает `next build` — тест находит
+такую цепочку импортов раньше сборки.
 
 ## 7. API-контракты
 

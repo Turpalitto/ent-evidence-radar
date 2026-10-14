@@ -34,7 +34,8 @@
 | 22 | Ревизия индексов (пункт J): сопоставлены `buildWhere`/сортировки/поиски по идентификаторам с индексами; добавлены `articles_fetched_at_idx` (сортировка `fetched`, по умолчанию в `/feed.xml`) и `articles_nct_upper_idx` (`upper(nct_id)` для `inArray(upper(nct_id))` в `doRefresh`/`restore`); индексы миграции 0002 (GIN subspecialties/source_keys/topic_ids, study_design, evidence_level) объявлены в `schema.ts`; миграция `0015_indexes_review.sql` с `IF NOT EXISTS`; таблица индексов в ARCHITECTURE §5 | ✅ |
 | 23 | A-10 PICO: `src/lib/evidence/pico.ts` — `splitLabeledSections` (заголовки секций в начале строки/после точки, словарь + полностью заглавные; «Group A: 12%» не заголовок), словарь секций → слот (PARTICIPANTS/PATIENTS/POPULATION…, INTERVENTIONS/EXPOSURES, COMPARISON/CONTROL, MAIN OUTCOME(S) AND MEASURE(S)/PRIMARY OUTCOME…, нормализация множественного числа), эвристики I/C («randomized to receive X or Y», «compared X with Y», «X versus Y» в заголовке — приоритет), P («n patients with … до сказуемого», «in children …» в заголовке), O («primary outcome was …»); порог ≥ 2 элементов; `tidyFragment` (артикли, хвосты, незакрытые скобки, 220 символов). UI: секция `data-testid="pico"` в `ArticleDrawer` с пометкой источника, строка «🧩 PICO» в «Для консилиума»; скрыто для guideline/trial_registry. Тесты: 7 юнит + компонентный | ✅ |
 | 24 | I-06 Europe PMC по темам: `src/lib/sources/epmc-query.ts` — токенизатор/парсер PubMed-запроса (левоассоциативно, как PubMed; соседство = AND), `translateAtom` (MeSH/tiab/ti/ab/pt/Journal/au/kw/la/sb systematic/filter humans; даты и неизвестные подмножества → `null`), рендер с правилом «перевод только расширяет»: null в AND отбрасывается, в OR делает неизвестной дизъюнкцию, `a NOT null` → `a`; `fetchEuropePmcQuery()` + `EPMC_FALLBACK_QUERY`; `doRefresh` опрашивает Europe PMC по каждой теме с `addCandidate(it, topic.id)`, статус `ok/degraded/error` по числу упавших тем. Тесты: 9 (перевод, все `DEFAULT_TOPICS` переводятся без тегов и с балансом скобок), адаптер +1, интеграционный (запрос на каждую тему, привязка к теме) | ✅ |
-| 25+ | I-03/I-05 (справочник как данные с ISSN), A-15, A-16 | ⏳ |
+| 25 | A-15 — PWA-офлайн: service worker, страница `/offline`, баннер в ленте; попутно починена продакшен-сборка (граница клиент/сервер) и политика `Cache-Control` для API | ✅ |
+| 26+ | I-03/I-05 (справочник как данные с ISSN), A-16 | ⏳ |
 
 Оставшиеся уязвимости `npm audit` (9) — только dev-цепочка (`braces` через `eslint-config-next`, `esbuild` через `drizzle-kit`); исправлений без понижения версий этих пакетов нет, в рантайм не попадают.
 
@@ -344,7 +345,7 @@ GET   /api/backup    -H "Sec-Fetch-Site: same-origin"      → 200  ✗ бэка
 
 **A-14 · OpenAPI-спецификация и `/api/v1`.** Внешний cron и интеграции сейчас опираются на недокументированные контракты.
 
-**A-15 · PWA-офлайн.** Манифест есть, service worker нет: кэш последней ленты и открытых карточек для чтения без сети.
+**A-15 · PWA-офлайн.** Манифест есть, service worker нет: кэш последней ленты и открытых карточек для чтения без сети. — **Сделано:** `public/sw.js` (оболочка/статика cache-first, публичные GET network-first ≤ 80 записей, `/offline`), баннер офлайна в ленте, очистка кэша при выходе, `DISABLE_SW`.
 
 **A-16 · i18n (RU/EN)** и выбор формата дат; интерфейс хардкодит русский.
 

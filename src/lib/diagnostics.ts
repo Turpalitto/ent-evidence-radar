@@ -40,7 +40,7 @@ function dirSize(dir: string): number | null {
   try {
     let total = 0;
     const walk = (d: string) => {
-      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      for (const e of fs.readdirSync(/* turbopackIgnore: true */ d, { withFileTypes: true })) {
         const p = path.join(d, e.name);
         if (e.isDirectory()) walk(p);
         else total += fs.statSync(p).size;
@@ -96,7 +96,7 @@ export async function collectDiagnostics(): Promise<Diagnostics> {
   const [runCount] = await db.select({ n: sql<number>`count(*)::int` }).from(fetchRuns);
   let backupFiles = 0;
   try {
-    backupFiles = fs.readdirSync(backupDir).filter((f) => f.endsWith(".json")).length;
+    backupFiles = fs.readdirSync(/* turbopackIgnore: true */ backupDir).filter((f) => f.endsWith(".json")).length;
   } catch {}
   const lastTick = g.__entRadarSchedulerLastTick ?? null;
   const cursorValue = cursorRow[0]?.value as { lastId?: number } | undefined;
@@ -145,6 +145,7 @@ export async function collectDiagnostics(): Promise<Diagnostics> {
       ALERTS: alertsConfigured(),
       TRUST_PROXY: /^(1|true|yes|on)$/i.test(process.env.TRUST_PROXY ?? ""),
       CSP: !/^(1|true|yes|on)$/i.test(process.env.DISABLE_CSP ?? ""),
+      OFFLINE_SW: process.env.NODE_ENV === "production" && !/^(1|true|yes|on)$/i.test(process.env.DISABLE_SW ?? ""),
       MIGRATE_ON_START: !/^(0|false|no|off)$/i.test(process.env.MIGRATE_ON_START ?? ""),
     },
     settings: cfg as unknown as Record<string, unknown>,

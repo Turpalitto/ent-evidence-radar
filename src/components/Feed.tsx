@@ -184,6 +184,26 @@ function parseUrlSearch(): { f: Filters; page: number; q: string } {
 const SELECT_CLS = "field w-full rounded-xl px-2.5 py-1.5 text-sm text-[color:var(--ink-soft)]";
 const GHOST_BTN = "btn-ghost rounded-xl px-3 py-2.5 text-sm font-medium";
 
+
+/** navigator.onLine + события online/offline: баннер офлайн-режима без опроса сервера (SSR — «в сети»). */
+function subscribeOnline(cb: () => void) {
+  window.addEventListener("online", cb);
+  window.addEventListener("offline", cb);
+  return () => {
+    window.removeEventListener("online", cb);
+    window.removeEventListener("offline", cb);
+  };
+}
+function useOnlineStatus(): boolean {
+  return useSyncExternalStore(subscribeOnline, () => navigator.onLine !== false, () => true);
+}
+
+function formatCachedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "ранее";
+  return d.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 export function Feed({ topics }: { topics: Topic[] }) {
   const topicNameById = useMemo(() => new Map(topics.map((t) => [t.id, t.name])), [topics]);
   /** «Почему статья в ленте»: названия тем, по запросам которых она пришла (I-14). */
@@ -280,6 +300,9 @@ export function Feed({ topics }: { topics: Topic[] }) {
   // Защита от гонки: при смене фильтров предыдущий запрос отменяется, а его поздний
   // ответ не может перетереть актуальные данные.
   const loadAbortRef = useRef<AbortController | null>(null);
+  // Офлайн-режим (A-15): ответ, который service worker достал из кэша, несёт x-sw-cache/x-sw-cached-at.
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
+  const online = useOnlineStatus();
   const load = useCallback(async () => {
     loadAbortRef.current?.abort();
     const ctrl = new AbortController();
@@ -287,10 +310,12 @@ export function Feed({ topics }: { topics: Topic[] }) {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`/api/articles?${toParams(f, page, pageSize)}`, { cache: "no-store", signal: ctrl.signal });
+      // no-cache (а не no-store): браузер шлёт If-None-Match и получает 304 без тела, если лента не изменилась.
+      const r = await fetch(`/api/articles?${toParams(f, page, pageSize)}`, { cache: "no-cache", signal: ctrl.signal });
       if (!r.ok) throw new Error(`Ошибка сервера ${r.status}`);
       const parsed = (await r.json()) as { items?: Article[]; total?: number; searchTerms?: string[]; issuers?: { key: string; count: number }[] };
       if (ctrl.signal.aborted) return;
+      setCachedAt(r.headers.get("x-sw-cache") === "hit" ? (r.headers.get("x-sw-cached-at") ?? "") : null);
       const items = parsed.items ?? [];
       setData({ items, total: parsed.total ?? 0, searchTerms: parsed.searchTerms ?? [], issuers: parsed.issuers ?? [] });
       setFocusedIdx(-1);
@@ -890,6 +915,16 @@ export function Feed({ topics }: { topics: Topic[] }) {
           </div>
         )}
 
+        {(!online || cachedAt !== null) && !loading && !error && (
+          <div role="status" className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200">
+            <span className="font-semibold">{online ? "Данные из офлайн-кэша" : "Нет соединения"}</span>
+            <span>
+              {cachedAt
+                ? `показана лента, сохранённая ${formatCachedAt(cachedAt)}; обновится при появлении сети.`
+                : "показаны последние загруженные данные; действия с записями пока недоступны."}
+            </span>
+          </div>
+        )}
         {error && !loading && (
           <div className="card fade-in rounded-2xl border-rose-200/70 p-8 text-center dark:border-rose-900/50">
             <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-rose-50 dark:bg-rose-950/40">

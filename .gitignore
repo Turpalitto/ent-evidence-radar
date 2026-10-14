@@ -20,6 +20,9 @@ build/
 .pglite.broken-*/
 *.pglite
 
+# backups (BACKUP_DIR по умолчанию ./backups: автобэкапы и pre-migration снимки)
+backups/
+
 # drizzle
 drizzle/meta/_journal.json.bak
 

@@ -6,7 +6,7 @@ import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTIES, SU
 import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
 import { PICO_LABELS, extractPico } from "@/lib/evidence/pico";
 import { DesignBadge, IssuerBadge, LevelBadge, NOTICE_LABELS, NoticeBadge, TierBadge, TrialBadge, TrustScore, formatDate } from "./Badges";
-import { trialStatusLabel } from "@/lib/trials";
+import { trialStatusLabel } from "@/lib/evidence/trial-status";
 import { citeBibtex, citeGost, citeVancouver } from "@/lib/citation";
 import { useFocusTrap } from "./useFocusTrap";
 
