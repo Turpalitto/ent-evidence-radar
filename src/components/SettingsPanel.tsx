@@ -6,6 +6,7 @@ import type { Source } from "@/db/schema";
 import type { AppSettings } from "@/lib/defaults";
 import { SOURCE_LABELS } from "@/lib/evidence/taxonomy";
 import { formatDateTime } from "./Badges";
+import type { Diagnostics } from "@/lib/diagnostics";
 
 /** Карточка-секция настроек: hairline + мягкая тень, единый вертикальный ритм. */
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
@@ -122,6 +123,37 @@ export function SettingsPanel() {
       await loadDigestInfo();
     } finally {
       setDigestBusy(false);
+    }
+  };
+
+  // ── Диагностика (A-12)
+  const [diag, setDiag] = useState<Diagnostics | null>(null);
+  const [diagBusy, setDiagBusy] = useState(false);
+  const loadDiag = async () => {
+    setDiagBusy(true);
+    try {
+      const r = await fetch("/api/admin/diagnostics", { cache: "no-store" });
+      const j = (await r.json().catch(() => null)) as (Diagnostics & { error?: string }) | null;
+      if (!r.ok || !j || "error" in j) {
+        flash(j?.error ? `Диагностика недоступна: ${j.error}` : `Диагностика недоступна (ошибка ${r.status})`);
+        return;
+      }
+      setDiag(j);
+    } finally {
+      setDiagBusy(false);
+    }
+  };
+  const diagAction = async (action: "release_lock" | "reset_retraction_cursor", confirmText: string) => {
+    if (!window.confirm(confirmText)) return;
+    setDiagBusy(true);
+    try {
+      const r = await fetch("/api/admin/diagnostics", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const j = (await r.json().catch(() => null)) as { ok?: boolean; error?: string; released?: boolean } | null;
+      if (!r.ok || !j?.ok) flash(j?.error ? `Не выполнено: ${j.error}` : `Не выполнено (ошибка ${r.status})`);
+      else flash(action === "release_lock" ? (j.released ? "Блокировка снята" : "Блокировки уже не было") : "Курсор сброшен");
+    } finally {
+      setDiagBusy(false);
+      await loadDiag();
     }
   };
 
@@ -376,6 +408,112 @@ export function SettingsPanel() {
           </p>
         )}
       </Section>
+
+      <Section
+        title="Диагностика (для администратора)"
+        hint="Состояние процесса, базы, блокировки обновления, источников и фоновых задач — то, что раньше приходилось искать в логах. Требует входа."
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => void loadDiag()} disabled={diagBusy} className="btn-ghost rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-60">
+            {diagBusy ? "…" : diag ? "Обновить" : "Показать диагностику"}
+          </button>
+          {diag && (
+            <>
+              <button
+                type="button"
+                disabled={diagBusy || !diag.lock}
+                onClick={() => void diagAction("release_lock", "Снять блокировку обновления? Делайте это только если держатель точно погиб (иначе два процесса начнут писать одновременно).")}
+                className="btn-ghost rounded-xl px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                title={diag.lock ? `Держатель: ${diag.lock.holder}, аренда истекает через ${diag.lock.leaseSecLeft} с` : "Блокировки нет"}
+              >
+                Снять блокировку
+              </button>
+              <button type="button" disabled={diagBusy} onClick={() => void diagAction("reset_retraction_cursor", "Сбросить курсор перепроверки отзывов? Следующее обновление начнёт обход статей с начала.")} className="btn-ghost rounded-xl px-3 py-2 text-xs font-semibold disabled:opacity-50">
+                Сбросить курсор отзывов
+              </button>
+            </>
+          )}
+        </div>
+        {diag && (
+          <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
+            <DiagCard title="Приложение">
+              <DiagRow k="Версия" v={`${diag.app.version}${diag.app.commit ? ` · ${diag.app.commit.slice(0, 10)}` : ""}`} />
+              <DiagRow k="Node" v={diag.app.node} />
+              <DiagRow k="Аптайм" v={fmtDuration(diag.app.uptimeSec)} />
+              <DiagRow k="Часовой пояс" v={diag.app.timezone} />
+              <DiagRow k="Планировщик" v={diag.scheduler.started ? (diag.scheduler.alive === false ? "запущен, но молчит" : `жив, тик ${formatDateTime(diag.scheduler.lastTickAt)}`) : "не запущен (serverless?)"} warn={diag.scheduler.alive === false} />
+            </DiagCard>
+            <DiagCard title="База данных">
+              <DiagRow k="Движок" v={diag.db.kind} />
+              <DiagRow k="Размер" v={diag.db.sizeBytes != null ? fmtBytes(diag.db.sizeBytes) : "—"} />
+              <DiagRow k="Статей" v={`${diag.db.counts.articles} (скрыто ${diag.db.counts.hidden}, закладок ${diag.db.counts.bookmarked}, с заметками ${diag.db.counts.withNotes}, правок ${diag.db.counts.overridden})`} />
+              <DiagRow k="Отозванных" v={String(diag.db.counts.retracted)} warn={diag.db.counts.retracted > 0} />
+              <DiagRow k="Ждут переклассификации" v={String(diag.db.counts.pendingReclassify)} />
+              <DiagRow k="Тем / запусков / кэш ИИ" v={`${diag.db.counts.topics} / ${diag.db.counts.runs} / ${diag.db.counts.aiCache}`} />
+            </DiagCard>
+            <DiagCard title="Обновление">
+              <DiagRow k="Сейчас идёт" v={diag.refreshRunning ? `#${diag.refreshRunning.runId} (${diag.refreshRunning.trigger}) с ${formatDateTime(diag.refreshRunning.startedAt)}` : "нет"} />
+              <DiagRow k="Блокировка" v={diag.lock ? `${diag.lock.holder}, ещё ${diag.lock.leaseSecLeft} с` : "свободна"} warn={!!diag.lock && !diag.refreshRunning} />
+              <DiagRow k="Курсор отзывов" v={`id > ${diag.retractionCursor}`} />
+              <DiagRow k="Бэкапы" v={`${diag.backups.files} файлов, последний ${formatDateTime(diag.backups.lastAt)}`} />
+              <DiagRow k="Дайджест" v={diag.digest.lastSentAt ? `${formatDateTime(String(diag.digest.lastSentAt))}${diag.digest.lastDryRun ? " (dry-run)" : ""}` : "не отправлялся"} warn={!!diag.digest.lastError} />
+            </DiagCard>
+            <DiagCard title="Источники">
+              {diag.sources.map((s) => (
+                <DiagRow key={s.key} k={SOURCE_LABELS[s.key] ?? s.key} v={`${s.enabled ? "" : "выкл · "}${s.lastStatus ?? "—"} · ${formatDateTime(s.lastFetchedAt)}${s.lastError ? ` · ${s.lastError.slice(0, 120)}` : ""}`} warn={s.lastStatus === "error"} />
+              ))}
+            </DiagCard>
+            <DiagCard title="Последние запуски">
+              {diag.lastRuns.length === 0 && <p className="text-[color:var(--ink-subtle)]">ещё не было</p>}
+              {diag.lastRuns.map((r) => (
+                <DiagRow key={r.id} k={`#${r.id} ${r.trigger}`} v={`${r.status} · ${formatDateTime(r.startedAt)} · +${r.newAdded}/~${r.updated}${r.errorMessage ? ` · ${r.errorMessage.slice(0, 80)}` : ""}`} warn={r.status === "failed"} />
+              ))}
+            </DiagCard>
+            <DiagCard title="ИИ и внешние API">
+              <DiagRow k="ИИ сегодня" v={diag.ai ? `${diag.ai.calls}${diag.ai.budget ? ` / ${diag.ai.budget}` : ""} вызовов, в полёте ${diag.ai.inFlight}` : "не настроен"} />
+              {Object.entries(diag.metrics.counters)
+                .filter(([k]) => /^(http\.requests|http\.errors|http\.retries|ai\.requests|refresh\.runs)/.test(k))
+                .slice(0, 8)
+                .map(([k, v]) => (
+                  <DiagRow key={k} k={k} v={String(v)} />
+                ))}
+              <DiagRow k="Окружение" v={Object.entries(diag.env).filter(([, on]) => on).map(([k]) => k).join(", ") || "—"} />
+            </DiagCard>
+          </div>
+        )}
+      </Section>
     </div>
   );
+}
+
+function DiagCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="panel rounded-xl p-3">
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--ink-subtle)]">{title}</p>
+      <dl className="space-y-1">{children}</dl>
+    </div>
+  );
+}
+
+function DiagRow({ k, v, warn }: { k: string; v: string; warn?: boolean }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="w-32 shrink-0 text-[color:var(--ink-muted)]">{k}</dt>
+      <dd className={`min-w-0 break-words ${warn ? "font-semibold text-amber-700 dark:text-amber-400" : "text-[color:var(--ink)]"}`}>{v}</dd>
+    </div>
+  );
+}
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} Б`;
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} КБ`;
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} МБ`;
+  return `${(n / 1024 ** 3).toFixed(2)} ГБ`;
+}
+
+function fmtDuration(sec: number): string {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return d ? `${d} д ${h} ч` : h ? `${h} ч ${m} мин` : `${m} мин`;
 }

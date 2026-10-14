@@ -16,10 +16,13 @@ RUN npm run build
 # ---------- runtime ----------
 FROM node:22-alpine AS runner
 WORKDIR /app
+# Коммит сборки — показывается в диагностике (A-12): docker build --build-arg GIT_SHA=$(git rev-parse HEAD)
+ARG GIT_SHA=""
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
-    HOSTNAME=0.0.0.0
+    HOSTNAME=0.0.0.0 \
+    GIT_SHA=$GIT_SHA
 
 # Непривилегированный пользователь с ФИКСИРОВАННЫМ UID/GID 1001 (аудит F-17): bind-mount
 # каталогов ./docker-data и ./backups с хоста требует предсказуемого владельца —

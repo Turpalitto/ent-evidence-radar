@@ -64,6 +64,8 @@ jobs:
           context: .
           load: true
           tags: ent-evidence-radar:ci
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
