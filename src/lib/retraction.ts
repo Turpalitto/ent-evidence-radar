@@ -1,7 +1,8 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { articles, settings } from "@/db/schema";
-import { pubmedRetractionMap } from "@/lib/sources/pubmed";
+import { pubmedRetractedSet, pubmedRetractionMap } from "@/lib/sources/pubmed";
+import { log } from "@/lib/log";
 
 /**
  * Перепроверка отзывов (retractions).
@@ -79,6 +80,21 @@ async function writeCursor(lastId: number): Promise<void> {
     .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: new Date() } });
 }
 
+/**
+ * Карта «PMID → отозвана?». Основной путь — лёгкий esearch с фильтром [pt] (F-15);
+ * при его сбое — прежний efetch полного XML, чтобы перепроверка не останавливалась.
+ */
+async function retractionMapFor(candidates: string[]): Promise<Map<string, boolean>> {
+  if (!candidates.length) return new Map();
+  try {
+    const retracted = await pubmedRetractedSet(candidates);
+    return new Map(candidates.map((p) => [p, retracted.has(p)]));
+  } catch (e) {
+    log.warn("retraction.esearch_failed_fallback_efetch", { error: e instanceof Error ? e.message : String(e) });
+    return await pubmedRetractionMap(candidates);
+  }
+}
+
 /** Полная перепроверка по базе (порциями). Вызывается из doRefresh после записи статей. */
 export async function recheckRetractions(): Promise<RetractionRecheckResult> {
   try {
@@ -104,7 +120,7 @@ export async function recheckRetractions(): Promise<RetractionRecheckResult> {
     if (!rows.length) return { checked: 0, newlyRetracted: 0 };
 
     const candidates = pickPmidsToRecheck(rows);
-    const map = await pubmedRetractionMap(candidates);
+    const map = await retractionMapFor(candidates);
     const toFlag = pickNewlyRetracted(candidates, map);
 
     // Курсор двигаем независимо от результата: важно, чтобы круг гарантированно продвигался.

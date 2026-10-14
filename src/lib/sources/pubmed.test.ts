@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { parsePubmedArticlesXml, parsePubmedRetractionsXml } from "@/lib/sources/pubmed";
+import { describe, it, expect, vi } from "vitest";
+import { buildRetractedTerm, parseEsearchIdList, parsePubmedArticlesXml, parsePubmedRetractionsXml, pubmedRetractedSet } from "@/lib/sources/pubmed";
 
 /**
  * Фрагмент реального формата efetch (PubmedArticleSet) со всеми «неудобными» местами:
@@ -149,5 +149,45 @@ describe("parsePubmedRetractionsXml", () => {
     expect(m.get("39000002")).toBe(true);
     expect(m.get("39000003")).toBe(false);
     expect(m.size).toBe(3);
+  });
+});
+
+describe("лёгкая перепроверка отзывов через esearch (F-15)", () => {
+  it("buildRetractedTerm ограничивает поиск списком PMID и типом публикации", () => {
+    const term = buildRetractedTerm(["111", "222"]);
+    expect(term).toBe('(111[uid] OR 222[uid]) AND "retracted publication"[pt]');
+  });
+
+  it("parseEsearchIdList читает idlist и падает на неожиданной форме (для fallback)", () => {
+    expect(parseEsearchIdList({ esearchresult: { count: "1", idlist: ["222"] } })).toEqual(["222"]);
+    expect(parseEsearchIdList({ esearchresult: { idlist: [] } })).toEqual([]);
+    expect(() => parseEsearchIdList({})).toThrow(/esearchresult/);
+    expect(() => parseEsearchIdList({ esearchresult: { ERROR: "Invalid query" } })).toThrow(/Invalid query/);
+    expect(() => parseEsearchIdList("<html>")).toThrow();
+  });
+
+  it("pubmedRetractedSet шлёт POST-пачки и возвращает только запрошенные PMID", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, init });
+        return new Response(JSON.stringify({ esearchresult: { idlist: ["2", "999"] } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }),
+    );
+    try {
+      const ids = Array.from({ length: 160 }, (_, i) => String(i + 1));
+      const set = await pubmedRetractedSet(ids);
+      expect(calls).toHaveLength(2); // 150 + 10
+      expect(calls[0].init?.method).toBe("POST");
+      expect(new URLSearchParams(String(calls[0].init?.body)).get("term")).toContain('"retracted publication"[pt]');
+      expect(new URLSearchParams(String(calls[0].init?.body)).get("retmode")).toBe("json");
+      expect(calls[0].url).toMatch(/esearch\.fcgi$/);
+      expect(set.has("2")).toBe(true);
+      expect(set.has("999")).toBe(false); // не из нашего списка — игнорируем
+      expect(set.size).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

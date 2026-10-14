@@ -1,3 +1,5 @@
+import { metrics, hostLabel } from "@/lib/metrics";
+
 const lastCall: Record<string, number> = {};
 
 /** Простой rate-limiter: минимум minIntervalMs между вызовами по ключу */
@@ -15,23 +17,34 @@ export interface FetchOpts {
   throttleKey?: string;
   throttleMs?: number;
   headers?: Record<string, string>;
+  /** POST с телом (например, длинные term/id для E-utilities вместо URL >2 КБ). */
+  method?: "GET" | "POST";
+  body?: string;
 }
 
 export async function fetchWithRetry(url: string, opts: FetchOpts = {}): Promise<Response> {
-  const { timeoutMs = 25_000, retries = 2, throttleKey, throttleMs = 0, headers } = opts;
+  const { timeoutMs = 25_000, retries = 2, throttleKey, throttleMs = 0, headers, method = "GET", body } = opts;
+  const host = hostLabel(url);
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     if (throttleKey) await throttle(throttleKey, throttleMs);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const t0 = Date.now();
+    metrics.inc("http.requests", { host });
+    if (attempt > 0) metrics.inc("http.retries", { host });
     try {
       const res = await fetch(url, {
+        method,
+        body: method === "POST" ? body : undefined,
         signal: ctrl.signal,
         headers: { "User-Agent": "ENT-Evidence-Radar/1.0 (research monitoring tool)", ...headers },
         cache: "no-store",
       });
       clearTimeout(timer);
+      metrics.observe("http.duration", Date.now() - t0, { host });
       if (res.status === 429 || res.status >= 500) {
+        metrics.inc("http.errors", { host, status: res.status });
         lastErr = new Error(`HTTP ${res.status} from ${new URL(url).host}`);
         await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
         continue;
@@ -39,6 +52,7 @@ export async function fetchWithRetry(url: string, opts: FetchOpts = {}): Promise
       return res;
     } catch (e) {
       clearTimeout(timer);
+      metrics.inc("http.errors", { host, status: e instanceof Error && e.name === "AbortError" ? "timeout" : "network" });
       lastErr = e;
       await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
     }

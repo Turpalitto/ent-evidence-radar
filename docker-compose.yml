@@ -1,6 +1,11 @@
 # Сам-хостинг ENT Evidence Radar.
 # По умолчанию — встроенный PGlite с персистентным volume ./docker-data.
 # Для внешнего PostgreSQL раскомментируйте блок db и переменную DATABASE_URL у сервиса app.
+#
+# ВАЖНО (F-17): процесс в контейнере работает от uid:gid 1001:1001. Перед первым запуском
+# создайте каталоги на хосте и отдайте их этому пользователю, иначе будет EACCES:
+#   mkdir -p docker-data backups && sudo chown -R 1001:1001 docker-data backups
+# Либо замените bind-mount на named volumes (см. закомментированный блок volumes ниже).
 
 services:
   app:
@@ -23,18 +28,34 @@ services:
       # TRUST_PROXY: "1"
       # TRUSTED_PROXIES: 10.0.0.0/8
       # --- Каталог резервных копий (должен лежать в смонтированном volume) ---
-      # BACKUP_DIR: /app/backups
+      BACKUP_DIR: /app/backups
+      # BACKUP_KEEP: "10"          # сколько датированных бэкапов хранить
+      # AUTO_BACKUP_HOURS: "24"    # автобэкап из планировщика; 0 — выключить
+      # --- Алерты при серии неуспешных обновлений (I-08) ---
+      # ALERT_WEBHOOK_URL: https://hooks.slack.com/services/...
+      # ALERT_RECIPIENTS: doctor@example.org
+      # ALERT_FAILURES_THRESHOLD: "3"
     volumes:
       - ./docker-data:/app/.pglite
       # Персистентный каталог для бэкапов (см. BACKUP_DIR) — иначе файл эфемерный.
       - ./backups:/app/backups
+      # Вариант без возни с правами: named volumes (Docker сам выставит владельца из образа).
+      # - pglite-data:/app/.pglite
+      # - backups:/app/backups
     restart: unless-stopped
+    # HEALTHCHECK уже задан в образе (Dockerfile); здесь можно переопределить интервалы.
+    # Для внешнего мониторинга используйте /api/health?strict=1 (503 при мёртвом планировщике,
+    # упавшем последнем запуске или отсутствии обновлений дольше 2× интервала).
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 60s
       timeout: 5s
       retries: 3
       start_period: 30s
+
+# volumes:
+#   pglite-data:
+#   backups:
 
   # db:
   #   image: postgres:17-alpine

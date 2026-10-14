@@ -178,6 +178,22 @@ export function Feed({ topics }: { topics: Topic[] }) {
       });
   }, []);
 
+  // Прогрев переводов — только для открытой карточки и двух следующих в списке (аудит F-08).
+  // Раньше прогревалась вся страница ленты на каждую смену фильтра — до 30 переводов «на всякий случай».
+  const warmedRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    if (!selected || aiConfiguredRef.current === false) return;
+    const idx = data.items.findIndex((a) => a.id === selected.id);
+    const ids = [selected.id, ...(idx >= 0 ? data.items.slice(idx + 1, idx + 3).map((a) => a.id) : [])].filter((id) => !warmedRef.current.has(id));
+    if (!ids.length) return;
+    for (const id of ids) warmedRef.current.add(id);
+    void fetch("/api/ai/warm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ articleIds: ids }),
+    }).catch(() => {});
+  }, [selected, data.items]);
+
   const requestNotification = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) return;
     const p = await Notification.requestPermission();
@@ -226,15 +242,6 @@ export function Feed({ topics }: { topics: Topic[] }) {
       const items = parsed.items ?? [];
       setData({ items, total: parsed.total ?? 0 });
       setFocusedIdx(-1);
-      // Фоновый прогрев переводов: только если AI настроен и это актуальный ответ
-      const abstracts = items.map((a) => a.abstract).filter((s): s is string => Boolean(s));
-      if (abstracts.length && aiConfiguredRef.current !== false) {
-        void fetch("/api/ai/warm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ texts: abstracts }),
-        }).catch(() => {});
-      }
     } catch (e) {
       if (ctrl.signal.aborted) return; // отменён более новым запросом или размонтированием
       setError(e instanceof Error ? e.message : "Ошибка сети");

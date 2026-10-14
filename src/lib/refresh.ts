@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail } from "@/db/schema";
 import { CLASSIFIER_VERSION, classify, dedupKeyFor, type RawArticle } from "@/lib/evidence/classify";
@@ -9,15 +9,32 @@ import { fetchClinicalTrials } from "@/lib/sources/clinicaltrials";
 import { fetchMedrxiv } from "@/lib/sources/medrxiv";
 import { recheckRetractions } from "@/lib/retraction";
 import { isReclassifyRunning, reclassifyArticles } from "@/lib/reclassify";
+import { pruneAiCache } from "@/lib/ai";
 import { invalidateStatsCache } from "@/lib/stats";
+import { log } from "@/lib/log";
+import { metrics } from "@/lib/metrics";
+import { evaluateRunAlerts } from "@/lib/alerts";
+
+export interface CurrentRefresh {
+  runId: number;
+  trigger: "manual" | "scheduled";
+  startedAt: number;
+}
 
 const g = globalThis as typeof globalThis & {
   __entRadarRunning?: boolean;
   __entRadarSeeded?: boolean;
+  __entRadarCurrentRun?: CurrentRefresh & { done: Promise<{ runId: number }> };
 };
 
 export function isRefreshRunning() {
   return !!g.__entRadarRunning;
+}
+
+/** Текущий запуск в этом процессе (для 409/опроса), либо null. */
+export function currentRefresh(): CurrentRefresh | null {
+  const c = g.__entRadarCurrentRun;
+  return c ? { runId: c.runId, trigger: c.trigger, startedAt: c.startedAt } : null;
 }
 
 // ---- Кросс-инстансная блокировка запуска (через settings; без новой миграции).
@@ -59,6 +76,14 @@ async function releaseLock(holder: string) {
   `);
 }
 
+/** Текущий держатель кросс-процессной блокировки (null, если блокировки нет или она истекла). */
+export async function lockStatus(): Promise<{ holder: string; expiresAt: string } | null> {
+  const rows = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, LOCK_KEY));
+  const v = rows[0]?.value as { holder?: string; expiresAt?: string } | undefined;
+  if (!v?.holder || !v.expiresAt) return null;
+  return new Date(v.expiresAt).getTime() > Date.now() ? { holder: v.holder, expiresAt: v.expiresAt } : null;
+}
+
 /** Идемпотентное наполнение справочников при первом старте. */
 export async function ensureSeeded() {
   if (g.__entRadarSeeded) return;
@@ -95,6 +120,14 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<AppSett
 export interface Candidate {
   raw: RawArticle;
   topicIds: Set<number>;
+}
+
+/** Результат адаптера источника с данными о полноте просмотра окна. */
+export interface SourceFetchResult {
+  items: RawArticle[];
+  scanned?: number;
+  total?: number;
+  truncated?: boolean;
 }
 
 /** Статус источника после опроса: ok — без ошибок, degraded — часть тем упала, error — все. */
@@ -218,28 +251,101 @@ export function planWrites(
   return { toInsert, toUpdate };
 }
 
-export async function runRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: number; skipped?: boolean }> {
-  if (g.__entRadarRunning) return { runId: -1, skipped: true };
-  const holder = `proc-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
-  if (!(await acquireLock(holder))) return { runId: -1, skipped: true };
-  g.__entRadarRunning = true;
-  const heartbeat = setInterval(() => void renewLock(holder).catch(() => {}), 120_000);
-  try {
-    return await doRefresh(trigger);
-  } finally {
-    clearInterval(heartbeat);
-    await releaseLock(holder).catch(() => {});
-    g.__entRadarRunning = false;
-  }
+export interface RefreshStart {
+  runId: number;
+  /** Запуск не стартовал: уже идёт в этом или другом процессе. */
+  skipped?: boolean;
+  /** Завершение фонового выполнения (для `await` в планировщике/тестах и `after()` в API). */
+  done: Promise<{ runId: number }>;
 }
 
-async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: number }> {
-  await ensureSeeded();
+/**
+ * Запускает обновление и СРАЗУ возвращает runId (аудит F-05): само выполнение идёт в фоне,
+ * прогресс по источникам пишется в `fetch_runs.details`, UI и cron опрашивают
+ * `GET /api/runs/:id`. Раньше HTTP-запрос ждал 1–5 минут и обрывался прокси (504),
+ * а запись оставалась `running` навсегда.
+ */
+export async function startRefresh(trigger: "manual" | "scheduled"): Promise<RefreshStart> {
+  const noop = Promise.resolve({ runId: -1 });
+  if (g.__entRadarRunning) return { runId: g.__entRadarCurrentRun?.runId ?? -1, skipped: true, done: g.__entRadarCurrentRun?.done ?? noop };
+  const holder = `proc-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  if (!(await acquireLock(holder))) return { runId: -1, skipped: true, done: noop };
+  g.__entRadarRunning = true;
+
+  let run: { id: number };
+  try {
+    await ensureSeeded();
+    // Мы держим эксклюзивную блокировку, значит любые другие записи «running» —
+    // призраки убитых процессов (OOM, рестарт, таймаут serverless). Закрываем их здесь,
+    // а не только при старте процесса (instrumentation), которого на serverless нет.
+    await recoverStaleRuns();
+    [run] = await db.insert(fetchRuns).values({ trigger, status: "running" }).returning({ id: fetchRuns.id });
+  } catch (e) {
+    await releaseLock(holder).catch(() => {});
+    g.__entRadarRunning = false;
+    throw e;
+  }
+
+  const heartbeat = setInterval(() => void renewLock(holder).catch(() => {}), 120_000);
+  const done = (async () => {
+    try {
+      return await doRefresh(trigger, run.id);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error("refresh.failed", { runId: run.id, trigger, error: msg });
+      await db
+        .update(fetchRuns)
+        .set({ status: "failed", finishedAt: new Date(), errorMessage: msg })
+        .where(eq(fetchRuns.id, run.id))
+        .catch(() => {});
+      metrics.inc("refresh.runs", { trigger, status: "failed" });
+      return { runId: run.id };
+    } finally {
+      clearInterval(heartbeat);
+      await releaseLock(holder).catch(() => {});
+      g.__entRadarRunning = false;
+      g.__entRadarCurrentRun = undefined;
+    }
+  })().then(async (r) => {
+    // Алерты по серии сбоев / восстановлению (I-08) — после фиксации статуса запуска.
+    await evaluateRunAlerts().catch((e) => log.warn("alert.evaluate_failed", { error: e instanceof Error ? e.message : String(e) }));
+    return r;
+  });
+  g.__entRadarCurrentRun = { runId: run.id, trigger, startedAt: Date.now(), done };
+  return { runId: run.id, done };
+}
+
+/** Синхронный вариант: дождаться завершения (планировщик, скрипты, тесты). */
+export async function runRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: number; skipped?: boolean }> {
+  const s = await startRefresh(trigger);
+  if (s.skipped) return { runId: s.runId, skipped: true };
+  return await s.done;
+}
+
+/** Помечает зависшие запуски «running» как failed. Вызывать только под блокировкой. */
+export async function recoverStaleRuns(): Promise<number> {
+  const stale = await db
+    .update(fetchRuns)
+    .set({ status: "failed", finishedAt: new Date(), errorMessage: "Процесс прерван до завершения запуска" })
+    .where(eq(fetchRuns.status, "running"))
+    .returning({ id: fetchRuns.id });
+  if (stale.length) log.warn("refresh.stale_recovered", { count: stale.length, ids: stale.map((r) => r.id) });
+  return stale.length;
+}
+
+async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promise<{ runId: number }> {
   const cfg = await getSettings();
   const started = Date.now();
-  const [run] = await db.insert(fetchRuns).values({ trigger, status: "running" }).returning();
+  const run = { id: runId };
 
   const details: RunSourceDetail[] = [];
+  // Прогресс по источникам пишем в БД по мере завершения — UI показывает его при опросе.
+  const persistProgress = () =>
+    db
+      .update(fetchRuns)
+      .set({ details: details.map((d) => ({ ...d })) })
+      .where(eq(fetchRuns.id, run.id))
+      .catch(() => {});
   const candidates = new Map<string, Candidate>();
   const sourceKeysByDedup = new Map<string, Set<string>>();
 
@@ -282,6 +388,7 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
       }
     }
     details.push({ source: "pubmed", found, added: 0, updated: 0, durationMs: Date.now() - t0, error: errors.length ? errors.join(" | ") : undefined });
+    await persistProgress();
     const status = pubmedSourceStatus(errors.length, enabledTopics.length);
     await markSource(
       "pubmed",
@@ -292,21 +399,25 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
 
   // ---- Остальные источники параллельно
   const parallel: Promise<void>[] = [];
-  const runSource = (key: string, fn: () => Promise<RawArticle[]>) => {
+  const runSource = (key: string, fn: () => Promise<RawArticle[] | SourceFetchResult>) => {
     if (!enabledSources.has(key)) return;
     parallel.push(
       (async () => {
         const t0 = Date.now();
         try {
-          const items = await fn();
-          for (const it of items) addCandidate(it);
-          details.push({ source: key, found: items.length, added: 0, updated: 0, durationMs: Date.now() - t0 });
-          await markSource(key, "ok");
+          const r = await fn();
+          const res: SourceFetchResult = Array.isArray(r) ? { items: r } : r;
+          for (const it of res.items) addCandidate(it);
+          // Усечённое окно (F-14) — не тихая потеря: фиксируем в деталях и помечаем запуск частичным.
+          const note = res.truncated ? `Окно просмотрено не полностью: ${res.scanned ?? "?"} из ${res.total ?? "?"} записей (лимит страниц/времени)` : undefined;
+          details.push({ source: key, found: res.items.length, added: 0, updated: 0, durationMs: Date.now() - t0, error: note });
+          await markSource(key, res.truncated ? "degraded" : "ok", note);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           details.push({ source: key, found: 0, added: 0, updated: 0, durationMs: Date.now() - t0, error: msg });
           await markSource(key, "error", msg);
         }
+        await persistProgress();
       })(),
     );
   };
@@ -400,6 +511,10 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
     }
   }
 
+  // ---- Гигиена кэша AI (F-24): старые/избыточные записи ai_cache.
+  const pruned = await pruneAiCache();
+  if (pruned.deleted) log.info("ai.cache_pruned", { deleted: pruned.deleted });
+
   for (const d of details) {
     if (SERVICE_STEPS.has(d.source)) continue; // added/updated уже проставлены самим шагом
     d.added = addedBySource[d.source] ?? 0;
@@ -425,21 +540,22 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
 
   // Данные изменились — сбрасываем TTL-кэш агрегатов статистики.
   invalidateStatsCache();
+  metrics.inc("refresh.runs", { trigger, status });
+  metrics.observe("refresh.duration", Date.now() - started, { trigger });
 
   return { runId: run.id };
 }
 
+/**
+ * Дождаться завершения запуска. Сбой самого выполнения уже зафиксирован в fetch_runs
+ * фоновой задачей (см. startRefresh); сюда долетают только ошибки старта (БД, блокировка).
+ */
 export async function runRefreshSafe(trigger: "manual" | "scheduled") {
   try {
     return await runRefresh(trigger);
   } catch (e) {
     g.__entRadarRunning = false;
-    const msg = e instanceof Error ? e.message : String(e);
-    // фиксируем сбой в последнем running-запуске
-    const running = await db.select().from(fetchRuns).where(and(eq(fetchRuns.status, "running"), eq(fetchRuns.trigger, trigger)));
-    for (const r of running) {
-      await db.update(fetchRuns).set({ status: "failed", finishedAt: new Date(), errorMessage: msg }).where(eq(fetchRuns.id, r.id));
-    }
+    log.error("refresh.start_failed", { trigger, error: e instanceof Error ? e.message : String(e) });
     throw e;
   }
 }

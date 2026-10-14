@@ -21,8 +21,11 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
 
-# Непривилегированный пользователь
-RUN addgroup -S app && adduser -S app -G app
+# Непривилегированный пользователь с ФИКСИРОВАННЫМ UID/GID 1001 (аудит F-17): bind-mount
+# каталогов ./docker-data и ./backups с хоста требует предсказуемого владельца —
+# `chown -R 1001:1001 docker-data backups` на хосте (см. README). Раньше `adduser -S`
+# выдавал системный UID, который отличался от образа к образу.
+RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
 
 # Standalone-сборка (next.config.ts -> output: "standalone")
 COPY --from=build --chown=app:app /app/.next/standalone ./
@@ -32,10 +35,14 @@ COPY --from=build --chown=app:app /app/.next/static ./.next/static
 # Миграции Drizzle нужны в рантайме: db/index.ts применяет их при старте
 COPY --from=build --chown=app:app /app/drizzle ./drizzle
 
-# Данные PGlite по умолчанию кладутся в process.cwd()/.pglite
-RUN mkdir -p /app/.pglite && chown -R app:app /app
-VOLUME ["/app/.pglite"]
+# Данные PGlite по умолчанию кладутся в process.cwd()/.pglite, бэкапы — в BACKUP_DIR (по умолчанию ./backups)
+RUN mkdir -p /app/.pglite /app/backups && chown -R app:app /app
+VOLUME ["/app/.pglite", "/app/backups"]
 USER app
 
 EXPOSE 3000
+# HEALTHCHECK в самом образе (а не только в compose): `docker run` и оркестраторы без compose
+# тоже видят состояние. /api/health без параметров отвечает 200, пока БД доступна.
+HEALTHCHECK --interval=60s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 CMD ["node", "server.js"]

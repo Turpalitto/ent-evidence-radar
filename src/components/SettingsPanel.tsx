@@ -22,6 +22,8 @@ export function SettingsPanel() {
   const [cfg, setCfg] = useState<AppSettings | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const loadAll = useCallback(async () => {
     const [c, s] = await Promise.all([
@@ -51,6 +53,48 @@ export function SettingsPanel() {
   const toggleSource = async (s: Source) => {
     await fetch(`/api/sources/${s.key}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !s.enabled }) });
     await loadAll();
+  };
+
+  const restoreBackup = async (file: File | undefined) => {
+    if (!file) return;
+    setRestoreMsg(null);
+    setRestoring(true);
+    try {
+      const text = await file.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        setRestoreMsg({ ok: false, text: "Файл не является корректным JSON" });
+        return;
+      }
+      const r = await fetch("/api/backup/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed) });
+      const j = (await r.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        articles?: { matched: number; bookmarked: number; notesMerged: number; unmatched: { title: string }[] };
+        topics?: { created: number; updated: number };
+        settings?: { applied: string[] };
+      };
+      if (!r.ok || !j.ok) {
+        setRestoreMsg({ ok: false, text: j.error ?? `Ошибка ${r.status}` });
+        return;
+      }
+      const a = j.articles;
+      const t = j.topics;
+      const parts = [
+        a ? `статей сопоставлено ${a.matched}, закладок добавлено ${a.bookmarked}, заметок объединено ${a.notesMerged}` : null,
+        a?.unmatched.length ? `не найдено в базе: ${a.unmatched.length} (появятся после обновления, если попадают в окно поиска)` : null,
+        t ? `тем создано ${t.created}, обновлено ${t.updated}` : null,
+        j.settings?.applied.length ? `настроек применено ${j.settings.applied.length}` : null,
+      ].filter(Boolean);
+      setRestoreMsg({ ok: true, text: `Восстановлено: ${parts.join("; ")}.` });
+      await loadAll();
+    } catch (e) {
+      setRestoreMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setRestoring(false);
+    }
   };
 
   if (!cfg) return <p className="text-sm text-[color:var(--ink-muted)]">Загрузка…</p>;
@@ -163,13 +207,31 @@ export function SettingsPanel() {
 
       <Section
         title="Резервное копирование и безопасность данных"
-        hint="Выгрузка всех сохранённых закладок, клинических заметок, пользовательских тем и настроек в JSON-файл. Позволяет не потерять персональные данные врача при любых работах с базой."
+        hint="Выгрузка всех сохранённых закладок, клинических заметок, пользовательских тем и настроек в JSON-файл. Позволяет не потерять персональные данные врача при любых работах с базой. Восстановление — слияние: текущие закладки и заметки не затираются, статьи сопоставляются по PMID/DOI/NCT."
       >
         <div className="flex flex-wrap items-center gap-3">
           <a href="/api/backup" download className="btn-brand flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white">
             <span>📥 Скачать резервную копию (JSON)</span>
           </a>
+          <label className={`btn-ghost flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold ${restoring ? "opacity-60" : ""}`}>
+            <span>{restoring ? "⏳ Восстановление…" : "📤 Восстановить из файла"}</span>
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              disabled={restoring}
+              onChange={(e) => {
+                void restoreBackup(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
         </div>
+        {restoreMsg && (
+          <p className={`mt-3 text-sm ${restoreMsg.ok ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`} role="status">
+            {restoreMsg.text}
+          </p>
+        )}
       </Section>
     </div>
   );

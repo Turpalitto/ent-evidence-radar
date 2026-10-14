@@ -50,6 +50,13 @@
       "when": 1791983019077,
       "tag": "0006_classifier_version",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791983624822,
+      "tag": "0007_sync_schema_snapshot",
+      "breakpoints": true
     }
   ]
 }

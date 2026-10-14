@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { NextResponse } from "next/server";
 import { SUBSPECIALTIES } from "@/lib/evidence/taxonomy";
 
@@ -16,6 +17,29 @@ export function parseId(raw: string | undefined | null): number | null {
   if (!raw || !/^\d{1,12}$/.test(raw)) return null;
   const n = Number(raw);
   return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * Единый разбор тела по zod-схеме (аудит I-07): невалидный JSON или схема → `{ ok: false, response: 400 }`
+ * с перечнем проблем в формате `поле: сообщение`. Пустое тело трактуется как `{}` (для эндпоинтов,
+ * где все поля необязательны).
+ */
+export async function parseBody<T>(req: Request, schema: z.ZodType<T>): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
+  let raw: unknown = {};
+  const text = await req.text().catch(() => "");
+  if (text.trim()) {
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return { ok: false, response: Response.json({ ok: false, error: "Некорректный JSON" }, { status: 400 }) };
+    }
+  }
+  const r = schema.safeParse(raw);
+  if (!r.success) {
+    const issues = r.error.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`);
+    return { ok: false, response: Response.json({ ok: false, error: `Некорректный запрос: ${issues.join("; ")}`, issues }, { status: 400 }) };
+  }
+  return { ok: true, data: r.data };
 }
 
 /** JSON-объект из тела запроса. Синтаксическая ошибка, массив или не-объект → null. */

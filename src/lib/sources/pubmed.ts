@@ -236,6 +236,47 @@ export function parsePubmedRetractionsXml(xml: string): Map<string, boolean> {
   return out;
 }
 
+/** Поисковый запрос «какие из этих PMID помечены как отозванные». Чистая функция (тестируется). */
+export function buildRetractedTerm(pmids: string[]): string {
+  return `(${pmids.map((p) => `${p}[uid]`).join(" OR ")}) AND "retracted publication"[pt]`;
+}
+
+/** Список PMID из JSON-ответа esearch; бросает ошибку при неожиданной форме (чтобы сработал fallback). */
+export function parseEsearchIdList(json: unknown): string[] {
+  const r = (json as { esearchresult?: { idlist?: unknown; ERROR?: string } } | null)?.esearchresult;
+  if (!r) throw new Error("esearch: неожиданный ответ (нет esearchresult)");
+  if (r.ERROR) throw new Error(`esearch: ${r.ERROR}`);
+  if (!Array.isArray(r.idlist)) throw new Error("esearch: нет idlist");
+  return r.idlist.filter((x): x is string => typeof x === "string" && /^\d+$/.test(x));
+}
+
+/**
+ * Лёгкая перепроверка отзывов (аудит F-15): один esearch POST на пачку из 150 PMID
+ * с фильтром "retracted publication"[pt] возвращает только отозванные id — сотни байт
+ * вместо мегабайтов полного XML через efetch. Возвращает множество отозванных PMID.
+ */
+export async function pubmedRetractedSet(pmids: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  const { key, throttleMs, email, tool } = ncbiParams();
+  for (let i = 0; i < pmids.length; i += 150) {
+    const chunk = pmids.slice(i, i + 150);
+    const body = new URLSearchParams({ db: "pubmed", term: buildRetractedTerm(chunk), retmax: String(chunk.length), retmode: "json", tool, email });
+    if (key) body.set("api_key", key);
+    const json = await fetchJson<unknown>(`${BASE}/esearch.fcgi`, {
+      method: "POST",
+      body: body.toString(),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      throttleKey: "ncbi",
+      throttleMs,
+      timeoutMs: 30_000,
+    });
+    const want = new Set(chunk);
+    for (const id of parseEsearchIdList(json)) if (want.has(id)) out.add(id);
+  }
+  return out;
+}
+
+/** Полная (тяжёлая) карта отзывов через efetch XML — резервный путь, если esearch недоступен. */
 export async function pubmedRetractionMap(pmids: string[]): Promise<Map<string, boolean>> {
   const out = new Map<string, boolean>();
   const { key, throttleMs, email, tool } = ncbiParams();

@@ -72,10 +72,11 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
       error: undefined,
     }));
     try {
+      // Текст сервер берёт из БД по id (аудит F-08) — клиент не присылает произвольный текст.
       const r = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, text: a.abstract }),
+        body: JSON.stringify({ action, articleId: a.id }),
       });
       if (!r.ok || !r.body) {
         const j = (await r.json().catch(() => ({}))) as { error?: string };

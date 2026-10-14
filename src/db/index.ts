@@ -131,4 +131,7 @@ async function initDb() {
 // Единый тип db (NodePgDatabase) — совпадает с оригинальным `drizzle(pool)` и сохраняет
 // перегрузки методов (в т.ч. .returning({ ... })) на всех call-site. PGlite-инстанс совместим по API.
 export const db = (g.__entRadarDb ?? await initDb()) as ReturnType<typeof drizzlePg>;
+
+/** Какой движок используется: внешний PostgreSQL или встроенный PGlite (для /api/health и логов). */
+export const dbKind: "postgres" | "pglite" = databaseUrl ? "postgres" : "pglite";
 g.__entRadarDb = db;
