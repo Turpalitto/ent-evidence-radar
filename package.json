@@ -41,7 +41,8 @@
     "postcss": "^8.5.30",
     "tailwindcss": "4.1.17",
     "typescript": "5.9.3",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "yaml": "^2.9.1"
   },
   "allowScripts": {
     "esbuild@0.18.20": true,

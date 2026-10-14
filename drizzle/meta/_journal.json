@@ -78,6 +78,13 @@
       "when": 1791986994713,
       "tag": "0010_preprint_published_doi",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791988322830,
+      "tag": "0011_drop_trgm_indexes",
+      "breakpoints": true
     }
   ]
 }
