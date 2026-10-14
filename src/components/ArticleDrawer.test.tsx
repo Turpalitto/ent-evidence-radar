@@ -83,5 +83,18 @@ describe("<ArticleDrawer />", () => {
     expect(texts[0]).toContain("doi:10.1/abc");
     expect(texts[1]).toContain("Cited article");
     expect(texts[2]).toMatch(/^@article\{/);
+    // Скринридеру о копировании сообщает live-регион, а не только смена подписи кнопки
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Скопировано в буфер обмена");
+  });
+
+  it("доступность: диалог назван заголовком статьи, заметки подписаны, прокрутка страницы заблокирована и восстанавливается", () => {
+    const { unmount } = render(
+      <ArticleDrawer article={makeArticle({ id: 9, isRead: true, title: "Accessible drawer" })} onClose={() => {}} onUpdate={() => {}} onSelectArticle={() => {}} />,
+    );
+    expect(screen.getAllByRole("dialog", { name: "Публикация: Accessible drawer" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("textbox", { name: "Мои заметки" }).length).toBeGreaterThan(0);
+    expect(document.body.style.overflow).toBe("hidden");
+    unmount();
+    expect(document.body.style.overflow).toBe("");
   });
 });

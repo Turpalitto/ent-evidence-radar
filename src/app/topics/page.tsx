@@ -120,12 +120,14 @@ export default function TopicsPage() {
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="Название (например, «Холестеатома у детей»)"
+            aria-label="Название темы"
             className={FIELD}
           />
           <input
             value={form.query}
             onChange={(e) => setForm({ ...form, query: e.target.value })}
             placeholder="Поисковый запрос (PubMed-строка: cholesteatoma AND child*)"
+            aria-label="Поисковый запрос темы"
             className={FIELD}
           />
         </div>
@@ -134,6 +136,7 @@ export default function TopicsPage() {
             value={form.subspecialty}
             onChange={(e) => setForm({ ...form, subspecialty: e.target.value })}
             className={FIELD}
+            aria-label="Субспециальность темы"
           >
             <option value="general">Общее</option>
             {SUBSPECIALTIES.map((s) => (
@@ -148,6 +151,7 @@ export default function TopicsPage() {
             max={730}
             value={form.lookbackDays}
             onChange={(e) => setForm({ ...form, lookbackDays: e.target.value })}
+            aria-label="Глубина поиска темы, дней"
             placeholder="Глубина, дней (пусто = глобальная настройка)"
             className={FIELD}
           />
@@ -183,6 +187,7 @@ export default function TopicsPage() {
                     defaultValue={t.query}
                     key={`q-${t.id}-${t.query}`}
                     onBlur={(e) => void updateQuery(t, e.target.value)}
+                    aria-label={`Поисковый запрос темы «${t.name}»`}
                     className="mt-1 w-full truncate rounded-lg border border-transparent bg-transparent px-2 py-1 font-mono text-sm text-[color:var(--ink-muted)] outline-none transition hover:border-[color:var(--hairline)] focus:border-[color:var(--brand-a)] focus:bg-[color:var(--surface-1)] focus:text-[color:var(--ink)]"
                     title="Кликните, чтобы изменить запрос (сохранение при потере фокуса)"
                   />

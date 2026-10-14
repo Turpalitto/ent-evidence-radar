@@ -774,6 +774,8 @@ export function Feed({ topics }: { topics: Topic[] }) {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Поиск по названию, авторам, журналу…"
+              aria-label="Поиск публикаций"
+              type="search"
               className="field w-full rounded-xl py-2.5 pl-9 pr-8 text-sm text-[color:var(--ink)]"
             />
             {q && (

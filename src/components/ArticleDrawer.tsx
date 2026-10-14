@@ -20,6 +20,27 @@ function isMobile() {
   return typeof window !== "undefined" && window.innerWidth < 768;
 }
 
+/**
+ * Пока панель открыта, страница под ней не прокручивается (колесо над подложкой и свайп
+ * по шторке иначе листают ленту). Исчезающую полосу прокрутки компенсируем отступом,
+ * чтобы контент не «прыгал» на десктопе.
+ */
+function useBodyScrollLock(active: boolean) {
+  useEffect(() => {
+    if (!active || typeof document === "undefined") return;
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    const prevPadding = body.style.paddingRight;
+    const scrollbar = window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = "hidden";
+    if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
+    return () => {
+      body.style.overflow = prevOverflow;
+      body.style.paddingRight = prevPadding;
+    };
+  }, [active]);
+}
+
 function buildConsiliumSummary(a: Article): string {
   const citation = citeVancouver(a);
   const conclusion = extractConclusion(a.abstract);
@@ -206,6 +227,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
   // Удержание фокуса внутри панели и возврат фокуса при закрытии.
   const wrapperRef = useRef<HTMLDivElement>(null);
   useFocusTrap(wrapperRef, !!article);
+  useBodyScrollLock(!!article);
 
   if (!article) return null;
   const a = article;
@@ -289,8 +311,13 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
           </button>
         </div>
 
+        {/* Объявление для скринридеров: кнопки меняют подпись визуально, а здесь — текстом */}
+        <span className="sr-only" aria-live="polite" role="status">
+          {copied ? "Скопировано в буфер обмена" : saving ? "Сохраняем…" : ""}
+        </span>
+
         {/* ── Цитирование (A-13): Vancouver / ГОСТ / BibTeX ── */}
-        <div className="flex flex-wrap items-center gap-1.5 text-xs" aria-label="Скопировать библиографическую ссылку">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs" role="group" aria-label="Скопировать библиографическую ссылку">
           <span className="text-slate-500 dark:text-slate-400">Цитата:</span>
           {(
             [
@@ -646,6 +673,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
+            aria-label="Мои заметки"
             placeholder="Выводы, применимость к практике…"
             className="field w-full rounded-lg p-2.5 text-sm text-[color:var(--ink)]"
           />
@@ -672,7 +700,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         ref={sheetRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Детали публикации"
+        aria-label={`Публикация: ${a.title}`}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -686,7 +714,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
       </aside>
 
       {/* Desktop: side drawer */}
-      <aside role="dialog" aria-modal="true" aria-label="Детали публикации" className="drawer-enter relative hidden h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-[color:var(--hairline)] bg-[color:var(--surface-1)] shadow-[var(--shadow-modal)] md:flex">
+      <aside role="dialog" aria-modal="true" aria-label={`Публикация: ${a.title}`} className="drawer-enter relative hidden h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-[color:var(--hairline)] bg-[color:var(--surface-1)] shadow-[var(--shadow-modal)] md:flex">
         {Content}
       </aside>
     </div>
