@@ -85,7 +85,7 @@ npm run dev
 | `npm run check` | Всё, что гоняет CI до сборки: ESLint → `tsc --noEmit` → `drizzle-kit check` → Vitest. Запускайте перед PR |
 | `npm run db:generate` | Генерация миграций Drizzle (`drizzle.config.ts`, `DATABASE_URL` нужен только для `push`/`migrate`) |
 | `npm run db:check` | Проверка согласованности миграций и снапшотов Drizzle (выполняется в CI) |
-| `npm run smoke -- <url> [--secret <API_SECRET>]` | Smoke-проверка работающего экземпляра (после деплоя или локального `npm start`): SSR всех страниц, язык по cookie, Atom/манифест/sitemap, ETag/304, заголовки безопасности, 401 без токена. Без зависимостей, код выхода 1 при провале |
+| `npm run smoke -- <url> [--secret <API_SECRET>]` | Smoke-проверка работающего экземпляра (после деплоя или локального `npm start`): SSR всех страниц, язык по cookie, Atom/манифест/sitemap, статика `public/` (service worker, шрифты, og.png), ETag/304, заголовки безопасности, 401 без токена. Без зависимостей, код выхода 1 при провале |
 | `npm run db:migrate` | Применить миграции отдельным шагом (PostgreSQL по `DATABASE_URL` под advisory-lock или файловый PGlite `./.pglite`); перед новыми миграциями пишет снимок пользовательских данных в `BACKUP_DIR` |
 
 ## Архитектура

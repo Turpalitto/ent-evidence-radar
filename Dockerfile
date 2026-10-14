@@ -34,8 +34,10 @@ RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
 
 # Standalone-сборка (next.config.ts -> output: "standalone")
 COPY --from=build --chown=app:app /app/.next/standalone ./
-# Статика и публичные файлы standalone не копирует сама
+# Статику и публичные файлы standalone не копирует сама: `.next/static` — бандлы, `public/` —
+# service worker, шрифты Inter и og.png (без них в контейнере нет офлайн-режима и шрифтов).
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
+COPY --from=build --chown=app:app /app/public ./public
 
 # Миграции Drizzle нужны в рантайме: db/index.ts применяет их при старте
 COPY --from=build --chown=app:app /app/drizzle ./drizzle

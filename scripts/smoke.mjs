@@ -84,6 +84,11 @@ for (const path of ["/", "/settings", "/stats", "/topics", "/runs", "/login", "/
   check("GET /manifest.webmanifest → JSON с name и icons", manifest.status === 200 && (() => { try { const m = JSON.parse(manifest.text); return !!m.name && Array.isArray(m.icons); } catch { return false; } })());
   const sw = await get("/sw.js");
   check("GET /sw.js → JavaScript", sw.status === 200 && /javascript/.test(sw.h("content-type")), `HTTP ${sw.status} ${sw.h("content-type")}`);
+  // Статика из public/ (в standalone/Docker её нужно копировать отдельно — без неё нет шрифтов и офлайн-режима).
+  const font = await get("/fonts/inter-latin-wght-normal.woff2");
+  check("GET /fonts/inter-latin-wght-normal.woff2 → 200 (public/ попал в сборку)", font.status === 200, `HTTP ${font.status}`);
+  const og = await get("/og.png");
+  check("GET /og.png → image/png", og.status === 200 && /image\/png/.test(og.h("content-type")), `HTTP ${og.status} ${og.h("content-type")}`);
   const robots = await get("/robots.txt");
   check("GET /robots.txt → Disallow: /api/ и ссылка на sitemap", robots.status === 200 && /Disallow:\s*\/api\//.test(robots.text) && /Sitemap:/.test(robots.text));
   const sitemap = await get("/sitemap.xml");
