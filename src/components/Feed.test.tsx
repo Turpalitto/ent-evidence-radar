@@ -14,7 +14,7 @@ const ARTICLES = [
   makeArticle({ id: 2, title: "Dupilumab for nasal polyps", isRead: false, subspecialties: ["rhinology"], topicIds: [2], trialInfo: { status: "COMPLETED", hasResults: true, resultsFirstPosted: "2026-09-30", checkedAt: "2026-10-14T00:00:00Z", events: [{ at: "2026-10-10T00:00:00Z", kind: "results", from: null, to: "2026-09-30" }] } }),
   makeArticle({ id: 4, title: "Clinical Practice Guideline: Tinnitus", isRead: true, studyDesign: "guideline", evidenceLevel: 1, trustScore: 80, guidelineIssuer: "aao-hns" }),
   makeArticle({ id: 5, title: "Consensus without issuer", isRead: true, studyDesign: "guideline", evidenceLevel: 1, trustScore: 60, guidelineIssuer: null }),
-  makeArticle({ id: 3, title: "Already read cohort", isRead: true, studyDesign: "cohort", evidenceLevel: 3, trustScore: 40, editorialNotice: { type: "expression_of_concern", noticeDoi: "10.1/eoc", date: "2025-01-02", source: "crossref", checkedAt: "2026-10-14T00:00:00Z" } }),
+  makeArticle({ id: 3, title: "Already read cohort", isRead: true, studyDesign: "cohort", evidenceLevel: 3, trustScore: 40, notes: "Проверить дозу будесонида", editorialNotice: { type: "expression_of_concern", noticeDoi: "10.1/eoc", date: "2025-01-02", source: "crossref", checkedAt: "2026-10-14T00:00:00Z" } }),
 ];
 
 function setup(items = ARTICLES) {
@@ -143,6 +143,25 @@ describe("<Feed />", () => {
     // 8 нажатий → не 8 запросов (дебаунс 200 мс)
     expect(after.length - before).toBeLessThanOrEqual(3);
     expect(after.at(-1)!.url.searchParams.get("sort")).toBeNull(); // поиск — релевантность решает сервер
+  });
+
+  it("область поиска: «В моих заметках» уходит как scope=notes и пишется в URL; «Только с моими заметками» — withNotes=1", async () => {
+    const user = userEvent.setup();
+    const { calls } = setup();
+    await findTitle("Dupilumab for nasal polyps");
+    expect(seen("Проверить дозу будесонида")).toBe(true); // заметка видна прямо в карточке
+    expect(screen.queryByRole("group", { name: "Область поиска" })).toBeNull(); // без запроса область не нужна
+    await user.type(screen.getByPlaceholderText(/Поиск по названию/), "будесонид");
+    const group = await screen.findByRole("group", { name: "Область поиска" });
+    expect(within(group).getByRole("button", { name: "Везде" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(within(group).getByRole("button", { name: "В моих заметках" }));
+    await waitFor(() => expect(calls.at(-1)!.url.searchParams.get("scope")).toBe("notes"));
+    expect(window.location.search).toContain("scope=notes");
+    expect(within(group).getByRole("button", { name: "В моих заметках" })).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByLabelText("Только с моими заметками"));
+    await waitFor(() => expect(calls.at(-1)!.url.searchParams.get("withNotes")).toBe("1"));
+    expect(window.location.search).toContain("withNotes=1");
   });
 
   it("руководства (A-06): при дизайне «руководство» появляются чипы издателей; клик фильтрует по issuer и пишет его в URL", async () => {

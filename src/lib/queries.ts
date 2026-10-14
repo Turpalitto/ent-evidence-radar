@@ -38,9 +38,21 @@ export function searchTerms(q: string): string[] {
   return [...seen];
 }
 
+/**
+ * Токены для поиска по заметкам: заметки — личный текст врача (часто по-русски), поэтому
+ * здесь не FTS с английским стеммером и не синонимы, а подстрока без учёта регистра по каждому слову.
+ */
+export function noteTerms(q: string): string[] {
+  return [...new Set(q.toLowerCase().split(/\s+/).map((w) => w.trim()).filter(Boolean))].slice(0, 8);
+}
+
+const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+
 export function buildWhere(f: ArticleFilters): SQL | undefined {
   const conds: SQL[] = [];
-  if (f.q) {
+  if (f.q && f.scope === "notes") {
+    for (const term of noteTerms(f.q)) conds.push(sql`${articles.notes} ilike ${`%${escapeLike(term)}%`}`);
+  } else if (f.q) {
     const tsq = searchTsQuery(f.q);
     if (tsq) {
       // Пустой tsquery (одни стоп-слова) не должен превращаться в «ничего не найдено».
@@ -68,6 +80,7 @@ export function buildWhere(f: ArticleFilters): SQL | undefined {
   if (f.excludePreprints) conds.push(eq(articles.isPreprint, false));
   // Скрытые врачом записи (аудит A-11) видны только в специальном режиме «Скрытые».
   conds.push(eq(articles.isHidden, !!f.hidden));
+  if (f.withNotes) conds.push(sql`${articles.notes} <> ''`);
   return and(...conds);
 }
 
@@ -75,7 +88,8 @@ export async function listArticles(f: ArticleFilters) {
   const where = buildWhere(f);
   const page = f.page ?? 1;
   const pageSize = f.pageSize ?? 30;
-  const tsq = f.q ? searchTsQuery(f.q) : null;
+  // По заметкам ищем подстрокой — ранжировать нечем, выдача идёт по дате.
+  const tsq = f.q && f.scope !== "notes" ? searchTsQuery(f.q) : null;
   const relevance = f.sort === "relevance" && tsq ? sql`ts_rank_cd(${articles.searchTsv}, ${tsq})` : null;
   const order = relevance
     ? [desc(relevance), desc(articles.publishedAt)]
@@ -100,7 +114,7 @@ export async function listArticles(f: ArticleFilters) {
     total: totalRow?.total ?? 0,
     page,
     pageSize,
-    searchTerms: f.q ? searchTerms(f.q) : [],
+    searchTerms: f.q ? (f.scope === "notes" ? noteTerms(f.q) : searchTerms(f.q)) : [],
     ...(wantIssuers ? { issuers: issuerRows.map((r) => ({ key: r.key ?? "other", count: r.count })) } : {}),
   };
 }

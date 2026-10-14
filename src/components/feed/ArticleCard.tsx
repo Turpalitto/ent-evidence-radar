@@ -80,6 +80,12 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
           ) : (
             <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-[color:var(--ink-muted)]">{a.abstract || t("Аннотация недоступна")}</p>
           )}
+          {a.notes && (
+            <p className="mt-1.5 line-clamp-1 text-[12.5px] leading-relaxed text-amber-800 dark:text-amber-300" title={a.notes}>
+              <span className="font-semibold">{t("📝 Заметка:")} </span>
+              <Highlight text={a.notes} terms={searchTerms} />
+            </p>
+          )}
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--ink-muted)]">
             <span className="font-medium text-[color:var(--ink-soft)]">{a.journal || "—"}</span>
             <span>{date(a.publishedAt)}</span>
@@ -130,6 +136,12 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
               <Highlight text={conclusion} terms={searchTerms} />
             </p>
           </div>
+        )}
+        {a.notes && (
+          <p className="mt-1.5 line-clamp-1 text-[11.5px] leading-relaxed text-amber-800 dark:text-amber-300">
+            <span className="font-semibold">{t("📝 Заметка:")} </span>
+            <Highlight text={a.notes} terms={searchTerms} />
+          </p>
         )}
         <div className="mt-1.5 flex items-center gap-2 text-[12px] text-[color:var(--ink-muted)]">
           <span className="min-w-0 truncate font-medium text-[color:var(--ink-soft)]">{a.journal || "—"}</span>

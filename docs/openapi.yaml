@@ -67,7 +67,13 @@ components:
     ArticleFilters_scope:
       name: scope
       in: query
-      schema: { type: string, enum: [all, title], default: all }
+      description: "Область поиска: `all` — полнотекстовый по заголовку/аннотации/журналу/авторам, `title` — только заголовок, `notes` — подстрока в личных заметках (без синонимов; сортировка `relevance` не применяется)."
+      schema: { type: string, enum: [all, title, notes], default: all }
+    ArticleFilters_withNotes:
+      name: withNotes
+      in: query
+      description: "`1` — только статьи с личными заметками."
+      schema: { type: string, enum: ["1"] }
     ArticleFilters_subspecialty:
       name: subspecialty
       in: query
@@ -429,6 +435,7 @@ paths:
         - $ref: "#/components/parameters/ArticleFilters_topicId"
         - $ref: "#/components/parameters/ArticleFilters_excludePreprints"
         - $ref: "#/components/parameters/ArticleFilters_hidden"
+        - $ref: "#/components/parameters/ArticleFilters_withNotes"
         - $ref: "#/components/parameters/ArticleFilters_sort"
         - $ref: "#/components/parameters/ArticleFilters_page"
         - $ref: "#/components/parameters/ArticleFilters_pageSize"

@@ -25,6 +25,7 @@ describe("parseFilters", () => {
       sort: "date",
       scope: "all",
       hidden: false,
+      withNotes: false,
       page: 1,
       pageSize: 30,
     });
@@ -41,6 +42,14 @@ describe("parseFilters", () => {
     expect(f.sort).toBe("trust");
     expect(f.page).toBe(3);
     expect(f.pageSize).toBe(50);
+  });
+
+  it("scope принимает title и notes, остальное — all; withNotes только как '1'", () => {
+    expect(parseFilters(sp("q=x&scope=title")).scope).toBe("title");
+    expect(parseFilters(sp("q=x&scope=notes")).scope).toBe("notes");
+    expect(parseFilters(sp("q=x&scope=body")).scope).toBe("all");
+    expect(parseFilters(sp("withNotes=1")).withNotes).toBe(true);
+    expect(parseFilters(sp("withNotes=true")).withNotes).toBe(false);
   });
 
   it("булевы параметры включаются только как '1'", () => {

@@ -55,11 +55,14 @@ describe("/feed.xml с фильтрами (подписка на сохранё�
   });
 
   it("персональные флаги игнорируются: bookmarked/unread/hidden не влияют на публичную ленту", async () => {
-    const xml = await (await get("?bookmarked=1&hidden=1&unread=1&subspecialty=otology")).text();
+    const xml = await (await get("?bookmarked=1&hidden=1&unread=1&withNotes=1&subspecialty=otology")).text();
     expect(xml).toContain("Feed otology cohort"); // не закладка — всё равно в ленте
     expect(xml).toContain("Feed bookmarked otology");
     expect(xml).not.toContain("Feed hidden rhinology");
     expect(xml).not.toContain("bookmarked=1");
+    // Поиск по личным заметкам наружу не отдаём: `scope=notes` становится обычным поиском.
+    expect(feedFilters(new URLSearchParams("q=otology&scope=notes&withNotes=1"))).toMatchObject({ scope: "all", withNotes: false });
+    expect(feedFilters(new URLSearchParams("q=otology&scope=title")).scope).toBe("title");
   });
 
   it("тема попадает в заголовок по имени", async () => {

@@ -34,6 +34,7 @@ beforeAll(async () => {
         trustScore: 45,
         subspecialties: ["rhinology"],
         isPreprint: true,
+        notes: "Проверить дозу будесонида; см. Таблица_2 (50%)",
       },
       {
         // Ловушка для подстрочного поиска: «year», «early», «clear», «research» содержат «ear»,
@@ -116,6 +117,23 @@ describe("listArticles / buildWhere", () => {
       expect((await listArticles({ q: "hearing" })).total).toBe(1); // в аннотации q1
       expect((await listArticles({ q: "hearing", scope: "title" })).total).toBe(0);
       expect((await listArticles({ q: "polyps", scope: "title" })).total).toBe(1);
+    });
+
+    it("withNotes=1 оставляет только статьи с заметками; scope=notes ищет подстрокой по заметке без синонимов", async () => {
+      expect((await listArticles({ withNotes: true })).items.map((a) => a.dedupKey)).toEqual(["q2"]);
+      // Кириллица, регистр и спецсимволы LIKE (`_`, `%`) — всё как подстрока.
+      expect((await listArticles({ q: "БУДЕСОНИД", scope: "notes" })).items.map((a) => a.dedupKey)).toEqual(["q2"]);
+      expect((await listArticles({ q: "таблица_2", scope: "notes" })).total).toBe(1);
+      expect((await listArticles({ q: "таблица%2", scope: "notes" })).total).toBe(0);
+      expect((await listArticles({ q: "(50%)", scope: "notes" })).total).toBe(1);
+      // Несколько слов — AND; слово не из заметки — пусто; текст статьи в режиме заметок не ищется.
+      expect((await listArticles({ q: "дозу будесонида", scope: "notes" })).total).toBe(1);
+      expect((await listArticles({ q: "дозу амоксициллина", scope: "notes" })).total).toBe(0);
+      expect((await listArticles({ q: "polyps", scope: "notes" })).total).toBe(0);
+      // Релевантность без tsquery не ломает запрос; searchTerms — исходные слова, а не синонимы.
+      const r = await listArticles({ q: "Будесонида дозу", scope: "notes", sort: "relevance" });
+      expect(r.total).toBe(1);
+      expect(r.searchTerms).toEqual(["будесонида", "дозу"]);
     });
 
     it("запрос из одних стоп-слов не превращается в пустую выдачу", async () => {

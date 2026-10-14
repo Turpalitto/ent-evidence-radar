@@ -23,10 +23,14 @@ export interface Filters {
   excludePreprints: boolean;
   /** Режим «Скрытые»: показать записи, которые врач скрыл («не ЛОР»), чтобы вернуть при необходимости. */
   hidden: boolean;
+  /** Только статьи с личными заметками. */
+  withNotes: boolean;
   sort: "date" | "trust" | "fetched" | "relevance";
-  /** Область поиска: везде или только заголовок. */
-  scope: "all" | "title";
+  /** Область поиска: везде, только заголовок или личные заметки (подстрока, без синонимов). */
+  scope: "all" | "title" | "notes";
 }
+
+export const SCOPES: Filters["scope"][] = ["all", "title", "notes"];
 
 export const INITIAL_FILTERS: Filters = {
   q: "",
@@ -44,6 +48,7 @@ export const INITIAL_FILTERS: Filters = {
   topicId: "",
   excludePreprints: false,
   hidden: false,
+  withNotes: false,
   sort: "date",
   scope: "all",
 };
@@ -112,9 +117,10 @@ export function toParams(f: Filters, page: number, pageSize: number) {
   if (f.topicId) p.set("topicId", f.topicId);
   if (f.excludePreprints) p.set("excludePreprints", "1");
   if (f.hidden) p.set("hidden", "1");
+  if (f.withNotes) p.set("withNotes", "1");
   // Без явного выбора сортировки поиск идёт по релевантности, лента — по дате (решает сервер).
   if (!(f.sort === "date" && f.q)) p.set("sort", f.sort);
-  if (f.scope === "title" && f.q) p.set("scope", "title");
+  if (f.scope !== "all" && f.q) p.set("scope", f.scope);
   p.set("page", String(page));
   p.set("pageSize", String(pageSize));
   return p;
@@ -126,7 +132,9 @@ export function toParams(f: Filters, page: number, pageSize: number) {
  */
 export function feedLink(f: Filters, lang: string): { href: string; hasFilters: boolean } {
   const p = toParams(f, 1, 60);
-  for (const k of ["page", "pageSize", "bookmarked", "unread", "hidden", "sort"]) p.delete(k);
+  for (const k of ["page", "pageSize", "bookmarked", "unread", "hidden", "withNotes", "sort"]) p.delete(k);
+  // Поиск по личным заметкам — не для публичной ленты: без области он станет обычным поиском.
+  if (p.get("scope") === "notes") p.delete("scope");
   const hasFilters = Array.from(p.keys()).length > 0;
   p.set("lang", lang);
   return { href: `/feed.xml?${p.toString()}`, hasFilters };
@@ -175,8 +183,9 @@ export function parseSearch(search: string): { f: Filters; page: number; q: stri
     topicId: p.get("topicId") ?? "",
     excludePreprints: p.get("excludePreprints") === "1",
     hidden: p.get("hidden") === "1",
+    withNotes: p.get("withNotes") === "1",
     sort: sort === "trust" || sort === "date" || sort === "fetched" || sort === "relevance" ? sort : INITIAL_FILTERS.sort,
-    scope: p.get("scope") === "title" ? "title" : "all",
+    scope: (SCOPES as string[]).includes(p.get("scope") ?? "") ? (p.get("scope") as Filters["scope"]) : "all",
   };
   const page = Math.max(1, Math.round(num("page")) || 1);
   return { f, page, q: f.q };

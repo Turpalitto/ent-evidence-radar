@@ -12,10 +12,20 @@ export const FEED_LIMIT = 60;
 /** Публичные параметры ленты: те же, что у /api/articles, кроме персональных флагов. */
 export const FEED_PARAMS = ["q", "scope", "subspecialty", "design", "issuer", "level", "minTrust", "source", "days", "fromYear", "toYear", "topicId", "excludePreprints"] as const;
 
-/** Фильтры для ленты: персональное состояние (закладки/прочитано/скрытые) наружу не отдаём. */
+/** Фильтры для ленты: персональное состояние (закладки/прочитано/скрытые/заметки) наружу не отдаём. */
 export function feedFilters(sp: URLSearchParams): ArticleFilters {
   const f = parseFilters(sp);
-  return { ...f, bookmarked: false, unread: false, hidden: false, page: 1, pageSize: FEED_LIMIT, sort: f.q ? f.sort : "fetched" };
+  return {
+    ...f,
+    bookmarked: false,
+    unread: false,
+    hidden: false,
+    withNotes: false,
+    scope: f.scope === "notes" ? "all" : f.scope,
+    page: 1,
+    pageSize: FEED_LIMIT,
+    sort: f.q ? f.sort : "fetched",
+  };
 }
 
 /** Человекочитаемое описание фильтров для заголовка ленты (на языке `i18n`; по умолчанию — русский). */

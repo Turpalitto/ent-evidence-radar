@@ -18,10 +18,12 @@ export interface ArticleFilters {
   excludePreprints?: boolean;
   /** Показать только скрытые записи («не ЛОР / скрыть»); по умолчанию скрытые исключаются. */
   hidden?: boolean;
+  /** Только статьи с личными заметками врача. */
+  withNotes?: boolean;
   /** `relevance` — по ts_rank (имеет смысл только с `q`; без запроса равносилен `date`). */
   sort?: "date" | "trust" | "fetched" | "relevance";
-  /** Область поиска: везде (по умолчанию) или только по заголовку. */
-  scope?: "all" | "title";
+  /** Область поиска: везде (по умолчанию), только по заголовку или по личным заметкам (подстрока, без синонимов). */
+  scope?: "all" | "title" | "notes";
   page?: number;
   pageSize?: number;
 }
@@ -60,9 +62,10 @@ export function parseFilters(sp: URLSearchParams): ArticleFilters {
     topicId: num("topicId"),
     excludePreprints: sp.get("excludePreprints") === "1",
     hidden: sp.get("hidden") === "1",
+    withNotes: sp.get("withNotes") === "1",
     // Без явной сортировки поисковая выдача идёт по релевантности, лента — по дате.
     sort: SORTS.has(sp.get("sort") ?? "") ? (sp.get("sort") as ArticleFilters["sort"]) : sp.get("q")?.trim() ? "relevance" : "date",
-    scope: sp.get("scope") === "title" ? "title" : "all",
+    scope: sp.get("scope") === "title" || sp.get("scope") === "notes" ? (sp.get("scope") as "title" | "notes") : "all",
     page: Math.max(1, num("page") ?? 1),
     pageSize: Math.min(num("pageSize") ?? 30, 200),
   };

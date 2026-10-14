@@ -195,6 +195,7 @@ export function FilterSidebar({ f, topics, issuers, yearOptions, activeCount, us
       <div className="space-y-2 text-[color:var(--ink-soft)]">
         <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.unread} onChange={(e) => set({ unread: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Только непрочитанные")}</label>
         <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.bookmarked} onChange={(e) => set({ bookmarked: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Только избранное")}</label>
+        <label className="flex items-center gap-2.5" title={t("Статьи, к которым вы оставили заметку в карточке")}><input type="checkbox" checked={f.withNotes} onChange={(e) => set({ withNotes: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Только с моими заметками")}</label>
         <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.excludePreprints} onChange={(e) => set({ excludePreprints: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Скрыть препринты")}</label>
         <label className="flex items-center gap-2.5" title={t("Записи, которые вы скрыли как «не ЛОР / не по теме». Их можно вернуть из карточки.")}><input type="checkbox" checked={f.hidden} onChange={(e) => set({ hidden: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Показать скрытые мной")}</label>
       </div>

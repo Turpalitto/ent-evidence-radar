@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Article, Topic } from "@/db/schema";
-import { INTL_LOCALE } from "@/lib/i18n";
+import { INTL_LOCALE, msg } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { ArticleDrawer } from "./ArticleDrawer";
 import { useFocusTrap } from "./useFocusTrap";
@@ -13,6 +13,7 @@ import { useNotificationPermission, useOnlineStatus } from "./feed/hooks";
 import {
   INITIAL_FILTERS,
   PAGE_SIZE,
+  SCOPES,
   USER_PRESETS_MAX,
   USER_PRESET_NAME_MAX,
   countActiveFilters,
@@ -27,6 +28,7 @@ import {
 } from "./feed/filters";
 
 const GHOST_BTN = "btn-ghost rounded-xl px-3 py-2.5 text-sm font-medium";
+const SCOPE_LABEL: Record<Filters["scope"], string> = { all: msg("Везде"), title: msg("В заголовке"), notes: msg("В моих заметках") };
 
 interface FeedData {
   items: Article[];
@@ -547,10 +549,20 @@ export function Feed({ topics }: { topics: Topic[] }) {
 
         {f.q && (
           <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1 text-xs text-[color:var(--ink-muted)]">
-            <label className="flex cursor-pointer items-center gap-1.5">
-              <input type="checkbox" checked={f.scope === "title"} onChange={(e) => set({ scope: e.target.checked ? "title" : "all" })} className="h-3.5 w-3.5 accent-[color:var(--brand-a)]" />
-              {t("Только в заголовке")}
-            </label>
+            <div className="flex items-center gap-0.5" role="group" aria-label={t("Область поиска")}>
+              {SCOPES.map((sc) => (
+                <button
+                  key={sc}
+                  type="button"
+                  aria-pressed={f.scope === sc}
+                  onClick={() => set({ scope: sc })}
+                  title={sc === "notes" ? t("Подстрока в ваших заметках, без синонимов и стемминга") : undefined}
+                  className={`rounded-md px-2 py-0.5 transition ${f.scope === sc ? "bg-[color:var(--brand-soft)] font-semibold text-[color:var(--brand-a)]" : "hover:bg-[color:var(--surface-2)]"}`}
+                >
+                  {t(SCOPE_LABEL[sc] ?? sc)}
+                </button>
+              ))}
+            </div>
             {data.searchTerms.length > 0 && (
               <span className="min-w-0 truncate" title={data.searchTerms.join(", ")}>
                 {t("Искали по термам:")} <span className="text-[color:var(--ink-soft)]">{data.searchTerms.slice(0, 8).join(", ")}{data.searchTerms.length > 8 ? ` +${data.searchTerms.length - 8}` : ""}</span>

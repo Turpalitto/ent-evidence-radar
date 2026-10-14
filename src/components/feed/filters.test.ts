@@ -27,6 +27,10 @@ describe("toParams / parseSearch", () => {
     expect(titleOnly.get("sort")).toBe("trust");
     // scope=title без запроса бессмысленен и не сериализуется
     expect(toParams({ ...INITIAL_FILTERS, scope: "title" }, 1, 30).get("scope")).toBeNull();
+    expect(toParams({ ...INITIAL_FILTERS, scope: "notes" }, 1, 30).get("scope")).toBeNull();
+    expect(toParams({ ...INITIAL_FILTERS, q: "будесонид", scope: "notes" }, 1, 30).get("scope")).toBe("notes");
+    expect(toParams({ ...INITIAL_FILTERS, withNotes: true }, 1, 30).get("withNotes")).toBe("1");
+    expect(parseSearch("?q=x&scope=notes&withNotes=1").f).toMatchObject({ scope: "notes", withNotes: true });
   });
 
   it("полный набор фильтров проходит через URL без потерь", () => {
@@ -46,6 +50,7 @@ describe("toParams / parseSearch", () => {
       topicId: "7",
       excludePreprints: true,
       hidden: true,
+      withNotes: true,
       sort: "relevance",
       scope: "title",
     };
@@ -94,10 +99,15 @@ describe("feedLink", () => {
   it("содержит только публичные параметры и всегда язык", () => {
     const plain = feedLink(INITIAL_FILTERS, "ru");
     expect(plain).toEqual({ href: "/feed.xml?lang=ru", hasFilters: false });
-    const filtered = feedLink({ ...INITIAL_FILTERS, design: "rct", bookmarked: true, unread: true, hidden: true, sort: "trust", minTrust: 70 }, "en");
+    const filtered = feedLink({ ...INITIAL_FILTERS, design: "rct", bookmarked: true, unread: true, hidden: true, withNotes: true, sort: "trust", minTrust: 70 }, "en");
     const p = new URLSearchParams(filtered.href.split("?")[1]);
     expect(filtered.hasFilters).toBe(true);
     expect(Object.fromEntries(p)).toEqual({ design: "rct", minTrust: "70", lang: "en" });
+    // Поиск по личным заметкам в публичную ленту не уходит: остаётся обычный запрос.
+    const notes = feedLink({ ...INITIAL_FILTERS, q: "otitis", scope: "notes" }, "ru");
+    expect(Object.fromEntries(new URLSearchParams(notes.href.split("?")[1]))).toEqual({ q: "otitis", lang: "ru" });
+    const title = feedLink({ ...INITIAL_FILTERS, q: "otitis", scope: "title" }, "ru");
+    expect(new URLSearchParams(title.href.split("?")[1]).get("scope")).toBe("title");
   });
 });
 
