@@ -12,7 +12,7 @@ const findTitle = (text: string) => screen.findAllByText(text);
 const ARTICLES = [
   makeArticle({ id: 1, title: "Tympanostomy tubes versus watchful waiting", isRead: false, topicIds: [1] }),
   makeArticle({ id: 2, title: "Dupilumab for nasal polyps", isRead: false, subspecialties: ["rhinology"], topicIds: [2] }),
-  makeArticle({ id: 3, title: "Already read cohort", isRead: true, studyDesign: "cohort", evidenceLevel: 3, trustScore: 40 }),
+  makeArticle({ id: 3, title: "Already read cohort", isRead: true, studyDesign: "cohort", evidenceLevel: 3, trustScore: 40, editorialNotice: { type: "expression_of_concern", noticeDoi: "10.1/eoc", date: "2025-01-02", source: "crossref", checkedAt: "2026-10-14T00:00:00Z" } }),
 ];
 
 function setup(items = ARTICLES) {
@@ -53,6 +53,10 @@ describe("<Feed />", () => {
     await findTitle("Tympanostomy tubes versus watchful waiting");
     expect(seen("Dupilumab for nasal polyps")).toBe(true);
     expect(screen.getByText("3 ст.")).toBeInTheDocument();
+    // Бейдж редакционного уведомления Crossref (A-04) с датой в подсказке
+    const eoc = screen.getAllByText("EXPRESSION OF CONCERN");
+    expect(eoc.length).toBeGreaterThan(0);
+    expect(eoc[0]).toHaveAttribute("title", expect.stringContaining("2025-01-02"));
     // названия тем из topicIds (I-14)
     expect(screen.getAllByText(/Средний отит/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Риносинусит/).length).toBeGreaterThan(0);

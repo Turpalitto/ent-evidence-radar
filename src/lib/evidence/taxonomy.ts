@@ -155,5 +155,6 @@ export const SOURCE_LABELS: Record<string, string> = {
   clinicaltrials: "ClinicalTrials.gov",
   medrxiv: "medRxiv (препринты)",
   "retraction-recheck": "Перепроверка отзывов",
+  "crossref-notices": "Crossref: отзывы и EoC",
   reclassify: "Переклассификация",
 };

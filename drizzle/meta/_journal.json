@@ -85,6 +85,13 @@
       "when": 1791988322830,
       "tag": "0011_drop_trgm_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791990159118,
+      "tag": "0012_editorial_notice",
+      "breakpoints": true
     }
   ]
 }

@@ -69,6 +69,7 @@ type Row = Pick<
   | "sampleSize"
   | "isPreprint"
   | "isRetracted"
+  | "editorialNotice"
   | "evidenceLevel"
   | "trustScore"
   | "overrides"
@@ -121,6 +122,7 @@ const ROW_COLUMNS = {
   subspecialties: articles.subspecialties,
   sampleSize: articles.sampleSize,
   isPreprint: articles.isPreprint,
+  editorialNotice: articles.editorialNotice,
   isRetracted: articles.isRetracted,
   evidenceLevel: articles.evidenceLevel,
   trustScore: articles.trustScore,
@@ -163,6 +165,7 @@ export function rowToRaw(row: Row): RawArticle {
     isPreprint: row.isPreprint,
     publishedDoi: row.publishedDoi,
     isRetracted: row.isRetracted,
+    editorialNotice: row.editorialNotice ?? null,
   };
   if (sourceKey === "clinicaltrials") {
     raw.studyTypeHint = row.studyDesign === "rct" ? "rct" : "trial_registry";

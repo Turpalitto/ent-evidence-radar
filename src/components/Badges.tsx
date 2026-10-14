@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { StudyDesign } from "@/db/schema";
+import type { EditorialNotice, StudyDesign } from "@/db/schema";
 import { DESIGN_LABELS, DESIGN_SHORT, SUBSPECIALTY_LABELS, SUBSPECIALTY_SHORT, SOURCE_LABELS, EVIDENCE_LEVEL_LABELS } from "@/lib/evidence/taxonomy";
 
 /** Палитра дизайнов исследования: светлая и тёмная темы. */
@@ -84,6 +84,7 @@ const SOURCE_STYLES: Record<string, string> = {
   clinicaltrials: "bg-cyan-50 text-cyan-700 dark:bg-cyan-400/10 dark:text-cyan-300",
   medrxiv: "bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-300",
   "retraction-recheck": "bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300",
+  "crossref-notices": "bg-orange-50 text-orange-700 dark:bg-orange-400/10 dark:text-orange-300",
   reclassify: "bg-violet-50 text-violet-700 dark:bg-violet-400/10 dark:text-violet-300",
 };
 
@@ -118,6 +119,33 @@ export function TierBadge({ tier }: { tier: number }) {
   return (
     <span title={hint} className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold shadow-sm ${c}`}>
       {label}
+    </span>
+  );
+}
+
+/** Подписи редакционных уведомлений Crossref (A-04). */
+export const NOTICE_LABELS: Record<EditorialNotice["type"], { short: string; title: string }> = {
+  retraction: { short: "ОТОЗВАНА", title: "Статья отозвана (уведомление Crossref)" },
+  withdrawal: { short: "ОТОЗВАНА", title: "Статья отозвана автором/издателем (withdrawal, Crossref)" },
+  expression_of_concern: { short: "EXPRESSION OF CONCERN", title: "Редакция выразила сомнения в достоверности (expression of concern, Crossref)" },
+  correction: { short: "ЕСТЬ ИСПРАВЛЕНИЕ", title: "К статье опубликовано исправление (corrigendum/erratum, Crossref)" },
+};
+
+/**
+ * Бейдж редакционного уведомления. Отзыв показывается отдельным бейджем «ОТОЗВАНА» (по isRetracted),
+ * поэтому здесь — только expression of concern и исправления.
+ */
+export function NoticeBadge({ notice, size = "md" }: { notice: EditorialNotice | null | undefined; size?: "sm" | "md" }) {
+  if (!notice || notice.type === "retraction" || notice.type === "withdrawal") return null;
+  const l = NOTICE_LABELS[notice.type];
+  const title = notice.date ? `${l.title}, ${notice.date}` : l.title;
+  const cls =
+    notice.type === "expression_of_concern"
+      ? "border-orange-400 bg-orange-50 text-orange-800 dark:border-orange-500/50 dark:bg-orange-950/40 dark:text-orange-300"
+      : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300";
+  return (
+    <span title={title} className={`rounded border font-bold ${cls} ${size === "sm" ? "px-1 py-0.5 text-[9px]" : "px-1.5 py-0.5 text-[10px]"}`}>
+      {l.short}
     </span>
   );
 }

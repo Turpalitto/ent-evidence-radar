@@ -195,6 +195,23 @@ describe("classify trust scoring", () => {
     expect(retracted.trustScore).toBeLessThan(50);
   });
 
+  it("учитывает редакционные уведомления Crossref (A-04): отзыв/withdrawal → isRetracted, EoC → −25", () => {
+    const abstract = "A longer abstract that is definitely over two hundred characters in order to avoid the short abstract penalty here today. ".repeat(2);
+    const plain = classify(base({ title: "Some study", journal: "The Lancet", abstract }));
+    const retracted = classify(base({ title: "Some study", journal: "The Lancet", abstract, editorialNotice: { type: "retraction" } }));
+    const withdrawn = classify(base({ title: "Some study", journal: "The Lancet", abstract, editorialNotice: { type: "withdrawal" } }));
+    const concern = classify(base({ title: "Some study", journal: "The Lancet", abstract, editorialNotice: { type: "expression_of_concern" } }));
+    const corrected = classify(base({ title: "Some study", journal: "The Lancet", abstract, editorialNotice: { type: "correction" } }));
+    expect(retracted.isRetracted).toBe(true);
+    expect(withdrawn.isRetracted).toBe(true);
+    expect(retracted.trustScore).toBe(Math.max(0, plain.trustScore - 60));
+    expect(concern.isRetracted).toBe(false);
+    expect(concern.trustScore).toBe(plain.trustScore - 25);
+    expect(concern.trustBreakdown.some((b) => /expression of concern/i.test(b.label) && b.points === -25)).toBe(true);
+    expect(corrected.trustScore).toBe(plain.trustScore);
+    expect(corrected.isRetracted).toBe(false);
+  });
+
   it("does not award registration / multicentre bonuses for unrelated words (audit F-11)", () => {
     const labels = (a: RawArticle) => classify(a).trustBreakdown.map((b) => b.label);
     const nurses = base({ title: "Hearing screening by registered nurses", abstract: "x".repeat(200) + " Coding used the International Classification of Diseases." });

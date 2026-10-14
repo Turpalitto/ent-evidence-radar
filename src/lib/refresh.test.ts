@@ -61,6 +61,26 @@ describe("planWrites", () => {
     expect("dedupKey" in upd.values).toBe(false);
   });
 
+  it("обновление из источника не «реабилитирует» отзыв и сохраняет уведомление Crossref в оценке (A-04)", () => {
+    const a = raw({ sourceKey: "medrxiv", doi: "10.1101/2024.01.01.24300001", title: "Preprint later retracted", publicationTypes: [] });
+    const key = dedupKeyFor(a);
+    const cands = candidatesOf([a]);
+    const notice = { type: "retraction" as const, noticeDoi: "10.1101/n", source: "crossref" as const, checkedAt: "2026-10-14T00:00:00Z" };
+    const existing = new Map([[key, { id: 7, topicIds: [1], sourceKeys: ["medrxiv"], isRetracted: true, editorialNotice: notice }]]);
+    const plan = planWrites(cands, new Map(), existing, new Map(), new Map(), 0);
+    expect(plan.toUpdate).toHaveLength(1);
+    expect(plan.toUpdate[0].values.isRetracted).toBe(true);
+    expect(plan.toUpdate[0].values.trustBreakdown!.some((b) => /ОТОЗВАНА/.test(b.label))).toBe(true);
+
+    // Expression of concern без флага отзыва: статья не отозвана, но штраф −25 сохраняется при обновлении.
+    const eoc = new Map([[key, { id: 7, topicIds: [1], sourceKeys: ["medrxiv"], isRetracted: false, editorialNotice: { ...notice, type: "expression_of_concern" as const } }]]);
+    const plan2 = planWrites(cands, new Map(), eoc, new Map(), new Map(), 0);
+    expect(plan2.toUpdate[0].values.isRetracted).toBe(false);
+    expect(plan2.toUpdate[0].values.trustBreakdown!.some((b) => /expression of concern/i.test(b.label))).toBe(true);
+    const plain = planWrites(cands, new Map(), new Map([[key, { id: 7, topicIds: [1], sourceKeys: ["medrxiv"] }]]), new Map(), new Map(), 0);
+    expect(plan2.toUpdate[0].values.trustScore).toBe(plain.toUpdate[0].values.trustScore! - 25);
+  });
+
   it("deduplicates by PMID when dedupKey differs (secondary dedup)", () => {
     // Кандидат пришёл из Europe PMC только с pmid, а существующая запись имеет тот же PMID.
     const a = raw({ sourceKey: "europepmc", pmid: "555", doi: null, title: "Same study, no doi in candidate" });

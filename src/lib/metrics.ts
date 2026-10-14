@@ -57,6 +57,7 @@ export function hostLabel(url: string): string {
     if (h.endsWith("clinicaltrials.gov")) return "ctgov";
     if (h.endsWith("medrxiv.org") || h.endsWith("biorxiv.org")) return "medrxiv";
     if (h.endsWith("openrouter.ai")) return "openrouter";
+    if (h.endsWith("crossref.org")) return "crossref";
     return h;
   } catch {
     return "unknown";

@@ -40,6 +40,24 @@ export interface TrustBreakdownItem {
   points: number;
 }
 
+/**
+ * Редакционное уведомление по DOI из Crossref (аудит A-04): отзыв, expression of concern,
+ * исправление. Хранится последнее по значимости уведомление; `null` — уведомлений нет.
+ */
+export type EditorialNoticeType = "retraction" | "expression_of_concern" | "correction" | "withdrawal";
+export interface EditorialNotice {
+  type: EditorialNoticeType;
+  /** DOI самого уведомления (retraction notice / EoC), если есть. */
+  noticeDoi?: string;
+  /** Дата уведомления (ISO yyyy-mm-dd), если известна. */
+  date?: string;
+  /** Текст метки Crossref (label), например «Retraction» / «Expression of concern». */
+  label?: string;
+  source: "crossref";
+  /** Когда уведомление зафиксировано радаром (ISO). */
+  checkedAt: string;
+}
+
 /** Ручные правки классификации (аудит A-11). Пустой объект — правок нет. */
 export interface ManualOverrides {
   studyDesign?: StudyDesign;
@@ -102,6 +120,8 @@ export const articles = pgTable(
     /** DOI рецензированной журнальной версии препринта (medRxiv `published`), аудит A-05. */
     publishedDoi: text("published_doi"),
     isRetracted: boolean("is_retracted").notNull().default(false),
+    /** Редакционное уведомление Crossref по DOI (A-04): retraction / expression of concern / correction. */
+    editorialNotice: jsonb("editorial_notice").$type<EditorialNotice | null>(),
     /** Версия эвристик классификатора, которой размечена запись (0 — до версионирования). */
     classifierVersion: integer("classifier_version").notNull().default(0),
     topicIds: jsonb("topic_ids").$type<number[]>().notNull().default([]),

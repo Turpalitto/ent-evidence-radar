@@ -31,9 +31,9 @@
 | `src/components/` | клиентские компоненты: `Feed` (лента, фильтры, пресеты, горячие клавиши), `ArticleDrawer` (карточка, ИИ, правки, цитаты), `SettingsPanel`, `RefreshButton` |
 | `src/db/` | `index.ts` — выбор движка и миграции при старте; `schema.ts` — единственный источник правды о таблицах |
 | `src/lib/evidence/` | чистое ядро без I/O: `classify.ts` (дизайн, уровень, доверие, нормализация идентификаторов, ключ дедупликации), `journals.ts` (белый список журналов по tier + список сомнительных издательств), `taxonomy.ts` (метки) |
-| `src/lib/sources/` | адаптеры источников: `pubmed`, `europepmc`, `clinicaltrials`, `medrxiv`; общий `http.ts` (таймауты, повторы, `Retry-After`, метрики) |
+| `src/lib/sources/` | адаптеры источников: `pubmed`, `europepmc`, `clinicaltrials`, `medrxiv`; `crossref` (редакционные уведомления по DOI); общий `http.ts` (таймауты, повторы, `Retry-After`, метрики) |
 | `src/lib/refresh.ts` | оркестрация обновления, DB-лок, восстановление зависших запусков |
-| `src/lib/retraction.ts`, `reclassify.ts` | пост-обработка после обновления: перепроверка отзывов в PubMed; переразметка записей со старой `classifier_version` |
+| `src/lib/retraction.ts`, `reclassify.ts` | пост-обработка после обновления: перепроверка отзывов в PubMed (по PMID) и в Crossref (по DOI: отзыв, withdrawal, expression of concern, исправление → `editorial_notice`); переразметка записей со старой `classifier_version` |
 | `src/lib/queries.ts`, `search.ts`, `filters.ts` | выборка статей: разбор фильтров, RU↔EN синонимы, FTS-запрос, пагинация |
 | `src/lib/security.ts`, `session.ts`, `rate-limit.ts` | авторизация (`checkApiAuth`), подписанная cookie-сессия, кросс-инстансный rate-limit |
 | `src/lib/ai.ts` | ИИ-резюме/перевод: семафор, суточный бюджет в БД, LRU-кэш, стриминг с таймаутами |

@@ -41,6 +41,11 @@ export interface RawArticle {
   /** DOI журнальной (рецензированной) версии препринта — medRxiv `published` (аудит A-05). */
   publishedDoi?: string | null;
   isRetracted?: boolean;
+  /**
+   * Редакционное уведомление Crossref по DOI (аудит A-04): retraction/withdrawal означают отзыв,
+   * expression_of_concern снижает доверие, correction — только метка.
+   */
+  editorialNotice?: { type: "retraction" | "expression_of_concern" | "correction" | "withdrawal" } | null;
   /** для ClinicalTrials.gov */
   hasResults?: boolean;
   enrollment?: number | null;
@@ -299,7 +304,12 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
   const sampleSize = a.enrollment ?? extractSampleSize(text);
   const tier = journalTier(a.journal);
   const isPreprint = !!a.isPreprint || design === "preprint";
-  const isRetracted = !!a.isRetracted || (a.publicationTypes ?? []).some((t) => /retracted publication/i.test(t));
+  const noticeType = a.editorialNotice?.type;
+  const isRetracted =
+    !!a.isRetracted ||
+    noticeType === "retraction" ||
+    noticeType === "withdrawal" ||
+    (a.publicationTypes ?? []).some((t) => /retracted publication/i.test(t));
   const level = evidenceLevel(design, sampleSize);
 
   const b: TrustBreakdownItem[] = [];
@@ -359,6 +369,7 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
   if (isPreprint) b.push({ label: "Препринт без рецензирования", points: -20 });
   if (isPreprint && a.publishedDoi) b.push({ label: "Есть рецензированная журнальная версия", points: 5 });
   if (isRetracted) b.push({ label: "ОТОЗВАНА (retracted)", points: -60 });
+  if (!isRetracted && noticeType === "expression_of_concern") b.push({ label: "Expression of concern (редакция выразила сомнения)", points: -25 });
   if (!a.abstract || a.abstract.length < 200) b.push({ label: "Нет / короткая аннотация", points: -4 });
   if (a.sourceKey === "clinicaltrials" && a.hasResults) b.push({ label: "Опубликованы результаты в реестре", points: 8 });
   if (/pilot|preliminary|feasibility/i.test(a.title)) b.push({ label: "Пилотное / предварительное", points: -5 });

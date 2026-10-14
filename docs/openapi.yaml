@@ -174,6 +174,17 @@ components:
         label: { type: string }
         points: { type: integer }
       required: [label, points]
+    EditorialNotice:
+      type: object
+      description: "Уведомление Crossref (`works?filter=updates:DOI`): отзыв, withdrawal, expression of concern или исправление. Хранится самое серьёзное."
+      required: [type, source, checkedAt]
+      properties:
+        type: { type: string, enum: [retraction, withdrawal, expression_of_concern, correction] }
+        noticeDoi: { type: string, description: "DOI самого уведомления (retraction notice / EoC), если есть" }
+        date: { type: string, description: "Дата уведомления, yyyy-mm-dd" }
+        label: { type: string, description: "Метка Crossref, например «Retraction»" }
+        source: { type: string, enum: [crossref] }
+        checkedAt: { type: string, format: date-time }
     ManualOverrides:
       type: object
       description: "Ручные правки классификации; применяются поверх эвристик и переживают обновления."
@@ -214,6 +225,9 @@ components:
         isPreprint: { type: boolean }
         publishedDoi: { type: [string, "null"], description: "DOI рецензированной версии препринта (medRxiv)" }
         isRetracted: { type: boolean }
+        editorialNotice:
+          oneOf: [{ $ref: "#/components/schemas/EditorialNotice" }, { type: "null" }]
+          description: "Редакционное уведомление Crossref по DOI (A-04); null — уведомлений нет"
         classifierVersion: { type: integer }
         topicIds: { type: array, items: { type: integer } }
         overrides: { oneOf: [{ $ref: "#/components/schemas/ManualOverrides" }, { type: "null" }] }

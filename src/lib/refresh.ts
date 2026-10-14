@@ -1,14 +1,14 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { isShuttingDown } from "@/lib/shutdown";
 import { db } from "@/db";
-import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail, type ManualOverrides } from "@/db/schema";
+import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail, type ManualOverrides, type EditorialNotice } from "@/db/schema";
 import { CLASSIFIER_VERSION, classify, dedupKeyFor, normalizeIds, type RawArticle } from "@/lib/evidence/classify";
 import { DEFAULT_SETTINGS, DEFAULT_SOURCES, DEFAULT_TOPICS, type AppSettings } from "@/lib/defaults";
 import { fetchPubmed } from "@/lib/sources/pubmed";
 import { fetchEuropePmc } from "@/lib/sources/europepmc";
 import { fetchClinicalTrials } from "@/lib/sources/clinicaltrials";
 import { fetchMedrxiv } from "@/lib/sources/medrxiv";
-import { recheckRetractions } from "@/lib/retraction";
+import { recheckEditorialNotices, recheckRetractions } from "@/lib/retraction";
 import { isReclassifyRunning, reclassifyArticles } from "@/lib/reclassify";
 import { pruneAiCache } from "@/lib/ai";
 import { invalidateStatsCache } from "@/lib/stats";
@@ -265,7 +265,15 @@ export interface WritePlan {
   toInsert: PlannedInsert[];
   toUpdate: PlannedUpdate[];
 }
-type ExistingRef = { id: number; topicIds?: number[] | null; sourceKeys?: string[] | null; overrides?: ManualOverrides | null };
+type ExistingRef = {
+  id: number;
+  topicIds?: number[] | null;
+  sourceKeys?: string[] | null;
+  overrides?: ManualOverrides | null;
+  /** Флаг отзыва и уведомление Crossref у существующей строки (A-04): обновление из источника их не сбрасывает. */
+  isRetracted?: boolean | null;
+  editorialNotice?: EditorialNotice | null;
+};
 
 /**
  * Чистая функция планирования записи: по кандидатам и уже существующим записям решает,
@@ -315,8 +323,16 @@ export function planWrites(
     // обновляем ту же строку рецензированными данными (заметки/закладки врача остаются при статье).
     const preprintMatch = !existing && !doiMatch && !pmidMatch && raw.doi ? byPublishedDoi.get(raw.doi.toLowerCase()) : undefined;
     // Ручные правки врача у существующей строки (аудит A-11) применяются поверх эвристик.
-    const overrides = existing?.overrides ?? doiMatch?.overrides ?? pmidMatch?.overrides ?? preprintMatch?.overrides ?? null;
-    const c = classify(raw, overrides);
+    const prevRef = existing ?? doiMatch ?? pmidMatch ?? preprintMatch;
+    const overrides = prevRef?.overrides ?? null;
+    // Отзыв, найденный перепроверкой (PubMed/Crossref), и уведомление Crossref переживают обновление
+    // из источника: medRxiv/Europe PMC об отзыве не знают и иначе «реабилитировали» бы статью (A-04).
+    const c = classify(
+      prevRef && (prevRef.isRetracted || prevRef.editorialNotice)
+        ? { ...raw, isRetracted: !!raw.isRetracted || !!prevRef.isRetracted, editorialNotice: prevRef.editorialNotice ?? raw.editorialNotice }
+        : raw,
+      overrides,
+    );
     // Порог доверия — только для НОВЫХ записей: уже сохранённую статью обновляем всегда.
     if (c.trustScore < minTrustToStore && !existing && !doiMatch && !pmidMatch && !preprintMatch) continue;
     const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
@@ -575,7 +591,7 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
   const keys = Array.from(candidates.keys());
   const existingRows = keys.length
     ? await db
-        .select({ id: articles.id, dedupKey: articles.dedupKey, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, pmid: articles.pmid, doi: articles.doi, overrides: articles.overrides })
+        .select({ id: articles.id, dedupKey: articles.dedupKey, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, pmid: articles.pmid, doi: articles.doi, overrides: articles.overrides, isRetracted: articles.isRetracted, editorialNotice: articles.editorialNotice })
         .from(articles)
         .where(inArray(articles.dedupKey, keys))
     : [];
@@ -589,17 +605,20 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
   const byDoi = new Map<string, ExistingRef>();
   const byPmid = new Map<string, ExistingRef>();
   const byPublishedDoi = new Map<string, ExistingRef>();
-  const refCols = { id: articles.id, doi: articles.doi, pmid: articles.pmid, publishedDoi: articles.publishedDoi, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, overrides: articles.overrides };
+  const refCols = { id: articles.id, doi: articles.doi, pmid: articles.pmid, publishedDoi: articles.publishedDoi, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, overrides: articles.overrides, isRetracted: articles.isRetracted, editorialNotice: articles.editorialNotice };
+  const toRef = (r: { id: number; topicIds: number[] | null; sourceKeys: string[] | null; overrides: ManualOverrides | null; isRetracted: boolean; editorialNotice: EditorialNotice | null }): ExistingRef => ({
+    id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [], overrides: r.overrides, isRetracted: r.isRetracted, editorialNotice: r.editorialNotice,
+  });
   if (allDois.length) {
     const rows = await db.select(refCols).from(articles).where(inArray(sql`lower(${articles.doi})`, allDois));
-    for (const r of rows) if (r.doi) byDoi.set(r.doi.toLowerCase(), { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [], overrides: r.overrides });
+    for (const r of rows) if (r.doi) byDoi.set(r.doi.toLowerCase(), toRef(r));
     // Препринты, журнальная версия которых пришла сейчас (A-05).
     const pre = await db.select(refCols).from(articles).where(inArray(sql`lower(${articles.publishedDoi})`, allDois));
-    for (const r of pre) if (r.publishedDoi) byPublishedDoi.set(r.publishedDoi.toLowerCase(), { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [], overrides: r.overrides });
+    for (const r of pre) if (r.publishedDoi) byPublishedDoi.set(r.publishedDoi.toLowerCase(), toRef(r));
   }
   if (allPmids.length) {
     const rows = await db.select(refCols).from(articles).where(inArray(articles.pmid, allPmids));
-    for (const r of rows) if (r.pmid) byPmid.set(r.pmid, { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [], overrides: r.overrides });
+    for (const r of rows) if (r.pmid) byPmid.set(r.pmid, toRef(r));
   }
 
   // Сначала считаем решения (insert/update) чистой функцией, затем пишем пакетно в одной
@@ -639,6 +658,22 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
       updated: 0,
       durationMs: Date.now() - tRecheck,
       error: recheck.error,
+    });
+  }
+
+  // ---- Crossref (A-04): отзывы/expression of concern по DOI — для записей без PMID и для EoC,
+  // которых PubMed типом публикации не помечает. Пачка небольшая, круг по базе — за несколько запусков.
+  const tNotices = Date.now();
+  const notices = await recheckEditorialNotices();
+  if (notices.checked > 0 || notices.error) {
+    // found = проверено DOI, added = новых отзывов, updated = новых/изменённых уведомлений (включая EoC/исправления).
+    details.push({
+      source: "crossref-notices",
+      found: notices.checked,
+      added: notices.newlyRetracted,
+      updated: notices.noticed,
+      durationMs: Date.now() - tNotices,
+      error: notices.error,
     });
   }
 

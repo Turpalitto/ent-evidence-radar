@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Article } from "@/db/schema";
 import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTIES, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
-import { DesignBadge, LevelBadge, TierBadge, TrustScore, formatDate } from "./Badges";
+import { DesignBadge, LevelBadge, NOTICE_LABELS, NoticeBadge, TierBadge, TrustScore, formatDate } from "./Badges";
 import { citeBibtex, citeGost, citeVancouver } from "@/lib/citation";
 import { useFocusTrap } from "./useFocusTrap";
 
@@ -237,6 +237,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             {a.isPreprint && <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">ПРЕПРИНТ</span>}
             {a.isPreprint && a.publishedDoi && <span className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" title="Есть рецензированная журнальная версия">ОПУБЛИКОВАН В ЖУРНАЛЕ</span>}
             {a.isRetracted && <span className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">ОТОЗВАНА</span>}
+            <NoticeBadge notice={a.editorialNotice} />
             {hasOverrides && <span className="rounded border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300" title="Классификация исправлена вручную и не будет перетёрта при обновлении">✎ ВРУЧНУЮ</span>}
             {a.isHidden && <span className="rounded bg-slate-600 px-1.5 py-0.5 text-[10px] font-bold text-white">СКРЫТА</span>}
           </div>
@@ -377,6 +378,17 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         {/* ── Идентификаторы (компактно) ── */}
         {(a.doi || a.pmid || a.pmcid || a.nctId || a.publishedDoi) && (
           <div className="flex flex-wrap gap-2">
+            {a.editorialNotice?.noticeDoi && (
+              <a
+                href={`https://doi.org/${a.editorialNotice.noticeDoi}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-800 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300"
+                title={`${NOTICE_LABELS[a.editorialNotice.type].title}${a.editorialNotice.date ? `, ${a.editorialNotice.date}` : ""}`}
+              >
+                {a.editorialNotice.type === "correction" ? "Текст исправления" : a.editorialNotice.type === "expression_of_concern" ? "Текст expression of concern" : "Уведомление об отзыве"} ↗
+              </a>
+            )}
             {a.publishedDoi && <a href={`https://doi.org/${a.publishedDoi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" title="Рецензированная версия этого препринта в журнале">Журнальная версия (DOI) ↗</a>}
             {a.pmcid && <a href={`https://www.ncbi.nlm.nih.gov/pmc/articles/${a.pmcid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">Полный текст (PMC) ↗</a>}
             {a.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">PubMed (PMID {a.pmid}) ↗</a>}
