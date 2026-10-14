@@ -1,13 +1,8 @@
 import { cookies } from "next/headers";
-import { createI18n, LOCALE_COOKIE, parseLocale, type I18n, type Locale, DEFAULT_LOCALE } from "./index";
+import { createI18n, LOCALE_COOKIE, parseLocale, type I18n, type Locale } from "./index";
+import { deploymentDefaultLocale } from "./request";
 
-/**
- * Язык по умолчанию для развёртывания: `DEFAULT_LOCALE=en` в окружении делает английский
- * стартовым языком для посетителей без cookie. Читается только на сервере.
- */
-export function deploymentDefaultLocale(): Locale {
-  return parseLocale(process.env.DEFAULT_LOCALE, DEFAULT_LOCALE);
-}
+export { deploymentDefaultLocale };
 
 /** Язык интерфейса текущего запроса: cookie переключателя → язык развёртывания. */
 export async function getLocale(): Promise<Locale> {

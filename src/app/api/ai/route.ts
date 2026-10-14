@@ -7,6 +7,7 @@ import { aiConfigured, getAiUsage, summarizeStream, translateStream } from "@/li
 import { parseBody } from "@/lib/api";
 import { checkApiAuth, rateLimitKey } from "@/lib/security";
 import { checkRateLimitShared } from "@/lib/rate-limit";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 150;
@@ -53,6 +54,7 @@ const BodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
   if (!auth.ok) {
     return Response.json({ ok: false, error: auth.error }, { status: auth.status ?? 401 });
@@ -61,13 +63,13 @@ export async function POST(req: NextRequest) {
   const rl = await checkRateLimitShared(`ai:${rateLimitKey(req)}`, 30, 60_000);
   if (!rl.allowed) {
     return Response.json(
-      { ok: false, error: "Слишком много запросов к AI. Подождите немного." },
+      { ok: false, error: t("Слишком много запросов к AI. Подождите немного.") },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } },
     );
   }
 
   if (!aiConfigured()) {
-    return Response.json({ ok: false, error: "AI не настроен: задайте AI_API_KEY" }, { status: 400 });
+    return Response.json({ ok: false, error: t("AI не настроен: задайте AI_API_KEY") }, { status: 400 });
   }
 
   const parsed = await parseBody(req, BodySchema);
@@ -75,9 +77,9 @@ export async function POST(req: NextRequest) {
   const { articleId, action, lang } = parsed.data;
 
   const [row] = await db.select({ abstract: articles.abstract }).from(articles).where(eq(articles.id, articleId)).limit(1);
-  if (!row) return Response.json({ ok: false, error: "Статья не найдена" }, { status: 404 });
+  if (!row) return Response.json({ ok: false, error: t("Статья не найдена") }, { status: 404 });
   const text = row.abstract.trim();
-  if (!text) return Response.json({ ok: false, error: "У статьи нет аннотации" }, { status: 400 });
+  if (!text) return Response.json({ ok: false, error: t("У статьи нет аннотации") }, { status: 400 });
 
   // Бюджет проверяем до открытия стрима: кэш-попадания бюджета не расходуют, их пропускаем ниже.
   const usage = await getAiUsage();
@@ -85,7 +87,7 @@ export async function POST(req: NextRequest) {
   if (usage.budget > 0 && usage.calls >= usage.budget) {
     // Отдаём из кэша, если есть; иначе — честный 429.
     const first = await stream.next();
-    if (first.done) return Response.json({ ok: false, error: `Дневной лимит обращений к AI исчерпан (${usage.calls}/${usage.budget}).` }, { status: 429 });
+    if (first.done) return Response.json({ ok: false, error: t("Дневной лимит обращений к AI исчерпан ({calls}/{budget}).", { calls: usage.calls, budget: usage.budget }) }, { status: 429 });
     return sse(prepend(first.value, stream));
   }
   return sse(stream);

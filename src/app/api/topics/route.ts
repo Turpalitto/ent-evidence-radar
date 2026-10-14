@@ -5,6 +5,7 @@ import { topics } from "@/db/schema";
 import { ensureSeeded } from "@/lib/refresh";
 import { apiError, isSubspecialtyKey, normalizeTopicLookback, readJsonObject, TOPIC_LIMITS } from "@/lib/api";
 import { checkApiAuth } from "@/lib/security";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 
@@ -15,19 +16,20 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
   if (!auth.ok) return apiError(auth.status ?? 401, auth.error ?? "unauthorized");
 
   const body = await readJsonObject<{ name?: unknown; query?: unknown; subspecialty?: unknown; lookbackDays?: unknown }>(req);
-  if (!body) return apiError(400, "Ожидается JSON-объект");
+  if (!body) return apiError(400, t("Ожидается JSON-объект"));
 
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const query = typeof body.query === "string" ? body.query.trim() : "";
-  if (!name || !query) return apiError(400, "name и query обязательны");
-  if (name.length > TOPIC_LIMITS.name) return apiError(400, `Название темы длиннее ${TOPIC_LIMITS.name} символов`);
-  if (query.length > TOPIC_LIMITS.query) return apiError(400, `Поисковый запрос длиннее ${TOPIC_LIMITS.query} символов`);
+  if (!name || !query) return apiError(400, t("name и query обязательны"));
+  if (name.length > TOPIC_LIMITS.name) return apiError(400, t("Название темы длиннее {n} символов", { n: TOPIC_LIMITS.name }));
+  if (query.length > TOPIC_LIMITS.query) return apiError(400, t("Поисковый запрос длиннее {n} символов", { n: TOPIC_LIMITS.query }));
   const subspecialty = body.subspecialty === undefined ? "general" : body.subspecialty;
-  if (!isSubspecialtyKey(subspecialty)) return apiError(400, "Неизвестная субспециальность");
+  if (!isSubspecialtyKey(subspecialty)) return apiError(400, t("Неизвестная субспециальность"));
 
   const [row] = await db
     .insert(topics)

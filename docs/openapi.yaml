@@ -14,6 +14,8 @@ info:
     **Ошибки.** `{ "error": "текст", "requestId"?: "..." }` или `{ "ok": false, "error": "..." }` (старые маршруты);
     400 — невалидный ввод, 401 — нужна авторизация, 403 — не same-origin, 404, 409 — операция уже идёт,
     429 — rate-limit (заголовок `Retry-After`), 500 — внутренняя ошибка (с `requestId`).
+    Текст `error` — на языке запроса: `?lang=ru|en` → cookie `ent_radar_lang` → `DEFAULT_LOCALE` сервера
+    (по умолчанию русский). Коды статусов и имена полей от языка не зависят — скрипты должны опираться на них.
 
     **Корреляция.** Каждый ответ несёт `x-request-id`; можно передать свой (8–128 символов `[A-Za-z0-9._:-]`).
 servers:
@@ -121,6 +123,11 @@ components:
       name: excludePreprints
       in: query
       schema: { type: string, enum: ["1"] }
+    Lang:
+      name: lang
+      in: query
+      description: "Язык текстов ответа (подписи ленты, сообщения об ошибках); иначе cookie `ent_radar_lang` или `DEFAULT_LOCALE` сервера"
+      schema: { type: string, enum: [ru, en] }
     ArticleFilters_hidden:
       name: hidden
       in: query
@@ -1081,8 +1088,9 @@ paths:
     get:
       tags: [public]
       summary: "Atom-лента 60 последних публикаций; с фильтрами — подписка на сохранённый поиск"
-      description: "Принимает публичные фильтры /api/articles (персональные bookmarked/unread/hidden игнорируются). Без `q` сортировка по времени сбора, с `q` — по релевантности. Заголовок ленты описывает фильтры."
+      description: "Принимает публичные фильтры /api/articles (персональные bookmarked/unread/hidden игнорируются). Без `q` сортировка по времени сбора, с `q` — по релевантности. Заголовок ленты описывает фильтры. Язык подписей — `lang` (читалки не присылают cookie), иначе `DEFAULT_LOCALE` сервера; self-ссылка сохраняет `lang`."
       parameters:
+        - $ref: "#/components/parameters/Lang"
         - $ref: "#/components/parameters/ArticleFilters_q"
         - $ref: "#/components/parameters/ArticleFilters_scope"
         - $ref: "#/components/parameters/ArticleFilters_subspecialty"

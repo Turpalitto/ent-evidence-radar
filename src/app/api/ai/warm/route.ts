@@ -7,6 +7,7 @@ import { aiConfigured, getAiUsage, warmAbstracts } from "@/lib/ai";
 import { parseBody } from "@/lib/api";
 import { checkApiAuth, rateLimitKey } from "@/lib/security";
 import { checkRateLimitShared } from "@/lib/rate-limit";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -20,6 +21,7 @@ const BodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
   if (!auth.ok) {
     return Response.json({ ok: false, error: auth.error }, { status: auth.status ?? 401 });
@@ -28,20 +30,20 @@ export async function POST(req: NextRequest) {
   const rl = await checkRateLimitShared(`ai-warm:${rateLimitKey(req)}`, 20, 60_000);
   if (!rl.allowed) {
     return Response.json(
-      { ok: false, error: "Слишком много запросов прогрева. Подождите немного." },
+      { ok: false, error: t("Слишком много запросов прогрева. Подождите немного.") },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } },
     );
   }
 
   if (!aiConfigured()) {
-    return Response.json({ ok: false, error: "AI не настроен: задайте AI_API_KEY" }, { status: 400 });
+    return Response.json({ ok: false, error: t("AI не настроен: задайте AI_API_KEY") }, { status: 400 });
   }
   const parsed = await parseBody(req, BodySchema);
   if (!parsed.ok) return parsed.response;
 
   const usage = await getAiUsage();
   if (usage.budget > 0 && usage.calls >= usage.budget) {
-    return Response.json({ ok: false, error: "Дневной лимит обращений к AI исчерпан — прогрев пропущен." }, { status: 429 });
+    return Response.json({ ok: false, error: t("Дневной лимит обращений к AI исчерпан — прогрев пропущен.") }, { status: 429 });
   }
 
   const ids = Array.from(new Set(parsed.data.articleIds));

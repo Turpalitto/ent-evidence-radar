@@ -5,6 +5,7 @@ import { getSettings } from "@/lib/refresh";
 import { getDigestState, sendDigestNow } from "@/lib/digest-schedule";
 import { apiFailure } from "@/lib/api";
 import { checkApiAuth } from "@/lib/security";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -51,17 +52,18 @@ export async function GET(req: NextRequest) {
 
 /** Отправить дайджест сейчас текущим получателям (из настроек или DIGEST_RECIPIENTS). */
 export async function POST(req: NextRequest) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
   if (!auth.ok) {
     return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status ?? 401 });
   }
 
   if (g.__entRadarDigestRunning) {
-    return NextResponse.json({ ok: false, running: true, message: "Дайджест уже формируется" }, { status: 409 });
+    return NextResponse.json({ ok: false, running: true, message: t("Дайджест уже формируется") }, { status: 409 });
   }
   const cfg = await getSettings();
   if (!getRecipients(cfg.digestRecipients).length) {
-    return NextResponse.json({ ok: false, error: "Не заданы получатели: укажите их в настройках дайджеста или в DIGEST_RECIPIENTS" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: t("Не заданы получатели: укажите их в настройках дайджеста или в DIGEST_RECIPIENTS") }, { status: 400 });
   }
   g.__entRadarDigestRunning = true;
   try {

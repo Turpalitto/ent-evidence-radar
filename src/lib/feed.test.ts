@@ -5,6 +5,7 @@ import { articles, topics } from "@/db/schema";
 import { ensureSeeded } from "@/lib/refresh";
 import { GET } from "@/app/feed.xml/route";
 import { describeFeedFilters, feedFilters } from "./feed";
+import { createI18n } from "@/lib/i18n";
 
 const get = (qs = "") => GET(new NextRequest(`http://localhost/feed.xml${qs}`));
 
@@ -42,6 +43,17 @@ describe("/feed.xml с фильтрами (подписка на сохранё�
     expect(xml).toMatch(/<link href="[^"]*\/\?subspecialty=rhinology&amp;design=rct&amp;minTrust=70" rel="alternate"/);
   });
 
+  it("?lang=en — подписи на английском, self-ссылка сохраняет lang, ссылка на сайт — нет", async () => {
+    const xml = await (await get("?subspecialty=rhinology&design=rct&minTrust=70&lang=en")).text();
+    expect(xml).toContain("<title>ENT Evidence Radar — Rhinology / allergy · RCT · trust ≥ 70</title>");
+    expect(xml).toContain("<subtitle>Systematic reviews, RCTs and clinical practice guidelines in otolaryngology from primary sources.</subtitle>");
+    expect(xml).toMatch(/Trust index \d+\/100 · RCT · evidence level/);
+    expect(xml).toMatch(/<link href="[^"]*\/feed\.xml\?subspecialty=rhinology&amp;design=rct&amp;minTrust=70&amp;lang=en" rel="self"/);
+    expect(xml).toMatch(/<link href="[^"]*\/\?subspecialty=rhinology&amp;design=rct&amp;minTrust=70" rel="alternate"/);
+    // Без параметра — общий заголовок на английском
+    expect(await (await get("?lang=en")).text()).toContain("<title>ENT Evidence Radar — evidence-based publications feed</title>");
+  });
+
   it("персональные флаги игнорируются: bookmarked/unread/hidden не влияют на публичную ленту", async () => {
     const xml = await (await get("?bookmarked=1&hidden=1&unread=1&subspecialty=otology")).text();
     expect(xml).toContain("Feed otology cohort"); // не закладка — всё равно в ленте
@@ -68,6 +80,11 @@ describe("/feed.xml с фильтрами (подписка на сохранё�
     expect(describeFeedFilters(b)).toEqual(["уровень ≤ 2", "поиск «tinnitus»"]);
     // Издатель руководства (A-06) описывается вместо дизайна
     expect(describeFeedFilters(feedFilters(new URLSearchParams("design=guideline&issuer=aao-hns")))).toEqual(["руководства AAO-HNS"]);
+    // Английский вариант (A-16): шаблоны и подписи таксономии переводятся, пользовательские значения — нет
+    const en = createI18n("en");
+    expect(describeFeedFilters(a, null, en)).toEqual(["last 30 days", "from 2024", "no preprints"]);
+    expect(describeFeedFilters(b, "Тиннитус", en)).toEqual(["topic “Тиннитус”", "level ≤ 2", "search “tinnitus”"]);
+    expect(describeFeedFilters(feedFilters(new URLSearchParams("issuer=minzdrav&source=pubmed")), null, en)).toEqual(["Russian MoH guidelines", "PubMed / MEDLINE"]);
     expect(describeFeedFilters(feedFilters(new URLSearchParams("issuer=other")))).toEqual(["руководства без распознанного издателя"]);
   });
 });

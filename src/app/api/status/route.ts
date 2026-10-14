@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { articles, fetchRuns, sources, topics } from "@/db/schema";
 import { ensureSeeded } from "@/lib/refresh";
 import { checkApiAuth } from "@/lib/security";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
  * остаётся сам факт «ошибка/частично» и время.
  */
 export async function GET(req: NextRequest) {
+  const { t } = i18nOf(req);
   await ensureSeeded();
   const canSeeDetails = checkApiAuth(req).ok;
   const [srcRows, [last], [counts], enabledTopics] = await Promise.all([
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
     enabled: s.enabled,
     lastFetchedAt: s.lastFetchedAt,
     lastStatus: s.lastStatus,
-    lastError: canSeeDetails ? s.lastError : s.lastError ? "скрыто (нужна авторизация)" : null,
+    lastError: canSeeDetails ? s.lastError : s.lastError ? t("скрыто (нужна авторизация)") : null,
     healthy: s.lastStatus !== "error",
     /** Часть тем источника упала (F-18): источник жив, но данные неполные. */
     degraded: s.lastStatus === "degraded",
@@ -52,7 +54,7 @@ export async function GET(req: NextRequest) {
     ok: true,
     updatedAt: new Date().toISOString(),
     sources: src,
-    lastRun: last ? { ...last, errorMessage: canSeeDetails ? last.errorMessage : last.errorMessage ? "скрыто (нужна авторизация)" : null } : null,
+    lastRun: last ? { ...last, errorMessage: canSeeDetails ? last.errorMessage : last.errorMessage ? t("скрыто (нужна авторизация)") : null } : null,
     counts,
     topics: { total: enabledTopics.length, enabled: enabledTopics.filter((t) => t.enabled).length },
   });

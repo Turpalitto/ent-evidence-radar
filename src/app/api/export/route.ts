@@ -4,10 +4,12 @@ import { DESIGN_LABELS } from "@/lib/evidence/taxonomy";
 import { checkApiAuth } from "@/lib/security";
 import { csvRow } from "@/lib/export";
 import { citeBibtex } from "@/lib/citation";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status ?? 401 });
@@ -45,7 +47,7 @@ export async function GET(req: NextRequest) {
         if (a.abstract) lines.push(`AB  - ${a.abstract.replace(/\s+/g, " ")}`);
         lines.push(`UR  - ${a.url}`);
         for (const k of a.keywords.slice(0, 15)) lines.push(`KW  - ${k}`);
-        lines.push(`N1  - Дизайн: ${DESIGN_LABELS[a.studyDesign]}; уровень доказательности ${a.evidenceLevel}; индекс доверия ${a.trustScore}/100`);
+        lines.push(`N1  - ${t("Дизайн: {design}; уровень доказательности {level}; индекс доверия {trust}/100", { design: t(DESIGN_LABELS[a.studyDesign]), level: a.evidenceLevel, trust: a.trustScore })}`);
         lines.push("ER  - ");
         return lines.join("\r\n");
       })

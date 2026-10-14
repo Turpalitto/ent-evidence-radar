@@ -3,6 +3,7 @@ import { CLASSIFIER_VERSION } from "@/lib/evidence/classify";
 import { countPendingReclassify, isReclassifyRunning, reclassifyArticles } from "@/lib/reclassify";
 import { readJsonObject } from "@/lib/api";
 import { checkApiAuth } from "@/lib/security";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -20,20 +21,21 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status ?? 401 });
 
   // Тело необязательно: пустой запрос = переразметить только устаревшие записи.
   const body = req.headers.get("content-length") === "0" || !req.headers.get("content-type") ? {} : await readJsonObject(req);
-  if (body === null) return NextResponse.json({ ok: false, error: "Тело запроса должно быть JSON-объектом" }, { status: 400 });
+  if (body === null) return NextResponse.json({ ok: false, error: t("Тело запроса должно быть JSON-объектом") }, { status: 400 });
   const force = body.force === true;
   const limitRaw = body.limit;
   if (limitRaw !== undefined && (typeof limitRaw !== "number" || !Number.isInteger(limitRaw) || limitRaw < 1 || limitRaw > 1_000_000)) {
-    return NextResponse.json({ ok: false, error: "limit должен быть целым числом от 1 до 1 000 000" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: t("limit должен быть целым числом от 1 до 1 000 000") }, { status: 400 });
   }
 
   if (isReclassifyRunning()) {
-    return NextResponse.json({ ok: false, running: true, error: "Переклассификация уже выполняется" }, { status: 409 });
+    return NextResponse.json({ ok: false, running: true, error: t("Переклассификация уже выполняется") }, { status: 409 });
   }
   try {
     const r = await reclassifyArticles({ force, limit: limitRaw as number | undefined });

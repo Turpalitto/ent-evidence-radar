@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimitShared } from "@/lib/rate-limit";
 import { getClientIp, isSameOriginRequest } from "@/lib/security";
 import { SESSION_COOKIE, SESSION_TTL_SEC, createSessionToken } from "@/lib/session";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 
@@ -24,21 +25,22 @@ function isHttps(req: NextRequest): boolean {
  * Защита от перебора — общий (кросс-инстансный) rate-limit по IP.
  */
 export async function POST(req: NextRequest) {
+  const { t } = i18nOf(req);
   const secret = process.env.API_SECRET;
   if (!secret) {
-    return NextResponse.json({ ok: true, required: false, message: "Авторизация не настроена (API_SECRET не задан)" });
+    return NextResponse.json({ ok: true, required: false, message: t("Авторизация не настроена (API_SECRET не задан)") });
   }
 
   // Форма логина отправляется только с нашей страницы.
   if (!isSameOriginRequest(req.headers)) {
-    return NextResponse.json({ ok: false, error: "Запрос отклонён (источник запроса)" }, { status: 403 });
+    return NextResponse.json({ ok: false, error: t("Запрос отклонён (источник запроса)") }, { status: 403 });
   }
 
   const ip = getClientIp(req);
   const rl = await checkRateLimitShared(`login:${ip}`, 10, 10 * 60_000);
   if (!rl.allowed) {
     return NextResponse.json(
-      { ok: false, error: "Слишком много попыток входа. Попробуйте позже." },
+      { ok: false, error: t("Слишком много попыток входа. Попробуйте позже.") },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } },
     );
   }
@@ -48,16 +50,16 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as { secret?: unknown };
     provided = typeof body.secret === "string" ? body.secret : "";
   } catch {
-    return NextResponse.json({ ok: false, error: "Некорректное тело запроса" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: t("Некорректное тело запроса") }, { status: 400 });
   }
 
   if (!provided || provided.length > 1024 || !safeEqual(provided, secret)) {
-    return NextResponse.json({ ok: false, error: "Неверный секрет" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: t("Неверный секрет") }, { status: 401 });
   }
 
   const token = createSessionToken();
   if (!token) {
-    return NextResponse.json({ ok: false, error: "Не удалось создать сессию" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: t("Не удалось создать сессию") }, { status: 500 });
   }
 
   const res = NextResponse.json({ ok: true, required: true });

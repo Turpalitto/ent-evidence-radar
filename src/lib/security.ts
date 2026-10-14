@@ -1,5 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { hasValidSession, readCookie, SESSION_COOKIE } from "./session";
+import { msg } from "./i18n";
+import { i18nOf } from "./i18n/request";
 
 interface RateLimitEntry {
   count: number;
@@ -234,7 +236,7 @@ export function isSameOriginRequest(headers: HeadersLike): boolean {
   return isSameOrigin(headers);
 }
 
-export const AUTH_REQUIRED_MESSAGE = "Требуется авторизация: войдите через /login или передайте API_SECRET (Bearer / X-API-Key)";
+export const AUTH_REQUIRED_MESSAGE = msg("Требуется авторизация: войдите через /login или передайте API_SECRET (Bearer / X-API-Key)");
 
 /**
  * Проверяет авторизацию запроса.
@@ -247,9 +249,10 @@ export const AUTH_REQUIRED_MESSAGE = "Требуется авторизация:
  *
  * Подделанные Sec-Fetch-Site/Origin БЕЗ cookie и БЕЗ токена отклоняются (401).
  */
-export function checkApiAuth(req: { headers: HeadersLike; method?: string }): { ok: boolean; status?: number; error?: string } {
+export function checkApiAuth(req: { headers: HeadersLike; method?: string; url?: string }): { ok: boolean; status?: number; error?: string } {
   const secret = process.env.API_SECRET;
   if (!secret) return { ok: true };
+  const { t } = i18nOf(req);
 
   const authHeader = req.headers.get("authorization");
   const token = authHeader?.replace(/^Bearer\s+/i, "") ?? req.headers.get("x-api-key");
@@ -260,8 +263,8 @@ export function checkApiAuth(req: { headers: HeadersLike; method?: string }): { 
     const method = (req.method ?? "GET").toUpperCase();
     if (method === "GET" || method === "HEAD") return { ok: true };
     if (isSameOriginRequest(req.headers)) return { ok: true };
-    return { ok: false, status: 403, error: "Запрос отклонён: источник запроса не совпадает с сайтом (защита от CSRF)" };
+    return { ok: false, status: 403, error: t("Запрос отклонён: источник запроса не совпадает с сайтом (защита от CSRF)") };
   }
 
-  return { ok: false, status: 401, error: AUTH_REQUIRED_MESSAGE };
+  return { ok: false, status: 401, error: t(AUTH_REQUIRED_MESSAGE) };
 }

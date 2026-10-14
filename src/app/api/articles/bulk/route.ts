@@ -6,6 +6,7 @@ import { articles } from "@/db/schema";
 import { apiError, apiFailure, parseBody } from "@/lib/api";
 import { invalidateArticleAggregates } from "@/lib/cache";
 import { checkApiAuth } from "@/lib/security";
+import { msg } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ const BulkSchema = z
     isBookmarked: z.boolean().optional(),
     isHidden: z.boolean().optional(),
   })
-  .refine((b) => b.isRead !== undefined || b.isBookmarked !== undefined || b.isHidden !== undefined, { message: "Укажите isRead, isBookmarked или isHidden" });
+  .refine((b) => b.isRead !== undefined || b.isBookmarked !== undefined || b.isHidden !== undefined, { message: msg("Укажите isRead, isBookmarked или isHidden") });
 
 /** Массовые пользовательские пометки (аудит I-14): «отметить страницу прочитанной» и т. п. */
 export async function POST(req: NextRequest) {

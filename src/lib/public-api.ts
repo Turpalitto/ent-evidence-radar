@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { checkRateLimit, rateLimitKey } from "@/lib/security";
+import { i18nOf } from "@/lib/i18n/request";
 
 /**
  * Защита публичных read-эндпоинтов (`/api/articles`, `/api/articles/:id/related`, `/feed.xml`):
@@ -45,7 +46,7 @@ export function publicRateLimit(req: { headers: HeadersLike }, bucket: string, c
   if (rl.allowed) return null;
   const retryAfter = Math.max(1, Math.ceil(rl.resetMs / 1000));
   return Response.json(
-    { ok: false, error: "Слишком много запросов, попробуйте позже" },
+    { ok: false, error: i18nOf(req).t("Слишком много запросов, попробуйте позже") },
     { status: 429, headers: { "Retry-After": String(retryAfter), "Cache-Control": "no-store" } },
   );
 }

@@ -7,14 +7,16 @@ import { invalidateArticleAggregates } from "@/lib/cache";
 import { sanitizeOverrides } from "@/lib/evidence/classify";
 import { RECLASSIFY_ROW_COLUMNS, reclassifyRow } from "@/lib/reclassify";
 import { checkApiAuth } from "@/lib/security";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 
 const NOTES_MAX = 5000;
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { t } = i18nOf(req);
   const id = parseId((await ctx.params).id);
-  if (id === null) return apiError(400, "Некорректный id статьи");
+  if (id === null) return apiError(400, t("Некорректный id статьи"));
   const rows = await db.select(articleColumns).from(articles).where(eq(articles.id, id));
   if (!rows.length) return apiError(404, "not found");
   return NextResponse.json(rows[0]);
@@ -27,14 +29,15 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
  * переклассифицируется сразу, а refresh/переклассификация впредь уважают правку.
  */
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
   if (!auth.ok) return apiError(auth.status ?? 401, auth.error ?? "unauthorized");
 
   const id = parseId((await ctx.params).id);
-  if (id === null) return apiError(400, "Некорректный id статьи");
+  if (id === null) return apiError(400, t("Некорректный id статьи"));
 
   const body = await readJsonObject<{ isRead?: unknown; isBookmarked?: unknown; notes?: unknown; isHidden?: unknown; overrides?: unknown }>(req);
-  if (!body) return apiError(400, "Ожидается JSON-объект");
+  if (!body) return apiError(400, t("Ожидается JSON-объект"));
 
   const patch: Partial<typeof articles.$inferInsert> = {};
   if (typeof body.isRead === "boolean") patch.isRead = body.isRead;
@@ -44,7 +47,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   if ("overrides" in body) {
     if (body.overrides !== null && (typeof body.overrides !== "object" || Array.isArray(body.overrides))) {
-      return apiError(400, "overrides должен быть объектом {studyDesign?, subspecialties?} или null");
+      return apiError(400, t("overrides должен быть объектом {studyDesign?, subspecialties?} или null"));
     }
     const overrides = sanitizeOverrides(body.overrides);
     const [row] = await db.select(RECLASSIFY_ROW_COLUMNS).from(articles).where(eq(articles.id, id));
@@ -52,7 +55,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     Object.assign(patch, reclassifyRow(row, overrides));
   }
 
-  if (!Object.keys(patch).length) return apiError(400, "Нет допустимых полей для изменения (isRead, isBookmarked, notes, isHidden, overrides)");
+  if (!Object.keys(patch).length) return apiError(400, t("Нет допустимых полей для изменения (isRead, isBookmarked, notes, isHidden, overrides)"));
 
   const rows = await db.update(articles).set(patch).where(eq(articles.id, id)).returning(articleColumns);
   invalidateArticleAggregates();
@@ -66,11 +69,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
  * сутки приезжала заново). `?purge=1` — физическое удаление вместе с заметками.
  */
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
   if (!auth.ok) return apiError(auth.status ?? 401, auth.error ?? "unauthorized");
 
   const id = parseId((await ctx.params).id);
-  if (id === null) return apiError(400, "Некорректный id статьи");
+  if (id === null) return apiError(400, t("Некорректный id статьи"));
 
   const purge = req.nextUrl.searchParams.get("purge") === "1";
   const rows = purge

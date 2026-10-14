@@ -2,6 +2,7 @@ import { z } from "zod";
 import { NextResponse } from "next/server";
 import { log } from "@/lib/log";
 import { SUBSPECIALTIES } from "@/lib/evidence/taxonomy";
+import { i18nOf } from "@/lib/i18n/request";
 
 /**
  * Общие помощники для API-роутов: единый формат ошибок и валидация входа.
@@ -25,7 +26,8 @@ export function requestIdOf(req: { headers: { get(name: string): string | null }
 export function apiFailure(req: { headers: { get(name: string): string | null }; url?: string }, e: unknown, route: string) {
   const requestId = requestIdOf(req);
   log.error("api.unhandled", { route, requestId, error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
-  return NextResponse.json({ ok: false, error: "Внутренняя ошибка сервера", requestId }, { status: 500 });
+  const { t } = i18nOf(req);
+  return NextResponse.json({ ok: false, error: t("Внутренняя ошибка сервера"), requestId }, { status: 500 });
 }
 
 /** Положительный целочисленный id из параметра маршрута; иначе null. */
@@ -38,22 +40,24 @@ export function parseId(raw: string | undefined | null): number | null {
 /**
  * Единый разбор тела по zod-схеме (аудит I-07): невалидный JSON или схема → `{ ok: false, response: 400 }`
  * с перечнем проблем в формате `поле: сообщение`. Пустое тело трактуется как `{}` (для эндпоинтов,
- * где все поля необязательны).
+ * где все поля необязательны). Сообщения — на языке запроса (A-16): собственные тексты схем
+ * (`message: msg("…")`) переводятся по словарю, встроенные англоязычные сообщения zod остаются как есть.
  */
 export async function parseBody<T>(req: Request, schema: z.ZodType<T>): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
+  const { t } = i18nOf(req);
   let raw: unknown = {};
   const text = await req.text().catch(() => "");
   if (text.trim()) {
     try {
       raw = JSON.parse(text);
     } catch {
-      return { ok: false, response: Response.json({ ok: false, error: "Некорректный JSON" }, { status: 400 }) };
+      return { ok: false, response: Response.json({ ok: false, error: t("Некорректный JSON") }, { status: 400 }) };
     }
   }
   const r = schema.safeParse(raw);
   if (!r.success) {
-    const issues = r.error.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`);
-    return { ok: false, response: Response.json({ ok: false, error: `Некорректный запрос: ${issues.join("; ")}`, issues }, { status: 400 }) };
+    const issues = r.error.issues.map((i) => `${i.path.join(".") || "body"}: ${t(i.message)}`);
+    return { ok: false, response: Response.json({ ok: false, error: t("Некорректный запрос: {issues}", { issues: issues.join("; ") }), issues }, { status: 400 }) };
   }
   return { ok: true, data: r.data };
 }

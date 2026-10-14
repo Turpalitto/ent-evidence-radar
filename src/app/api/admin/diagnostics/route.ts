@@ -5,6 +5,7 @@ import { checkApiAuth } from "@/lib/security";
 import { collectDiagnostics, forceReleaseLock, resetRetractionCursor } from "@/lib/diagnostics";
 import { isRefreshRunning } from "@/lib/refresh";
 import { log } from "@/lib/log";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +24,14 @@ const ActionSchema = z.object({ action: z.enum(["release_lock", "reset_retractio
 
 /** Служебные действия: снять «зависшую» блокировку, сбросить курсор перепроверки отзывов. */
 export async function POST(req: NextRequest) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
   if (!auth.ok) return apiError(auth.status ?? 401, auth.error ?? "unauthorized");
   const parsed = await parseBody(req, ActionSchema);
   if (!parsed.ok) return parsed.response;
   try {
     if (parsed.data.action === "release_lock") {
-      if (isRefreshRunning()) return apiError(409, "В этом процессе сейчас идёт обновление — блокировка настоящая, снимать нельзя");
+      if (isRefreshRunning()) return apiError(409, t("В этом процессе сейчас идёт обновление — блокировка настоящая, снимать нельзя"));
       const released = await forceReleaseLock();
       log.warn("admin.lock_released", { released });
       return NextResponse.json({ ok: true, released });

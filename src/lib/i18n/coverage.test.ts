@@ -6,9 +6,10 @@ import { hasTranslation } from "@/lib/i18n";
 /**
  * Страж интернационализации (A-16).
  *
- * 1. В компонентах и страницах не должно остаться «голой» кириллицы: каждая русская строка
- *    интерфейса обязана проходить через `t("…")` / `msg("…")` / `plural(n, ["…", "…", "…"])`,
- *    иначе при английском интерфейсе она так и останется русской. Комментарии не считаются.
+ * 1. В компонентах, страницах, API-маршрутах и общих помощниках API не должно остаться «голой»
+ *    кириллицы: каждая русская строка интерфейса обязана проходить через `t("…")` / `msg("…")` /
+ *    `plural(n, ["…", "…", "…"])`, иначе при английском интерфейсе она так и останется русской
+ *    (для API — в тексте ошибки, который показывает клиент). Комментарии не считаются.
  *    Осознанные исключения помечаются `// i18n-ignore` (строка) или парой
  *    `/* i18n-ignore-start *\/ … /* i18n-ignore-end *\/`.
  * 2. Каждая строка, обёрнутая в `t`/`msg`/`plural`, обязана иметь перевод в `en.ts` —
@@ -19,14 +20,17 @@ import { hasTranslation } from "@/lib/i18n";
  */
 
 const ROOT = resolve(__dirname, "../../..");
+/** Компоненты и всё под `src/app` (страницы `.tsx`, маршруты `route.ts`, `manifest.ts`, `sitemap.ts`…). */
 const SCAN_DIRS = [join(ROOT, "src/components"), join(ROOT, "src/app")];
+/** Помощники, чьи тексты уходят клиенту через API/ленту: ошибки, авторизация, rate-limit, описание фильтров ленты. */
+const EXTRA_FILES = ["src/lib/api.ts", "src/lib/security.ts", "src/lib/public-api.ts", "src/lib/feed.ts"].map((p) => join(ROOT, p));
 const CYRILLIC = /\p{Script=Cyrillic}/u;
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) walk(p, out);
-    else if (/\.tsx$/.test(name) && !/\.test\.tsx$/.test(name)) out.push(p);
+    else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(p);
   }
   return out;
 }
@@ -204,11 +208,12 @@ function allSegments(src: string): Segment[] {
   return segments(src).flatMap((seg) => (seg.kind === "template" ? expandTemplate(seg) : [seg]));
 }
 
-const files = SCAN_DIRS.flatMap((d) => walk(d));
+const files = [...SCAN_DIRS.flatMap((d) => walk(d)), ...EXTRA_FILES];
 
-describe("i18n coverage: компоненты и страницы", () => {
+describe("i18n coverage: компоненты, страницы, API", () => {
   it("сканирует непустой набор файлов", () => {
-    expect(files.length).toBeGreaterThan(15);
+    expect(files.length).toBeGreaterThan(40);
+    expect(files.some((f) => /route\.ts$/.test(f))).toBe(true);
   });
 
   it("нет кириллицы вне t()/msg()/plural() и комментариев", () => {

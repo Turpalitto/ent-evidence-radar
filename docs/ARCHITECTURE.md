@@ -206,6 +206,7 @@ RU → EN, для русского словарь не нужен (поведе�
 | `index.ts` | Чистое ядро без Next/React: `translate`, `interpolate` (`{name}`), `pluralize` (формы `[one, few, many]`, Intl.PluralRules), `translateStored`, форматирование дат/чисел (`ru-RU` / `en-GB`), `createI18n(locale)` → `{ t, plural, stored, date, dateTime, number }`, маркер `msg()` для статических таблиц |
 | `stored.ts` | Перевод хранимых в БД русских текстов классификатора по шаблонам: `trust_breakdown[].label` («Журнал уровня Tier 2», «Размер выборки n≈120») и `design_reason` («тип публикации PubMed: «…»», «заголовок: «…»», «препринт; …», «задан вручную (автоматически: …)», уточнения « — нерандомизированное»). Формат хранения не меняется — перевод при показе |
 | `server.ts` | `getLocale()` (cookie `ent_radar_lang` → `DEFAULT_LOCALE` окружения → `ru`), `getI18n()` для серверных страниц и `generateMetadata` |
+| `request.ts` | То же без `next/headers`: `localeOf(req)` (`?lang=` → cookie из заголовка → `deploymentDefaultLocale()`), `i18nOf(req)` для route handlers, `checkApiAuth`, `parseBody`, `publicRateLimit` и тестов с обычным `Request` |
 | `client.tsx` | `LocaleProvider` (корневой layout передаёт язык из cookie) и `useI18n()` (мемоизированная связка — стабильный `t` можно класть в зависимости хуков) |
 
 Переключатель `LanguageSwitch` в `AppNav` пишет cookie на год, меняет `document.documentElement.lang`
@@ -216,11 +217,22 @@ cookie сам (`useSyncExternalStore`, серверный снимок — яз�
 Правила: строки интерфейса — только через `t("…")`; подписи в статических таблицах (`PRESETS`,
 `NOTICE_LABELS`, пункты меню, статусы запусков) помечаются `msg("…")` и переводятся `t()` при рендере;
 подписи таксономии (`DESIGN_LABELS`, `SOURCE_LABELS`…) остаются русскими источниками истины и
-переводятся при показе `t(DESIGN_LABELS[x])`. Исключения — `// i18n-ignore`. Не переводятся: письма
-дайджеста, Atom-лента, экспорт, тексты ошибок API, `sw.js`. ИИ-резюме получает `lang` (отдельный
-кэш `sum-en`), перевод аннотации всегда на русский. Стражи: `i18n.test.ts` (полнота словаря для
-таксономии/КИ/PICO/пресетов, шаблоны `stored.ts` покрывают всё, что пишет `classify()`),
-`coverage.test.ts` (нет «голой» кириллицы в `src/components`/`src/app`; у каждой `t()`-строки есть перевод).
+переводятся при показе `t(DESIGN_LABELS[x])`. Исключения — `// i18n-ignore`.
+
+API отвечает на языке запроса (`i18nOf(req)`): тексты ошибок маршрутов, `apiFailure` («Внутренняя
+ошибка сервера»), `parseBody` (сообщения собственных `refine` помечаются `msg()` и переводятся,
+встроенные англоязычные сообщения zod остаются), `checkApiAuth` (401/403), `publicRateLimit` (429),
+заметка `N1` в RIS-экспорте, `lastError: «скрыто (нужна авторизация)»` в `/api/status`. Коды статусов
+и имена полей от языка не зависят. Atom-лента и веб-манифест запрашиваются без cookie, поэтому
+лента принимает `?lang=` (ссылки «RSS для этого фильтра» и футера его подставляют; self-ссылка
+сохраняет), а манифест отдаётся на языке развёртывания (`force-dynamic`, читает `DEFAULT_LOCALE`
+в рантайме). Не переводятся: письма дайджеста, CSV/BibTeX-экспорт, ГОСТ-цитата, `sw.js`. ИИ-резюме
+получает `lang` (отдельный кэш `sum-en`), перевод аннотации всегда на русский. Стражи: `i18n.test.ts`
+(полнота словаря для таксономии/КИ/PICO/пресетов, шаблоны `stored.ts` покрывают всё, что пишет
+`classify()`), `coverage.test.ts` (нет «голой» кириллицы в `src/components`, `src/app` — включая
+`route.ts`/`manifest.ts` — и в `api.ts`/`security.ts`/`public-api.ts`/`feed.ts`; у каждой `t()`/`msg()`-строки
+есть перевод), `request.test.ts` (приоритет `?lang=`/cookie/`DEFAULT_LOCALE`, английские ответы
+`parseBody`/`checkApiAuth`/`publicRateLimit`).
 
 ## 7. API-контракты
 

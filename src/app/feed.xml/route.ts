@@ -7,6 +7,7 @@ import { siteBaseUrl } from "@/lib/site";
 import { DESIGN_LABELS, SOURCE_LABELS } from "@/lib/evidence/taxonomy";
 import { listArticles } from "@/lib/queries";
 import { FEED_PARAMS, describeFeedFilters, feedFilters } from "@/lib/feed";
+import { deploymentDefaultLocale, i18nOf } from "@/lib/i18n/request";
 import { FEED_LIMIT, conditionalResponse, publicRateLimit } from "@/lib/public-api";
 
 export const dynamic = "force-dynamic";
@@ -26,12 +27,15 @@ function esc(value: string): string {
  * Без параметров — 60 последних собранных записей; с параметрами фильтров
  * (`?subspecialty=rhinology&design=rct&minTrust=70`, `?topicId=3`, `?q=…`) — подписка
  * на сохранённый поиск: ссылку «RSS для этого фильтра» даёт боковая панель ленты.
+ * Язык подписей — `?lang=en|ru` (читалки не присылают cookie), иначе язык развёртывания.
  */
 export async function GET(req: NextRequest) {
   const limited = publicRateLimit(req, "feed", FEED_LIMIT);
   if (limited) return limited;
   await ensureSeeded();
   const base = siteBaseUrl();
+  const i18n = i18nOf(req);
+  const { t, locale } = i18n;
 
   const sp = new URLSearchParams();
   for (const k of FEED_PARAMS) {
@@ -41,11 +45,13 @@ export async function GET(req: NextRequest) {
   const f = feedFilters(sp);
   const topicName = f.topicId ? (await db.select({ name: topics.name }).from(topics).where(eq(topics.id, f.topicId)))[0]?.name ?? null : null;
   const { items: rows } = await listArticles(f);
-  const filterParts = describeFeedFilters(f, topicName);
+  const filterParts = describeFeedFilters(f, topicName, i18n);
+  const htmlQuery = sp.toString();
+  if (locale !== deploymentDefaultLocale()) sp.set("lang", locale);
   const selfQuery = sp.toString();
   const selfUrl = `${base}/feed.xml${selfQuery ? `?${selfQuery}` : ""}`;
-  const htmlUrl = `${base}/${selfQuery ? `?${selfQuery}` : ""}`;
-  const title = filterParts.length ? `ENT Evidence Radar — ${filterParts.join(" · ")}` : "ENT Evidence Radar — лента доказательных публикаций";
+  const htmlUrl = `${base}/${htmlQuery ? `?${htmlQuery}` : ""}`;
+  const title = filterParts.length ? `ENT Evidence Radar — ${filterParts.join(" · ")}` : t("ENT Evidence Radar — лента доказательных публикаций");
 
   const lastModified = rows[0]?.fetchedAt ?? null;
   const feedUpdated = (lastModified ?? new Date()).toISOString();
@@ -53,11 +59,11 @@ export async function GET(req: NextRequest) {
   const entries = rows
     .map((a) => {
       const published = (a.publishedAt ?? a.fetchedAt).toISOString();
-      const design = DESIGN_LABELS[a.studyDesign] ?? a.studyDesign;
-      const source = SOURCE_LABELS[a.sourceKey] ?? a.sourceKey;
+      const design = t(DESIGN_LABELS[a.studyDesign] ?? a.studyDesign);
+      const source = t(SOURCE_LABELS[a.sourceKey] ?? a.sourceKey);
       const meta = [
         a.journal ? `${a.journal}.` : "",
-        `Индекс доверия ${a.trustScore}/100 · ${design} · уровень доказательности ${a.evidenceLevel} · ${source}.`,
+        t("Индекс доверия {trust}/100 · {design} · уровень доказательности {level} · {source}.", { trust: a.trustScore, design, level: a.evidenceLevel, source }),
       ]
         .filter(Boolean)
         .join(" ");
@@ -84,7 +90,7 @@ export async function GET(req: NextRequest) {
   const xml = `<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>${esc(title)}</title>
-  <subtitle>Систематические обзоры, РКИ и клинические руководства по оториноларингологии из первоисточников.</subtitle>
+  <subtitle>${esc(t("Систематические обзоры, РКИ и клинические руководства по оториноларингологии из первоисточников."))}</subtitle>
   <link href="${esc(selfUrl)}" rel="self" type="application/atom+xml" />
   <link href="${esc(htmlUrl)}" rel="alternate" type="text/html" />
   <id>${esc(selfUrl)}</id>
