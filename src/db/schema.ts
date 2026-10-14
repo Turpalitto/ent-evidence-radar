@@ -188,6 +188,17 @@ export const articles = pgTable(
     index("articles_classifier_version_idx").on(t.classifierVersion),
     index("articles_hidden_idx").on(t.isHidden).where(sql`${t.isHidden}`),
     index("articles_published_doi_idx").on(sql`lower(${t.publishedDoi})`).where(sql`${t.publishedDoi} is not null`),
+    // Фильтры ленты по jsonb-массивам (`@>`) и по дизайну/уровню — созданы миграцией 0002,
+    // здесь объявлены, чтобы схема оставалась источником истины (миграция 0015 — `IF NOT EXISTS`).
+    index("articles_subspecialties_gin").using("gin", t.subspecialties),
+    index("articles_source_keys_gin").using("gin", t.sourceKeys),
+    index("articles_topic_ids_gin").using("gin", t.topicIds),
+    index("articles_study_design_idx").on(t.studyDesign),
+    index("articles_evidence_level_idx").on(t.evidenceLevel),
+    // Лента «по сбору» и Atom-лента сортируют по fetched_at при каждом опросе.
+    index("articles_fetched_at_idx").on(t.fetchedAt),
+    // Связь публикаций с записями реестра (A-08) и восстановление из бэкапа ищут по upper(nct_id).
+    index("articles_nct_upper_idx").on(sql`upper(${t.nctId})`).where(sql`${t.nctId} is not null`),
   ],
 );
 

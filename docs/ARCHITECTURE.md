@@ -138,6 +138,21 @@ included» → контекст даты игнорируется) и диапа
 - При непустом запросе сортировка по умолчанию `relevance` (`ts_rank_cd`); `scope=title` ищет только по заголовку.
 - Ответ `/api/articles` содержит `searchTerms` — клиент подсвечивает их (`Highlight.tsx`), для терминов ≥ 5 символов допускается расширение суффиксом.
 
+### Индексы `articles` (все объявлены в `schema.ts`)
+
+| Индекс | Зачем |
+| --- | --- |
+| `articles_dedup_key_idx` (unique), `articles_pmid_unique_idx` / `articles_doi_unique_idx` (частичные unique) | дедупликация и защита от дублей при гонках/импорте |
+| `articles_pmid_idx`, `articles_doi_idx`, `articles_published_doi_idx` (`lower(published_doi)`), `articles_nct_upper_idx` (`upper(nct_id)`) | поиск существующих строк по идентификаторам в `planWrites`, восстановлении из бэкапа, связи препринт ↔ журнал и публикация ↔ реестр КИ |
+| `articles_search_tsv_gin` | полнотекстовый поиск |
+| `articles_subspecialties_gin`, `articles_source_keys_gin`, `articles_topic_ids_gin` | фильтры `@>` по jsonb-массивам (субспециальность, источник, тема) |
+| `articles_study_design_idx`, `articles_evidence_level_idx`, `articles_trust_idx` | фильтры по дизайну/уровню/порогу доверия и сортировка по доверию |
+| `articles_published_at_idx`, `articles_fetched_at_idx` | сортировки «по дате» / «по сбору» (в т. ч. Atom-лента) и фильтры по периоду |
+| `articles_classifier_version_idx` | выборка записей на переклассификацию |
+| `articles_hidden_idx` (частичный, `is_hidden`) | режим «скрытые мной» без влияния на основную ленту |
+
+Отдельный btree по `is_hidden = false` не нужен: это почти все строки, планировщик идёт по индексу сортировки и фильтрует.
+
 ## 6. Планировщик (`src/instrumentation.ts`)
 
 Один `setInterval` 60 с в долгоживущем процессе (`unref`): восстановление зависших запусков →
