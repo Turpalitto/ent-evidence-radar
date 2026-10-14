@@ -46,7 +46,7 @@ export function invalidateStatsCache() {
   g.__entRadarStatsCache = undefined;
 }
 
-/** Скрытые врачом записи (A-11) в статистику не попадают. */
+/** Скрытые врачом записи (A-11) не попадают ни в один агрегат — ни в totals, ни в срезы по датам/источникам. */
 const visible = eq(articles.isHidden, false);
 
 async function computeStats(): Promise<StatsData> {
@@ -84,19 +84,19 @@ async function computeStats(): Promise<StatsData> {
     sql`select s as key, count(*)::int as count from ${articles}, jsonb_array_elements_text(${articles.subspecialties}) s where not ${articles.isHidden} group by s order by count desc`,
   );
   const bySource = await db.execute<{ key: string; count: number }>(
-    sql`select s as key, count(*)::int as count from ${articles}, jsonb_array_elements_text(${articles.sourceKeys}) s group by s order by count desc`,
+    sql`select s as key, count(*)::int as count from ${articles}, jsonb_array_elements_text(${articles.sourceKeys}) s where not ${articles.isHidden} group by s order by count desc`,
   );
   const byDay = await db.execute<{ day: string; count: number }>(
-    sql`select to_char(date_trunc('day', ${articles.publishedAt}), 'YYYY-MM-DD') as day, count(*)::int as count from ${articles} where ${articles.publishedAt} >= now() - interval '30 days' group by 1 order by 1`,
+    sql`select to_char(date_trunc('day', ${articles.publishedAt}), 'YYYY-MM-DD') as day, count(*)::int as count from ${articles} where not ${articles.isHidden} and ${articles.publishedAt} >= now() - interval '30 days' group by 1 order by 1`,
   );
   const byWeek = await db.execute<{ wk: string; count: number; high: number }>(
-    sql`select to_char(date_trunc('week', ${articles.publishedAt}), 'DD.MM') as wk, count(*)::int as count, count(*) filter (where ${articles.trustScore} >= 70)::int as high from ${articles} where ${articles.publishedAt} >= now() - interval '12 weeks' group by date_trunc('week', ${articles.publishedAt}) order by date_trunc('week', ${articles.publishedAt})`,
+    sql`select to_char(date_trunc('week', ${articles.publishedAt}), 'DD.MM') as wk, count(*)::int as count, count(*) filter (where ${articles.trustScore} >= 70)::int as high from ${articles} where not ${articles.isHidden} and ${articles.publishedAt} >= now() - interval '12 weeks' group by date_trunc('week', ${articles.publishedAt}) order by date_trunc('week', ${articles.publishedAt})`,
   );
   const byYear = await db.execute<{ yr: number; count: number; high: number }>(
-    sql`select extract(year from ${articles.publishedAt})::int as yr, count(*)::int as count, count(*) filter (where ${articles.trustScore} >= 70)::int as high from ${articles} where ${articles.publishedAt} is not null group by 1 order by 1 desc`,
+    sql`select extract(year from ${articles.publishedAt})::int as yr, count(*)::int as count, count(*) filter (where ${articles.trustScore} >= 70)::int as high from ${articles} where not ${articles.isHidden} and ${articles.publishedAt} is not null group by 1 order by 1 desc`,
   );
   const trustHist = await db.execute<{ bucket: number; count: number }>(
-    sql`select (floor(${articles.trustScore} / 10) * 10)::int as bucket, count(*)::int as count from ${articles} group by 1 order by 1`,
+    sql`select (floor(${articles.trustScore} / 10) * 10)::int as bucket, count(*)::int as count from ${articles} where not ${articles.isHidden} group by 1 order by 1`,
   );
   const topJournals = await db
     .select({
