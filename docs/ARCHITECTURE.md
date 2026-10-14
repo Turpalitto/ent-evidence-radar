@@ -226,11 +226,13 @@ API отвечает на языке запроса (`i18nOf(req)`): текст�
 и имена полей от языка не зависят. Atom-лента и веб-манифест запрашиваются без cookie, поэтому
 лента принимает `?lang=` (ссылки «RSS для этого фильтра» и футера его подставляют; self-ссылка
 сохраняет), а манифест отдаётся на языке развёртывания (`force-dynamic`, читает `DEFAULT_LOCALE`
-в рантайме). Не переводятся: письма дайджеста, CSV/BibTeX-экспорт, ГОСТ-цитата, `sw.js`. ИИ-резюме
+в рантайме). Письмо дайджеста (`renderDigest(data, i18n = digestI18n())`, `digestSubject`) — тоже на
+языке развёртывания: получатели общие для установки, cookie в cron нет. Не переводятся: CSV/BibTeX-экспорт,
+ГОСТ-цитата, `sw.js`. ИИ-резюме
 получает `lang` (отдельный кэш `sum-en`), перевод аннотации всегда на русский. Стражи: `i18n.test.ts`
 (полнота словаря для таксономии/КИ/PICO/пресетов, шаблоны `stored.ts` покрывают всё, что пишет
 `classify()`), `coverage.test.ts` (нет «голой» кириллицы в `src/components`, `src/app` — включая
-`route.ts`/`manifest.ts` — и в `api.ts`/`security.ts`/`public-api.ts`/`feed.ts`; у каждой `t()`/`msg()`-строки
+`route.ts`/`manifest.ts` — и в `api.ts`/`security.ts`/`public-api.ts`/`feed.ts`/`digest.ts`; у каждой `t()`/`msg()`-строки
 есть перевод), `request.test.ts` (приоритет `?lang=`/cookie/`DEFAULT_LOCALE`, английские ответы
 `parseBody`/`checkApiAuth`/`publicRateLimit`).
 

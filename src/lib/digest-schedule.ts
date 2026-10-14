@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { settings } from "@/db/schema";
 import type { AppSettings } from "@/lib/defaults";
-import { buildDigestData, renderDigest } from "@/lib/digest";
+import { buildDigestData, digestSubject, renderDigest } from "@/lib/digest";
 import { getRecipients, isMailerConfigured, sendMail } from "@/lib/mailer";
 import { log } from "@/lib/log";
 
@@ -67,7 +67,7 @@ export async function sendDigestNow(cfg: Pick<AppSettings, "digestRecipients" | 
   try {
     const data = await buildDigestData(days);
     const { html, text } = renderDigest(data);
-    const res = await sendMail(to, `Дайджест ENT Evidence Radar за ${days} дн.`, html, text);
+    const res = await sendMail(to, digestSubject(days), html, text);
     await saveDigestState({ lastSentAt: new Date().toISOString(), lastRecipients: to, lastTotal: data.total, lastDryRun: res.dryRun, lastError: undefined, lastErrorAt: undefined });
     log.info("digest.sent", { trigger, to: to.length, total: data.total, dryRun: res.dryRun, days });
     return { sent: true, dryRun: res.dryRun, to, total: data.total, days };

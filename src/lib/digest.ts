@@ -2,6 +2,8 @@ import { and, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
 import { articles, articleColumns } from "@/db/schema";
 import { DESIGN_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
+import { createI18n, formatLongDate, type I18n, type Locale } from "@/lib/i18n";
+import { deploymentDefaultLocale } from "@/lib/i18n/request";
 
 export interface DigestArticle {
   title: string;
@@ -94,16 +96,26 @@ export async function buildDigestData(days: number): Promise<DigestData> {
   return summarize(await fetchDigestArticles(days), days);
 }
 
-export function formatDate(d: Date | null): string {
+export function formatDate(d: Date | null, locale: Locale = "ru"): string {
   if (!d) return "—";
-  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" }).format(d);
+  return formatLongDate(locale, d);
 }
 
 /** Человекочитаемые подписи вместо сырых ключей (аудит F-31): «Систематический обзор — 5», а не «systematic_review — 5». */
-function countLabel(map: Record<string, number>, labels: Record<string, string> = {}): string {
+function countLabel(map: Record<string, number>, labels: Record<string, string>, t: I18n["t"]): string {
   const entries = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  if (!entries.length) return "нет";
-  return entries.map(([k, v]) => `${labels[k] ?? k} — ${v}`).join("; ");
+  if (!entries.length) return t("нет");
+  return entries.map(([k, v]) => `${t(labels[k] ?? k)} — ${v}`).join("; ");
+}
+
+/** Язык письма: язык развёртывания (`DEFAULT_LOCALE`) — получатели общие для всей установки, cookie тут нет. */
+export function digestI18n(): I18n {
+  return createI18n(deploymentDefaultLocale());
+}
+
+/** Тема письма дайджеста. */
+export function digestSubject(days: number, i18n: I18n = digestI18n()): string {
+  return i18n.t("Дайджест ENT Evidence Radar за {n} дн.", { n: days });
 }
 
 function link(a: DigestArticle): string {
@@ -132,55 +144,57 @@ function safeHref(url: string): string {
   return /^https?:\/\//i.test(url) ? url : "#";
 }
 
-export function renderDigest(data: DigestData): { html: string; text: string } {
+export function renderDigest(data: DigestData, i18n: I18n = digestI18n()): { html: string; text: string } {
+  const { t, locale } = i18n;
+  const date = (d: Date | null) => formatDate(d, locale);
   const top = data.highTrust.length
-    ? data.highTrust.map((a) => `• ${a.title} — индекс доверия ${a.trustScore} (${link(a)})`).join("\n")
-    : "— нет статей с высоким индексом доверия —";
+    ? data.highTrust.map((a) => `• ${a.title} — ${t("индекс доверия {n}", { n: a.trustScore })} (${link(a)})`).join("\n")
+    : t("— нет статей с высоким индексом доверия —");
 
   const list = data.articles.length
     ? data.articles
         .slice(0, 15)
-        .map((a) => `${a.trustScore} | ${a.title} | ${a.journal || "—"} | ${formatDate(a.publishedAt)} | ${link(a)}`)
+        .map((a) => `${a.trustScore} | ${a.title} | ${a.journal || "—"} | ${date(a.publishedAt)} | ${link(a)}`)
         .join("\n")
-    : "— нет новых статей —";
+    : t("— нет новых статей —");
 
   const text = [
-    `Дайджест ENT Evidence Radar за последние ${data.days} дн.`,
-    `Сгенерировано: ${formatDate(new Date(data.generatedAt))}`,
+    t("Дайджест ENT Evidence Radar за последние {n} дн.", { n: data.days }),
+    t("Сгенерировано: {date}", { date: date(new Date(data.generatedAt)) }),
     "",
-    `Всего новых: ${data.total}`,
-    `По дизайну: ${countLabel(data.byDesign, DESIGN_LABELS)}`,
-    `По источнику: ${countLabel(data.bySource, SOURCE_LABELS)}`,
-    `По подспециализации: ${countLabel(data.bySubspecialty, SUBSPECIALTY_LABELS)}`,
-    `Препринтов: ${data.preprints}`,
+    t("Всего новых: {n}", { n: data.total }),
+    t("По дизайну: {list}", { list: countLabel(data.byDesign, DESIGN_LABELS, t) }),
+    t("По источнику: {list}", { list: countLabel(data.bySource, SOURCE_LABELS, t) }),
+    t("По подспециализации: {list}", { list: countLabel(data.bySubspecialty, SUBSPECIALTY_LABELS, t) }),
+    t("Препринтов: {n}", { n: data.preprints }),
     "",
     "TOP:",
     top,
     "",
-    "Список (первые 15):",
+    t("Список (первые 15):"),
     list,
   ].join("\n");
 
   const rowsHtml = data.articles
     .slice(0, 15)
     .map(
-      (a) => `<li>${a.trustScore}| ${a.isPreprint ? "Препринт " : ""}${a.isRetracted ? "Отозвана " : ""}<a href="${escapeHtml(safeHref(link(a)))}">${escapeHtml(a.title)}</a> — ${escapeHtml(a.journal || "—")} — ${formatDate(a.publishedAt)}</li>`,
+      (a) => `<li>${a.trustScore}| ${a.isPreprint ? `${t("Препринт")} ` : ""}${a.isRetracted ? `${t("Отозвана")} ` : ""}<a href="${escapeHtml(safeHref(link(a)))}">${escapeHtml(a.title)}</a> — ${escapeHtml(a.journal || "—")} — ${date(a.publishedAt)}</li>`,
     )
     .join("");
 
-  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;max-width:640px;margin:auto;padding:16px}.muted{color:#666;font-size:13px}li{margin:6px 0}</style></head><body>
-<h1>ENT Evidence Radar — дайджест</h1>
-<p class="muted">За последние <b>${data.days}</b> дн. · ${formatDate(new Date(data.generatedAt))}</p>
-<p>Всего новых: <b>${data.total}</b></p>
-<p class="muted">По дизайну: ${escapeHtml(countLabel(data.byDesign, DESIGN_LABELS))}</p>
-<p class="muted">По источнику: ${escapeHtml(countLabel(data.bySource, SOURCE_LABELS))}</p>
-<p class="muted">По подспециализации: ${escapeHtml(countLabel(data.bySubspecialty, SUBSPECIALTY_LABELS))}</p>
-<p class="muted">Препринтов: ${data.preprints}</p>
-<h2>Топ по индексу доверия</h2>
+  const html = `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;max-width:640px;margin:auto;padding:16px}.muted{color:#666;font-size:13px}li{margin:6px 0}</style></head><body>
+<h1>${t("ENT Evidence Radar — дайджест")}</h1>
+<p class="muted">${t("За последние <b>{n}</b> дн. · {date}", { n: data.days, date: date(new Date(data.generatedAt)) })}</p>
+<p>${t("Всего новых: <b>{n}</b>", { n: data.total })}</p>
+<p class="muted">${t("По дизайну: {list}", { list: escapeHtml(countLabel(data.byDesign, DESIGN_LABELS, t)) })}</p>
+<p class="muted">${t("По источнику: {list}", { list: escapeHtml(countLabel(data.bySource, SOURCE_LABELS, t)) })}</p>
+<p class="muted">${t("По подспециализации: {list}", { list: escapeHtml(countLabel(data.bySubspecialty, SUBSPECIALTY_LABELS, t)) })}</p>
+<p class="muted">${t("Препринтов: {n}", { n: data.preprints })}</p>
+<h2>${t("Топ по индексу доверия")}</h2>
 <ul>${data.highTrust.map((a) => `<li><a href="${escapeHtml(safeHref(link(a)))}">${escapeHtml(a.title)}</a> — ${a.trustScore}</li>`).join("") || "<li>—</li>"}</ul>
-<h2>Новые статьи</h2>
+<h2>${t("Новые статьи")}</h2>
 <ul>${rowsHtml || "<li>—</li>"}</ul>
-<p class="muted">ENT Evidence Radar · автоматический мониторинг доказательной оториноларингологии</p>
+<p class="muted">${t("ENT Evidence Radar · автоматический мониторинг доказательной оториноларингологии")}</p>
 </body></html>`;
 
   return { html, text };

@@ -9,9 +9,9 @@
 - A-16 (продолжение): ответы API на языке запроса — тексты ошибок маршрутов, `parseBody`, `checkApiAuth`
   (401/403), rate-limit (429), заметка RIS-экспорта и `/api/status` переводятся через `i18nOf(req)`
   (`?lang=` → cookie `ent_radar_lang` → `DEFAULT_LOCALE`). Atom-лента принимает `?lang=en` (ссылки
-  «RSS для этого фильтра» и футера подставляют язык интерфейса), веб-манифест — на языке развёртывания.
-  Страж `coverage.test.ts` теперь проверяет и `route.ts`/`manifest.ts`/помощники API; новый
-  `request.test.ts`.
+  «RSS для этого фильтра» и футера подставляют язык интерфейса); веб-манифест и письмо дайджеста
+  (тема, текст, HTML) — на языке развёртывания. Страж `coverage.test.ts` теперь проверяет и
+  `route.ts`/`manifest.ts`/помощники API/`digest.ts`; новый `request.test.ts`.
 
 ### Changed
 - CI: обновлены экшены (`actions/checkout@v7`, `actions/setup-node@v7`, `docker/setup-buildx-action@v4`,

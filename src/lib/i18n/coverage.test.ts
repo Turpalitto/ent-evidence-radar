@@ -22,8 +22,8 @@ import { hasTranslation } from "@/lib/i18n";
 const ROOT = resolve(__dirname, "../../..");
 /** Компоненты и всё под `src/app` (страницы `.tsx`, маршруты `route.ts`, `manifest.ts`, `sitemap.ts`…). */
 const SCAN_DIRS = [join(ROOT, "src/components"), join(ROOT, "src/app")];
-/** Помощники, чьи тексты уходят клиенту через API/ленту: ошибки, авторизация, rate-limit, описание фильтров ленты. */
-const EXTRA_FILES = ["src/lib/api.ts", "src/lib/security.ts", "src/lib/public-api.ts", "src/lib/feed.ts"].map((p) => join(ROOT, p));
+/** Помощники, чьи тексты уходят наружу через API/ленту/письмо: ошибки, авторизация, rate-limit, описание фильтров ленты, дайджест. */
+const EXTRA_FILES = ["src/lib/api.ts", "src/lib/security.ts", "src/lib/public-api.ts", "src/lib/feed.ts", "src/lib/digest.ts"].map((p) => join(ROOT, p));
 const CYRILLIC = /\p{Script=Cyrillic}/u;
 
 function walk(dir: string, out: string[] = []): string[] {
