@@ -87,6 +87,23 @@ describe("<ArticleDrawer />", () => {
     expect(within(dialog).getByRole("status")).toHaveTextContent("Скопировано в буфер обмена");
   });
 
+  it("PICO (A-10): блок показывается для исследования со структурированной аннотацией и скрыт для руководства", () => {
+    const abstract = "PARTICIPANTS: 120 adults with CRSwNP.\nINTERVENTIONS: Dupilumab or placebo.\nMAIN OUTCOME MEASURES: Nasal polyp score at week 24.";
+    const { unmount } = render(
+      <ArticleDrawer article={makeArticle({ id: 10, isRead: true, title: "Dupilumab versus placebo in CRSwNP", abstract })} onClose={() => {}} onUpdate={() => {}} onSelectArticle={() => {}} />,
+    );
+    const pico = screen.getAllByTestId("pico").at(-1)!;
+    expect(within(pico).getByText(/120 adults with CRSwNP/)).toBeInTheDocument();
+    expect(within(pico).getByText(/Nasal polyp score at week 24/)).toBeInTheDocument();
+    expect(within(pico).getByText("из секций аннотации")).toBeInTheDocument();
+    unmount();
+
+    render(
+      <ArticleDrawer article={makeArticle({ id: 11, isRead: true, title: "Guideline", abstract, studyDesign: "guideline" })} onClose={() => {}} onUpdate={() => {}} onSelectArticle={() => {}} />,
+    );
+    expect(screen.queryAllByTestId("pico")).toHaveLength(0);
+  });
+
   it("доступность: диалог назван заголовком статьи, заметки подписаны, прокрутка страницы заблокирована и восстанавливается", () => {
     const { unmount } = render(
       <ArticleDrawer article={makeArticle({ id: 9, isRead: true, title: "Accessible drawer" })} onClose={() => {}} onUpdate={() => {}} onSelectArticle={() => {}} />,

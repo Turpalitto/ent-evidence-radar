@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Article } from "@/db/schema";
 import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTIES, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
+import { PICO_LABELS, extractPico } from "@/lib/evidence/pico";
 import { DesignBadge, IssuerBadge, LevelBadge, NOTICE_LABELS, NoticeBadge, TierBadge, TrialBadge, TrustScore, formatDate } from "./Badges";
 import { trialStatusLabel } from "@/lib/trials";
 import { citeBibtex, citeGost, citeVancouver } from "@/lib/citation";
@@ -48,6 +49,11 @@ function buildConsiliumSummary(a: Article): string {
   const level = EVIDENCE_LEVEL_LABELS[a.evidenceLevel] || `Уровень ${a.evidenceLevel}`;
   let text = `📄 ${citation}\n📊 Дизайн: ${design} (${level}), Индекс доверия: ${a.trustScore}/100`;
   if (a.sampleSize) text += `, n≈${a.sampleSize}`;
+  const pico = a.studyDesign === "guideline" || a.studyDesign === "trial_registry" ? null : extractPico(a.abstract, a.title);
+  if (pico) {
+    const parts = (["population", "intervention", "comparator", "outcome"] as const).filter((k) => pico[k]).map((k) => `${PICO_LABELS[k].letter}: ${pico[k]}`);
+    if (parts.length) text += `\n🧩 PICO — ${parts.join("; ")}`;
+  }
   if (conclusion) text += `\n💡 Вывод: ${conclusion}`;
   text += `\n🔗 Источник: ${a.url}`;
   return text;
@@ -237,6 +243,8 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
   const hasOverrides = !!(a.overrides?.studyDesign || a.overrides?.subspecialties?.length);
   const positives = a.trustBreakdown.filter((b) => b.points > 0);
   const negatives = a.trustBreakdown.filter((b) => b.points <= 0);
+  // PICO (A-10) имеет смысл для первичных исследований и обзоров, но не для руководств/записей реестра.
+  const pico = a.studyDesign === "guideline" || a.studyDesign === "trial_registry" ? null : extractPico(a.abstract, a.title);
 
   const handleTranslateClick = () => {
     if (aiState.mode === "loading") return;
@@ -450,6 +458,39 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
                 ))}
               </ul>
             )}
+          </section>
+        )}
+
+        {/* ── PICO (A-10): пациенты / вмешательство / сравнение / исходы ── */}
+        {pico && (
+          <section className="panel rounded-xl p-3" data-testid="pico" aria-label="PICO">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="eyebrow">PICO</h3>
+              <span className="text-[10px] text-[color:var(--ink-muted)]" title="Извлечено автоматически из заголовка и аннотации — сверяйте с полным текстом">
+                {pico.source === "structured" ? "из секций аннотации" : "эвристика по тексту"}
+              </span>
+            </div>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1.5 text-xs">
+              {(["population", "intervention", "comparator", "outcome"] as const).map((slot) => {
+                const value = pico[slot];
+                if (!value) return null;
+                const meta = PICO_LABELS[slot];
+                return (
+                  <div key={slot} className="contents">
+                    <dt className="flex items-start gap-1.5" title={meta.hint}>
+                      <span className="inline-flex h-5 w-5 flex-none items-center justify-center rounded-md bg-[color:var(--brand-a)]/15 text-[11px] font-bold text-[color:var(--brand-ink)]" aria-hidden>
+                        {meta.letter}
+                      </span>
+                      <span className="sr-only">{meta.title}: </span>
+                    </dt>
+                    <dd className="text-[color:var(--ink-soft)]">
+                      <span className="mr-1 font-semibold text-[color:var(--ink)]">{meta.title}.</span>
+                      {value}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
           </section>
         )}
 
