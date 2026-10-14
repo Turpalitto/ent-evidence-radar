@@ -85,6 +85,24 @@ describe("/topics (управление темами)", () => {
     expect(screen.getByText("Всего:").parentElement).toHaveTextContent("4");
   });
 
+  it("подсказка по структуре запроса: непарная скобка и повисший оператор показываются живо, не блокируя отправку", async () => {
+    const user = userEvent.setup();
+    const { calls } = setup();
+    await screen.findByText("Средний отит");
+    const q = screen.getByRole("textbox", { name: "Поисковый запрос темы" });
+    await user.type(q, "(otitis media AND");
+    expect(await screen.findByRole("status")).toHaveTextContent("Проверьте запрос: непарные круглые скобки; оператор AND/OR/NOT без операнда.");
+    await user.type(q, " child*)");
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    await user.clear(q);
+    await user.type(q, '"otitis media AND child');
+    expect(screen.getByRole("status")).toHaveTextContent("непарные кавычки");
+    // Предупреждение не блокирует: сохранить всё равно можно (например, если PubMed запрос всё же примет).
+    await user.type(screen.getByRole("textbox", { name: "Название темы" }), "Тест");
+    await user.click(screen.getByRole("button", { name: "Добавить тему" }));
+    await waitFor(() => expect(calls.some((c) => c.init?.method === "POST")).toBe(true));
+  });
+
   it("включение/выключение шлёт PATCH {enabled}; правка запроса сохраняется по blur и не шлётся без изменений", async () => {
     const user = userEvent.setup();
     const { calls } = setup();
@@ -111,12 +129,12 @@ describe("/topics (управление темами)", () => {
     const { calls } = setup();
     await screen.findByText("Холестеатома у детей");
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
-    await user.click(within(rowOf("Холестеатома у детей")).getByRole("button", { name: "Удалить" }));
+    await user.click(within(rowOf("Холестеатома у детей")).getByRole("button", { name: "Удалить тему «Холестеатома у детей»" }));
     expect(confirmSpy).toHaveBeenCalledWith("Удалить тему «Холестеатома у детей»?");
     expect(calls.some((c) => c.init?.method === "DELETE")).toBe(false);
 
     confirmSpy.mockReturnValueOnce(true);
-    await user.click(within(rowOf("Холестеатома у детей")).getByRole("button", { name: "Удалить" }));
+    await user.click(within(rowOf("Холестеатома у детей")).getByRole("button", { name: "Удалить тему «Холестеатома у детей»" }));
     await waitFor(() => expect(screen.queryByText("Холестеатома у детей")).toBeNull());
     expect(calls.find((c) => c.init?.method === "DELETE")!.url.pathname).toBe("/api/topics/3");
     confirmSpy.mockRestore();

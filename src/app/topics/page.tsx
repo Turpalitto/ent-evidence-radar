@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { SUBSPECIALTIES, SUBSPECIALTY_SHORT } from "@/lib/evidence/taxonomy";
 import { useI18n } from "@/lib/i18n/client";
+import { lintPubmedQuery, QUERY_LINT } from "@/lib/sources/pubmed-query-lint";
 
 interface Topic {
   id: number;
@@ -106,6 +107,12 @@ export default function TopicsPage() {
   };
 
   const enabledCount = topics.filter((tp) => tp.enabled).length;
+  // Структурные ошибки запроса (непарные скобки/кавычки, повисший оператор) — предупреждение, не блокировка:
+  // PubMed вернул бы ошибку, и тема молча осталась бы пустой до следующего обновления.
+  const queryWarnings = useMemo(
+    () => lintPubmedQuery(form.query).map((k) => t(QUERY_LINT[k])).map((w) => w.charAt(0).toLowerCase() + w.slice(1)),
+    [form.query, t],
+  );
 
   return (
     <main className="mx-auto max-w-5xl space-y-6">
@@ -169,6 +176,11 @@ export default function TopicsPage() {
             className={FIELD}
           />
         </div>
+        {queryWarnings.length > 0 && (
+          <p className="text-sm text-amber-700 dark:text-amber-400" role="status">
+            {t("Проверьте запрос:")} {queryWarnings.join("; ")}. {t("PubMed вернёт ошибку, и тема останется пустой.")}
+          </p>
+        )}
         {formError && <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">{formError}</p>}
         <button type="submit" className="btn-brand rounded-xl px-4 py-2.5 text-sm font-semibold text-white">
           {t("Добавить тему")}
@@ -192,7 +204,7 @@ export default function TopicsPage() {
           <ul className="divide-y divide-[color:var(--hairline)]">
             {topics.map((tp) => (
               <li key={tp.id} className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-[color:var(--surface-2)]">
-                <input type="checkbox" checked={tp.enabled} onChange={() => void toggle(tp)} className="h-4 w-4 accent-teal-600" title={tp.enabled ? t("Выключить") : t("Включить")} />
+                <input type="checkbox" checked={tp.enabled} onChange={() => void toggle(tp)} className="h-4 w-4 accent-teal-600" title={tp.enabled ? t("Выключить") : t("Включить")} aria-label={t("Тема «{name}» включена", { name: t(tp.name) })} />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate font-medium text-[color:var(--ink)]">{t(tp.name)}</span>
@@ -214,6 +226,7 @@ export default function TopicsPage() {
                   onClick={() => void remove(tp)}
                   className="shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
                   title={t("Удалить тему")}
+                  aria-label={t("Удалить тему «{name}»", { name: t(tp.name) })}
                 >
                   {t("Удалить")}
                 </button>
