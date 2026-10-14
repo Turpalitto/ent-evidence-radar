@@ -6,7 +6,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { mockFetch } from "@/test/fixtures";
 import { DEFAULT_SETTINGS } from "@/lib/defaults";
 
-function setup(opts: { patchStatus?: number } = {}) {
+function setup(opts: { patchStatus?: number; extra?: Parameters<typeof mockFetch>[0] } = {}) {
   const state = { cfg: { ...DEFAULT_SETTINGS } };
   const { fn, calls } = mockFetch({
     "GET /api/settings": () => state.cfg,
@@ -36,6 +36,7 @@ function setup(opts: { patchStatus?: number } = {}) {
       env: { API_SECRET: true },
       settings: {},
     }),
+    ...opts.extra,
   });
   vi.stubGlobal("fetch", fn);
   render(<SettingsPanel />);
@@ -75,6 +76,61 @@ describe("<SettingsPanel />", () => {
     await user.click(medrxiv);
     await waitFor(() => expect(calls.some((c) => c.url.pathname === "/api/sources/medrxiv" && c.init?.method === "PATCH")).toBe(true));
     expect(JSON.parse(String(calls.find((c) => c.url.pathname === "/api/sources/medrxiv")!.init?.body))).toEqual({ enabled: true });
+  });
+
+  it("дайджест (A-09): статус подписки, предпросмотр в iframe, отправка сейчас в dry-run", async () => {
+    const user = userEvent.setup();
+    const subscription = { enabled: false, recipients: ["doc@clinic.ru"], recipientsSource: "env", weekday: 1, hour: 8, serverTime: "2026-10-14T08:00:00Z", serverTimezone: "Europe/Moscow", smtpConfigured: false };
+    const { calls } = setup({
+      extra: {
+        "GET /api/digest": (url) => (url.searchParams.get("days") ? { subscription } : { html: "<html><body><h1>Дайджест</h1></body></html>", subscription }),
+        "POST /api/digest": () => ({ ok: true, sent: true, dryRun: true, to: ["doc@clinic.ru"], total: 4, days: 7 }),
+      },
+    });
+    expect(await screen.findByText(/SMTP: не настроен \(dry-run\)/)).toHaveTextContent(/получателей: 1/);
+    expect(screen.getByText(/По времени сервера/)).toHaveTextContent("(Europe/Moscow)");
+
+    await user.click(screen.getByRole("button", { name: "Предпросмотр" }));
+    const frame = await screen.findByTitle("Предпросмотр дайджеста");
+    expect(frame).toHaveAttribute("sandbox", "");
+    expect(frame.getAttribute("srcdoc")).toContain("<h1>Дайджест</h1>");
+
+    await user.click(screen.getByRole("button", { name: "Отправить сейчас" }));
+    expect(await screen.findByText(/SMTP не настроен — письмо сформировано в dry-run \(4 записей\)/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.url.pathname === "/api/digest" && c.init?.method === "POST")).toHaveLength(1);
+    // После отправки состояние подписки перечитывается.
+    expect(calls.filter((c) => c.url.pathname === "/api/digest" && c.url.searchParams.get("days") === "1").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("восстановление из файла (A-02): невалидный JSON отклоняется на клиенте, валидный уходит в POST и показывает сводку", async () => {
+    const user = userEvent.setup();
+    const { calls } = setup({
+      extra: {
+        "POST /api/backup/restore": () => ({ ok: true, articles: { matched: 3, bookmarked: 2, notesMerged: 1, overridesApplied: 0, unmatched: [{ title: "Lost" }] }, topics: { created: 1, updated: 0 }, settings: { applied: ["autoRefreshEnabled"] } }),
+      },
+    });
+    const input = (await screen.findByText(/Восстановить из файла/)).closest("label")!.querySelector<HTMLInputElement>("input[type=file]")!;
+    await user.upload(input, new File(["{not json"], "broken.json", { type: "application/json" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Файл не является корректным JSON");
+    expect(calls.some((c) => c.url.pathname === "/api/backup/restore")).toBe(false);
+
+    const backup = { version: 1, articles: [{ pmid: "1", isBookmarked: true }] };
+    await user.upload(input, new File([JSON.stringify(backup)], "user_backup.json", { type: "application/json" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Восстановлено: статей сопоставлено 3, закладок добавлено 2, заметок объединено 1; не найдено в базе: 1/));
+    expect(screen.getByRole("status")).toHaveTextContent(/тем создано 1, обновлено 0; настроек применено 1/);
+    const req = calls.find((c) => c.url.pathname === "/api/backup/restore")!;
+    expect(JSON.parse(String(req.init?.body))).toEqual(backup);
+  });
+
+  it("диагностика недоступна без входа — сообщение с текстом ошибки сервера", async () => {
+    const user = userEvent.setup();
+    setup({
+      extra: {
+        "GET /api/admin/diagnostics": () => new Response(JSON.stringify({ ok: false, error: "Требуется авторизация" }), { status: 401, headers: { "content-type": "application/json" } }),
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: /Показать диагностику/ }));
+    expect(await screen.findByText("Диагностика недоступна: Требуется авторизация")).toBeInTheDocument();
   });
 
   it("диагностика (A-12) загружается по кнопке и показывает коммит и движок БД", async () => {
