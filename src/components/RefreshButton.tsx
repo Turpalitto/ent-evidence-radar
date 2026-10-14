@@ -27,6 +27,13 @@ interface RunState {
 
 const POLL_MS = 4000;
 
+/**
+ * Фазы кнопки: `starting` — POST ещё в полёте, опрос не ведём (иначе первый тик мог увидеть
+ * «не запущено» до того, как сервер зарегистрировал запуск, и преждевременно объявить «завершено»);
+ * `polling` — ждём завершения по `/api/runs/:id` или по флагу `/api/refresh`.
+ */
+type Phase = "idle" | "starting" | "polling";
+
 /** Короткая строка прогресса: «PubMed 120 · Europe PMC ✗ · ClinicalTrials.gov 15». */
 export function progressText(details: RunSourceDetail[], t: I18n["t"]): string {
   if (!details.length) return t("Запрашиваем PubMed, Europe PMC, ClinicalTrials.gov, medRxiv…");
@@ -44,7 +51,8 @@ export function finalText(run: RunState, t: I18n["t"]): string {
 export function RefreshButton() {
   const { t } = useI18n();
   const router = useRouter();
-  const [running, setRunning] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const running = phase !== "idle";
   const [runId, setRunId] = useState<number | null>(null);
   const runningRef = useRef(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -56,7 +64,7 @@ export function RefreshButton() {
   const finish = useCallback(
     (text: string) => {
       setToast(text);
-      setRunning(false);
+      setPhase("idle");
       setRunId(null);
       router.refresh();
       window.dispatchEvent(new CustomEvent("ent-radar:refreshed"));
@@ -67,7 +75,7 @@ export function RefreshButton() {
 
   // Запуск: сервер отвечает 202 сразу, дальше опрашиваем состояние запуска (аудит F-05).
   const start = useCallback(async () => {
-    setRunning(true);
+    setPhase("starting");
     setToast(t("Запускаем обновление…"));
     try {
       const r = await fetch("/api/refresh", { method: "POST" });
@@ -75,11 +83,13 @@ export function RefreshButton() {
       if (j.runId) {
         setRunId(j.runId);
         setToast(j.running ? t("Обновление уже выполняется — следим за ним.") : t("Запрашиваем PubMed, Europe PMC, ClinicalTrials.gov, medRxiv…"));
+        setPhase("polling");
         return;
       }
       if (j.running) {
         // Идёт в другом процессе и id неизвестен — просто ждём смены флага.
         setToast(j.message ?? t("Обновление уже выполняется"));
+        setPhase("polling");
         return;
       }
       finish(j.message ?? j.error ?? t("Ошибка обновления ({status})", { status: r.status }));
@@ -100,9 +110,10 @@ export function RefreshButton() {
         const r = await fetch("/api/refresh", { cache: "no-store" });
         const j = (await r.json()) as { running: boolean; runId: number | null };
         if (j.running) {
-          setRunning(true);
-          setRunId(j.runId);
-          setToast(t("Обновление выполняется…"));
+          // Если пользователь уже нажал кнопку, его запуск главнее.
+          setPhase((p) => (p === "idle" ? "polling" : p));
+          setRunId((id) => id ?? j.runId);
+          setToast((cur) => cur ?? t("Обновление выполняется…"));
         }
       } catch {
         /* нет сети — кнопка остаётся доступной */
@@ -113,7 +124,7 @@ export function RefreshButton() {
 
   // Опрос состояния запуска, пока он не завершится.
   useEffect(() => {
-    if (!running) return;
+    if (phase !== "polling") return;
     let cancelled = false;
     const tick = async () => {
       try {
@@ -141,7 +152,7 @@ export function RefreshButton() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [running, runId, finish, t]);
+  }, [phase, runId, finish, t]);
 
   // Пустое состояние ленты диспетчит это событие — запускаем обновление отсюда,
   // чтобы кнопка и статус «running» оставались в одном месте.
