@@ -50,7 +50,7 @@ export function invalidateStatsCache() {
 const visible = eq(articles.isHidden, false);
 
 async function computeStats(): Promise<StatsData> {
-  const [totals] = await db
+  const [totalsRow] = await db
     .select({
       total: sql<number>`count(*)::int`,
       unread: sql<number>`count(*) filter (where not ${articles.isRead})::int`,
@@ -65,6 +65,8 @@ async function computeStats(): Promise<StatsData> {
     })
     .from(articles)
     .where(visible);
+  // Агрегат без GROUP BY всегда возвращает ровно одну строку; запасной объект — ради типов.
+  const totals: StatsTotals = totalsRow ?? { total: 0, unread: 0, bookmarked: 0, highTrust: 0, last7: 0, avgTrust: 0, medianTrust: 0, preprints: 0, retracted: 0, multi: 0 };
 
   const byDesign = await db
     .select({ key: articles.studyDesign, count: sql<number>`count(*)::int` })

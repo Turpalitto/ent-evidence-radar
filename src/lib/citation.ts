@@ -24,7 +24,7 @@ function vancouverAuthor(name: string): string {
   const n = name.trim().replace(/\s+/g, " ");
   const m = n.match(/^(.+?)\s+([A-ZА-ЯЁ][A-ZА-ЯЁ.\-]*)$/u);
   if (!m) return n;
-  return `${m[1]} ${m[2].replace(/[.\-]/g, "")}`;
+  return `${m[1]} ${(m[2] ?? "").replace(/[.\-]/g, "")}`;
 }
 
 /** Убирает завершающую точку заголовка, чтобы не получить «title..». */
@@ -65,12 +65,12 @@ export function citeGost(a: CitableArticle): string {
   if (y) tail.push(y);
   if (a.isPreprint) tail.push("Препринт");
   tail.push(a.doi ? `DOI ${a.doi}` : `URL: ${a.url}`);
-  const [journal, ...rest] = tail[0].startsWith("//") ? tail : ["", ...tail];
+  const [journal, ...rest] = tail[0]?.startsWith("//") ? tail : ["", ...tail];
   return `${head}${journal ? ` ${journal}` : ""}. ${rest.join(". ")}.`.replace(/\.\s*\./g, ".");
 }
 
 function bibKey(a: CitableArticle): string {
-  const first = (a.authors[0] ?? "anon").split(/\s+/)[0].normalize("NFD").replace(/[^A-Za-z]/g, "") || "anon";
+  const first = ((a.authors[0] ?? "anon").split(/\s+/)[0] ?? "anon").normalize("NFD").replace(/[^A-Za-z]/g, "") || "anon";
   const word = cleanTitle(a.title).split(/\s+/).find((w) => w.length > 3)?.replace(/[^A-Za-z0-9]/g, "") ?? "";
   return `${first.toLowerCase()}${year(a)}${word.toLowerCase()}`;
 }

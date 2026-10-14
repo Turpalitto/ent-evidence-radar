@@ -71,7 +71,7 @@ npm run dev
 |---|---|
 | `npm run dev` | Dev-сервер (Turbopack) |
 | `npm run build` / `npm start` | Продакшн-сборка/запуск |
-| `npm run typecheck` | Проверка типов TS (`tsc --noEmit`) |
+| `npm run typecheck` | Проверка типов TS: обычный проход + строгий (`tsconfig.strict.json`, `noUncheckedIndexedAccess`) по продакшн-коду без тестов |
 | `npm run lint` | ESLint (Next core-web-vitals) |
 | `npm test` | Vitest — юнит-, интеграционные (PGlite) и компонентные тесты |
 | `npm run check` | Всё, что гоняет CI до сборки: ESLint → `tsc --noEmit` → `drizzle-kit check` → Vitest. Запускайте перед PR |

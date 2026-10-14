@@ -130,7 +130,7 @@ export async function recheckRetractions(): Promise<RetractionRecheckResult> {
     const toFlag = pickNewlyRetracted(candidates, map);
 
     // Курсор двигаем независимо от результата: важно, чтобы круг гарантированно продвигался.
-    await writeCursor(nextCursor(rows[rows.length - 1].id, rows.length));
+    await writeCursor(nextCursor(rows[rows.length - 1]!.id, rows.length));
 
     if (!toFlag.length) return { checked: candidates.length, newlyRetracted: 0 };
 
@@ -195,7 +195,7 @@ export async function recheckEditorialNotices(opts: { limit?: number; fetch?: No
 
     const notices = await crossrefNoticesFor(rows.map((r) => r.doi!), { fetch: opts.fetch });
     const plan = planNoticeUpdates(rows, notices);
-    await writeCursor(nextCursor(rows[rows.length - 1].id, rows.length, limit), DOI_CURSOR_KEY);
+    await writeCursor(nextCursor(rows[rows.length - 1]!.id, rows.length, limit), DOI_CURSOR_KEY);
 
     let newlyRetracted = 0;
     for (const u of plan) {

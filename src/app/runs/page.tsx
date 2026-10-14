@@ -76,7 +76,7 @@ export default async function RunsPage() {
                 <tr><td colSpan={9} className="px-4 py-10 text-center text-[color:var(--ink-muted)]">Запусков ещё не было</td></tr>
               )}
               {runs.map((r) => {
-                const st = statusLabel[r.status] ?? statusLabel.failed;
+                const st = statusLabel[r.status] ?? statusLabel.failed!;
                 return (
                   <tr key={r.id} className="align-top transition hover:bg-[color:var(--surface-2)]">
                     <td className="px-4 py-2.5 text-[color:var(--ink-muted)]">{r.id}</td>

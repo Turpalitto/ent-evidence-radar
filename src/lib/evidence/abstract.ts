@@ -22,12 +22,12 @@ export function parseStructuredAbstract(raw: string | null | undefined): Abstrac
   for (const line of lines) {
     const match = line.match(SECTION_HEADERS_RE);
     if (match) {
-      const header = match[1].toUpperCase();
+      const header = (match[1] ?? "").toUpperCase();
       const content = line.slice(match[0].length).trim();
       sections.push({ label: header, text: content });
     } else if (sections.length > 0) {
       // Присоединяем к предыдущей секции, если нет нового заголовка
-      sections[sections.length - 1].text += ` ${line}`;
+      sections[sections.length - 1]!.text += ` ${line}`;
     } else {
       sections.push({ label: "", text: line });
     }

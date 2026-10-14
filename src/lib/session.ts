@@ -44,7 +44,7 @@ export function verifySessionToken(token: string | null | undefined, now: number
   const parts = token.split(".");
   if (parts.length !== 4 || parts[0] !== "v1") return false;
   const [version, expStr, nonce, sig] = parts;
-  if (!/^\d{1,12}$/.test(expStr) || !nonce || !sig) return false;
+  if (!expStr || !/^\d{1,12}$/.test(expStr) || !nonce || !sig) return false;
   const exp = Number(expStr);
   if (exp * 1000 <= now) return false;
   const expected = sign(`${version}.${expStr}.${nonce}`, key);

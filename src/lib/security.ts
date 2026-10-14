@@ -74,7 +74,7 @@ function ipToBigInt(ip: string): { value: bigint; bits: number } | null {
 
 /** Совпадает ли IP с CIDR-диапазоном (или точным адресом) — IPv4 и IPv6. */
 function cidrMatch(ip: string, cidr: string): boolean {
-  const [net, prefixRaw] = cidr.split("/");
+  const [net = "", prefixRaw] = cidr.split("/");
   const a = ipToBigInt(ip);
   const b = ipToBigInt(net);
   if (!a || !b || a.bits !== b.bits) return false;
@@ -131,11 +131,11 @@ export function getClientIp(req: { headers: { get(name: string): string | null }
   if (xff) {
     const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
     for (let i = parts.length - 1; i >= 0; i--) {
-      const ip = normalizeIp(parts[i]);
+      const ip = normalizeIp(parts[i]!);
       if (ip && !isTrustedProxy(ip, trusted)) return ip;
     }
     if (parts.length) {
-      const last = normalizeIp(parts[parts.length - 1]);
+      const last = normalizeIp(parts[parts.length - 1]!);
       if (last) return last;
     }
   }

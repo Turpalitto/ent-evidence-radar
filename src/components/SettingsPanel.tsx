@@ -447,7 +447,7 @@ export function SettingsPanel() {
               <DiagRow k="Движок" v={diag.db.kind} />
               <DiagRow k="Размер" v={diag.db.sizeBytes != null ? fmtBytes(diag.db.sizeBytes) : "—"} />
               <DiagRow k="Статей" v={`${diag.db.counts.articles} (скрыто ${diag.db.counts.hidden}, закладок ${diag.db.counts.bookmarked}, с заметками ${diag.db.counts.withNotes}, правок ${diag.db.counts.overridden})`} />
-              <DiagRow k="Отозванных" v={String(diag.db.counts.retracted)} warn={diag.db.counts.retracted > 0} />
+              <DiagRow k="Отозванных" v={String(diag.db.counts.retracted)} warn={(diag.db.counts.retracted ?? 0) > 0} />
               <DiagRow k="Ждут переклассификации" v={String(diag.db.counts.pendingReclassify)} />
               <DiagRow k="Тем / запусков / кэш ИИ" v={`${diag.db.counts.topics} / ${diag.db.counts.runs} / ${diag.db.counts.aiCache}`} />
             </DiagCard>

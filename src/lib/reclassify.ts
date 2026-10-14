@@ -248,7 +248,7 @@ export async function reclassifyArticles(opts: ReclassifyOptions = {}): Promise<
       });
 
       result.scanned += rows.length;
-      lastId = rows[rows.length - 1].id;
+      lastId = rows[rows.length - 1]!.id;
       if (rows.length < take) break;
     }
 

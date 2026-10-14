@@ -199,15 +199,18 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
 
   // Swipe-to-close (mobile bottom sheet)
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (!isMobile()) return;
-    dragStartY.current = e.touches[0].clientY;
+    const touch = e.touches[0];
+    if (!isMobile() || !touch) return;
+    dragStartY.current = touch.clientY;
     dragCurrentY.current = 0;
     isDragging.current = true;
   }, []);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!isDragging.current || !sheetRef.current) return;
-    const dy = e.touches[0].clientY - dragStartY.current;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const dy = touch.clientY - dragStartY.current;
     dragCurrentY.current = dy;
     if (dy > 0) {
       sheetRef.current.style.transform = `translateY(${dy}px)`;

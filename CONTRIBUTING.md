@@ -25,7 +25,9 @@ CI (`.github/workflows/ci.yml`) гоняет то же самое плюс `npm 
 ## Соглашения
 
 ### Код
-- TypeScript strict, без `any` (eslint это отследит); серверные помощники — в `src/lib`, доступ к БД —
+- TypeScript strict, без `any` (eslint это отследит); продакшн-код дополнительно проходит `tsconfig.strict.json`
+  с `noUncheckedIndexedAccess` — `arr[i]`/`record[key]` считаются возможно-undefined, проверяйте или
+  используйте `!` только там, где непустота доказана соседней строкой; серверные помощники — в `src/lib`, доступ к БД —
   через drizzle в `src/lib/queries.ts`/`refresh.ts`, не из компонентов.
 - Файлы маршрутов `src/app/**/route.ts` экспортируют **только** обработчики и конфиг Next; общая логика
   выносится в `src/lib` (иначе падает проверка типов Next 16).

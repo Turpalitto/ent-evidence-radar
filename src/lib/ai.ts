@@ -310,7 +310,7 @@ export async function* aiStream(prompt: string, system: string): AsyncGenerator<
 
   for (let i = 0; i < models.length; i++) {
     const idx = (start + i) % models.length;
-    const model = models[idx];
+    const model = models[idx]!;
     let yielded = false;
     try {
       for await (const delta of streamOnce(prompt, system, model)) {
@@ -344,7 +344,7 @@ async function chat(prompt: string, system: string, timeoutMs = 60_000): Promise
 
   for (let i = 0; i < models.length; i++) {
     const idx = (start + i) % models.length;
-    const model = models[idx];
+    const model = models[idx]!;
     try {
       const text = await chatOnce(prompt, system, model, timeoutMs);
       g.__aiModelIdx = (idx + 1) % models.length; // следующая ротация
@@ -459,7 +459,7 @@ export function warmAbstracts(texts: string[], concurrency = 1): void {
   const worker = async () => {
     while (i < uniq.length && !stop) {
       const t = uniq[i++];
-      if (t.length > 30000) continue;
+      if (!t || t.length > 30000) continue;
       const key = cacheKeyFor("tr", t);
       if (await cachedPick(key)) continue;
       try {

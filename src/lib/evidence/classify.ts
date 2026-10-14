@@ -213,7 +213,7 @@ export function extractSampleSize(text: string): number | null {
   for (const p of priorityPatterns) {
     let m: RegExpExecArray | null;
     while ((m = p.exec(text)) !== null) {
-      const n = parseInt(m[1].replace(/,/g, ""), 10);
+      const n = parseInt((m[1] ?? "").replace(/,/g, ""), 10);
       if (Number.isNaN(n) || n < 5 || n > 5_000_000) continue;
       // «n = 2020» или «enrolled 2021 patients» — это выборка, а не год: явный контекст
       // (n =, enrolled/included … patients) исключает прочтение как даты. Исключение —
@@ -239,7 +239,7 @@ export function extractSampleSize(text: string): number | null {
   for (const p of patterns) {
     let m: RegExpExecArray | null;
     while ((m = p.exec(text)) !== null) {
-      const n = parseInt(m[1].replace(/,/g, ""), 10);
+      const n = parseInt((m[1] ?? "").replace(/,/g, ""), 10);
       // Отсеиваем: NaN, слишком мелкие (<5), годы (2019-2099), слишком большие (>5M)
       if (Number.isNaN(n) || n < 5 || n > 5_000_000) continue;
       if (n >= 2019 && n <= 2099) continue; // вероятно, год

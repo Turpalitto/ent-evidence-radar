@@ -38,8 +38,8 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean
         el.focus();
         return;
       }
-      const firstEl = items[0];
-      const lastEl = items[items.length - 1];
+      const firstEl = items[0]!;
+      const lastEl = items[items.length - 1]!;
       const activeEl = document.activeElement as HTMLElement | null;
       if (e.shiftKey) {
         if (activeEl === firstEl || !activeEl || !el.contains(activeEl)) {

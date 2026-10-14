@@ -123,7 +123,7 @@ export async function recheckTrials(opts: { limit?: number; fetch?: NonNullable<
     const fresh = await fetchClinicalTrialsByIds(rows.map((r) => r.nctId!), { fetch: opts.fetch });
     const byNct = new Map(fresh.map((f) => [normalizeNct(f.nctId) ?? "", f]));
     // Курсор — после успешного ответа API: при ошибке сети та же порция пойдёт повторно.
-    await writeCursor(rows.length < limit ? 0 : rows[rows.length - 1].id);
+    await writeCursor(rows.length < limit ? 0 : rows[rows.length - 1]!.id);
 
     let statusChanged = 0;
     let resultsAppeared = 0;

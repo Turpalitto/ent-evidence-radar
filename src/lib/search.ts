@@ -430,13 +430,14 @@ function wordsWithPrefix(prefix: string, limit: number): { word: string; keys: s
   let hi = arr.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (arr[mid].word < prefix) lo = mid + 1;
+    if (arr[mid]!.word < prefix) lo = mid + 1;
     else hi = mid;
   }
   const out: { word: string; keys: string[] }[] = [];
   for (let i = lo; i < arr.length && out.length < limit; i++) {
-    if (!arr[i].word.startsWith(prefix)) break;
-    out.push(arr[i]);
+    const entry = arr[i]!;
+    if (!entry.word.startsWith(prefix)) break;
+    out.push(entry);
   }
   return out;
 }
@@ -451,7 +452,7 @@ function expandTerm(t: string): string[] {
   const addGroup = (k: string) => {
     if (k === t) return;
     set.add(k);
-    for (const a of SYNONYMS[k]) set.add(a);
+    for (const a of SYNONYMS[k] ?? []) set.add(a);
   };
 
   // Точное вхождение слова в концепт-группу (ключ или альтернатива).

@@ -88,7 +88,7 @@ export async function listArticles(f: ArticleFilters) {
   // чтобы чипы показывали, сколько руководств у каждого органа при текущем поиске/периоде.
   const wantIssuers = f.design === "guideline" || !!f.issuer;
   const facetWhere = wantIssuers ? buildWhere({ ...f, issuer: undefined, design: "guideline" }) : undefined;
-  const [items, [{ total }], issuerRows] = await Promise.all([
+  const [items, [totalRow], issuerRows] = await Promise.all([
     db.select(articleColumns).from(articles).where(where).orderBy(...order, asc(articles.id)).limit(pageSize).offset((page - 1) * pageSize),
     db.select({ total: sql<number>`count(*)::int` }).from(articles).where(where),
     wantIssuers
@@ -97,7 +97,7 @@ export async function listArticles(f: ArticleFilters) {
   ]);
   return {
     items,
-    total,
+    total: totalRow?.total ?? 0,
     page,
     pageSize,
     searchTerms: f.q ? searchTerms(f.q) : [],

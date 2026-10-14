@@ -246,7 +246,7 @@ export const PREDATORY_PATTERNS: RegExp[] = [
 export function normalizeJournal(s: string): string {
   let t = s.toLowerCase().trim();
   // «… : official journal of …», «… = Le Journal d'oto-rhino-laryngologie …» (параллельное название)
-  t = t.split(" : ")[0].split(" = ")[0];
+  t = t.split(" : ")[0]?.split(" = ")[0] ?? t;
   t = t.replace(/\s*\([^)]*\)\s*$/, "");
   t = t.replace(/^the\s+/, "");
   t = t

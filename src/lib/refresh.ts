@@ -95,7 +95,8 @@ export async function ensureSeeded() {
   for (const s of DEFAULT_SOURCES) {
     if (!have.has(s.key)) await db.insert(sources).values(s).onConflictDoNothing();
   }
-  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(topics);
+  const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(topics);
+  const count = row?.count ?? 0;
   if (count === 0) {
     await db.insert(topics).values(DEFAULT_TOPICS.map((t) => ({ ...t, isDefault: true })));
   }
@@ -250,7 +251,7 @@ function pushUpdate(toUpdate: PlannedUpdate[], updateIdx: Map<number, number>, p
     toUpdate.push(planned);
     return;
   }
-  const prev = toUpdate[prevIdx];
+  const prev = toUpdate[prevIdx]!;
   const topicIds = Array.from(new Set([...(prev.values.topicIds ?? []), ...(planned.values.topicIds ?? [])]));
   const sourceKeys = Array.from(new Set([...(prev.values.sourceKeys ?? []), ...(planned.values.sourceKeys ?? [])]));
   // «Только связать» никогда не перетирает полноценное обновление; иначе поля берём у более полной
@@ -464,7 +465,9 @@ export async function startRefresh(trigger: "manual" | "scheduled"): Promise<Ref
     // призраки убитых процессов (OOM, рестарт, таймаут serverless). Закрываем их здесь,
     // а не только при старте процесса (instrumentation), которого на serverless нет.
     await recoverStaleRuns();
-    [run] = await db.insert(fetchRuns).values({ trigger, status: "running" }).returning({ id: fetchRuns.id });
+    const inserted = await db.insert(fetchRuns).values({ trigger, status: "running" }).returning({ id: fetchRuns.id });
+    if (!inserted[0]) throw new Error("fetch_runs: insert не вернул id");
+    run = inserted[0];
   } catch (e) {
     await releaseLock(holder).catch(() => {});
     g.__entRadarRunning = false;

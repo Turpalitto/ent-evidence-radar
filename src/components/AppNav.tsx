@@ -54,7 +54,7 @@ const navLinks = [
 const desktopLinks = [
   ...navLinks.slice(0, 3),
   { href: "/runs", label: "Журнал", exact: false, icon: null },
-  navLinks[3],
+  ...navLinks.slice(3, 4),
 ];
 
 function subscribeTheme(cb: () => void) {

@@ -16,7 +16,7 @@ function safeEqual(a: string, b: string): boolean {
 function isHttps(req: NextRequest): boolean {
   if (req.nextUrl.protocol === "https:") return true;
   const xfProto = req.headers.get("x-forwarded-proto");
-  return Boolean(xfProto && xfProto.split(",")[0].trim().toLowerCase() === "https");
+  return Boolean(xfProto && xfProto.split(",")[0]?.trim().toLowerCase() === "https");
 }
 
 /**

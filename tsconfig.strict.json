@@ -1,0 +1,11 @@
+{
+  // Строгий проход по продакшн-коду: `noUncheckedIndexedAccess` заставляет проверять `arr[i]` и
+  // `record[key]` на undefined (аудит, пункт L). Тесты исключены намеренно — там сотни `rows[0].x`
+  // на заведомо непустых фикстурах, и восклицательные знаки только засоряли бы их.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true,
+    "incremental": false
+  },
+  "exclude": ["node_modules", "**/*.test.ts", "**/*.test.tsx", "src/test/**"]
+}

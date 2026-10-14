@@ -112,7 +112,7 @@ export async function collectDiagnostics(): Promise<Diagnostics> {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       now: new Date().toISOString(),
     },
-    db: { kind: dbKind, sizeBytes: size, counts: { ...counts, topics: topicCount.n, aiCache: aiRows.n, runs: runCount.n } },
+    db: { kind: dbKind, sizeBytes: size, counts: { ...counts, topics: topicCount?.n ?? 0, aiCache: aiRows?.n ?? 0, runs: runCount?.n ?? 0 } },
     lock: lock ? { ...lock, leaseSecLeft: Math.max(0, Math.round((new Date(lock.expiresAt).getTime() - Date.now()) / 1000)) } : null,
     refreshRunning: (() => {
       const r = currentRefresh();

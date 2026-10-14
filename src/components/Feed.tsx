@@ -343,8 +343,9 @@ export function Feed({ topics }: { topics: Topic[] }) {
 
   // Pull-to-refresh обработчики
   const handlePtrTouchStart = useCallback((e: React.TouchEvent) => {
-    if (window.scrollY === 0) {
-      ptrStartY.current = e.touches[0].clientY;
+    const touch = e.touches[0];
+    if (window.scrollY === 0 && touch) {
+      ptrStartY.current = touch.clientY;
       ptrTriggered.current = false;
     } else {
       ptrStartY.current = -1;
@@ -352,8 +353,9 @@ export function Feed({ topics }: { topics: Topic[] }) {
   }, []);
 
   const handlePtrTouchMove = useCallback((e: React.TouchEvent) => {
-    if (ptrStartY.current < 0) return;
-    const dy = e.touches[0].clientY - ptrStartY.current;
+    const touch = e.touches[0];
+    if (ptrStartY.current < 0 || !touch) return;
+    const dy = touch.clientY - ptrStartY.current;
     if (dy > 60 && !ptrTriggered.current) {
       ptrTriggered.current = true;
       setPtrActive(true);
@@ -489,20 +491,21 @@ export function Feed({ topics }: { topics: Topic[] }) {
         e.preventDefault();
         setFocusedIdx((prev) => (prev > 0 ? prev - 1 : 0));
       } else if (e.key === "Enter") {
-        if (focusedIdx >= 0 && focusedIdx < data.items.length) {
+        const item = data.items[focusedIdx];
+        if (item) {
           e.preventDefault();
-          setSelected(data.items[focusedIdx]);
+          setSelected(item);
         }
       } else if (e.key === "b") {
-        if (focusedIdx >= 0 && focusedIdx < data.items.length) {
+        const item = data.items[focusedIdx];
+        if (item) {
           e.preventDefault();
-          const item = data.items[focusedIdx];
           void quickToggle(item, { isBookmarked: !item.isBookmarked });
         }
       } else if (e.key === "r") {
-        if (focusedIdx >= 0 && focusedIdx < data.items.length) {
+        const item = data.items[focusedIdx];
+        if (item) {
           e.preventDefault();
-          const item = data.items[focusedIdx];
           void quickToggle(item, { isRead: !item.isRead });
         }
       }

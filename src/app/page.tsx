@@ -47,7 +47,7 @@ const ICONS: Record<string, ReactNode> = {
 
 export default async function HomePage() {
   await ensureSeeded();
-  const [topicRows, cfg, [totals], lastRun] = await Promise.all([
+  const [topicRows, cfg, [totalsRow], lastRun] = await Promise.all([
     db.select().from(topics).orderBy(asc(topics.id)),
     getSettings(),
     // Аудит I-11: счётчики по всей таблице кэшируются на 30 с и сбрасываются по событиям
@@ -68,6 +68,8 @@ export default async function HomePage() {
     }),
     db.select().from(fetchRuns).orderBy(desc(fetchRuns.startedAt)).limit(1),
   ]);
+  // Агрегат count(*) всегда возвращает строку; запасной объект — только ради типов.
+  const totals = totalsRow ?? { total: 0, unread: 0, high: 0, l1: 0, last7: 0, guidelines: 0 };
   const run = lastRun[0];
   const status = run ? RUN_STATUS[run.status] ?? RUN_STATUS.failed : null;
 
