@@ -97,6 +97,15 @@ function toParams(f: Filters, page: number, pageSize: number) {
   return p;
 }
 
+/** Поверхностное сравнение фильтров: все поля — примитивы. Нужно, чтобы не создавать
+ *  новый объект (и не перезапрашивать ленту), когда значения фактически не изменились. */
+function sameFilters(a: Filters, b: Filters): boolean {
+  for (const k of Object.keys(initial) as (keyof Filters)[]) {
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
+}
+
 /** Восстанавливает фильтры, поиск и страницу из query-строки (для shareable-ссылок). */
 function parseUrlSearch(): { f: Filters; page: number; q: string } {
   if (typeof window === "undefined") return { f: initial, page: 1, q: "" };
@@ -180,34 +189,44 @@ export function Feed({ topics }: { topics: Topic[] }) {
   };
 
   // Восстанавливаем фильтры/поиск/страницу из URL после монтирования (детерминированный первый рендер).
-  const restoredRef = useRef(false);
+  // Первый запрос ленты откладываем до восстановления, иначе на маунте уходило 2–3 запроса
+  // (initial → восстановленные из URL → debounce поиска) и столько же warm-вызовов AI.
+  const [restored, setRestored] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => {
       const parsed = parseUrlSearch();
-      setF(parsed.f);
+      setF((prev) => (sameFilters(prev, parsed.f) ? prev : parsed.f));
       setQ(parsed.q);
       setPage(parsed.page);
-      restoredRef.current = true;
+      setRestored(true);
     }, 0);
     return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => setF((s) => ({ ...s, q })), 200);
+    // Не создаём новый объект фильтров, если строка поиска фактически не изменилась.
+    const t = setTimeout(() => setF((s) => (s.q === q ? s : { ...s, q })), 200);
     return () => clearTimeout(t);
   }, [q]);
 
+  // Защита от гонки: при смене фильтров предыдущий запрос отменяется, а его поздний
+  // ответ не может перетереть актуальные данные.
+  const loadAbortRef = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
+    loadAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    loadAbortRef.current = ctrl;
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`/api/articles?${toParams(f, page, pageSize)}`, { cache: "no-store" });
+      const r = await fetch(`/api/articles?${toParams(f, page, pageSize)}`, { cache: "no-store", signal: ctrl.signal });
       if (!r.ok) throw new Error(`Ошибка сервера ${r.status}`);
       const parsed = (await r.json()) as { items?: Article[]; total?: number };
+      if (ctrl.signal.aborted) return;
       const items = parsed.items ?? [];
       setData({ items, total: parsed.total ?? 0 });
       setFocusedIdx(-1);
-      // Фоновый прогрев переводов: только если AI настроен
+      // Фоновый прогрев переводов: только если AI настроен и это актуальный ответ
       const abstracts = items.map((a) => a.abstract).filter((s): s is string => Boolean(s));
       if (abstracts.length && aiConfiguredRef.current !== false) {
         void fetch("/api/ai/warm", {
@@ -217,16 +236,21 @@ export function Feed({ topics }: { topics: Topic[] }) {
         }).catch(() => {});
       }
     } catch (e) {
+      if (ctrl.signal.aborted) return; // отменён более новым запросом или размонтированием
       setError(e instanceof Error ? e.message : "Ошибка сети");
     } finally {
-      setLoading(false);
+      if (loadAbortRef.current === ctrl) setLoading(false);
     }
   }, [f, page]);
 
   useEffect(() => {
+    if (!restored) return;
+    // setTimeout(0) склеивает одновременные изменения (фильтры + страница) в один запрос.
     const t = setTimeout(() => void load(), 0);
     return () => clearTimeout(t);
-  }, [load]);
+  }, [load, restored]);
+
+  useEffect(() => () => loadAbortRef.current?.abort(), []);
 
   useEffect(() => {
     const h = () => {
@@ -253,10 +277,10 @@ export function Feed({ topics }: { topics: Topic[] }) {
   // Синхронизируем фильтры/поиск/страницу в URL (replaceState — без захламления истории).
   useEffect(() => {
     // Не затираем глубокую ссылку, пока восстановление из URL ещё не выполнено.
-    if (!restoredRef.current) return;
+    if (!restored) return;
     const url = `${window.location.pathname}?${toParams(f, page, pageSize).toString()}`;
     window.history.replaceState(null, "", url);
-  }, [f, page]);
+  }, [f, page, restored]);
 
   // Pull-to-refresh обработчики
   const handlePtrTouchStart = useCallback((e: React.TouchEvent) => {

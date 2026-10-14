@@ -1,17 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { headers } from "next/headers";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { AppNav } from "@/components/AppNav";
 import { OG_IMAGE } from "@/lib/metadata";
 import { FEED_TYPES } from "@/lib/site";
-
-const inter = Inter({
-  subsets: ["latin", "cyrillic"],
-  display: "swap",
-  variable: "--font-inter",
-});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -57,8 +50,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // при строгой политике script-src без 'unsafe-inline'.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
-    <html lang="ru" className={inter.variable} suppressHydrationWarning>
+    <html lang="ru" suppressHydrationWarning>
       <head>
+        {/* Шрифт самостоятельно хостится из /public/fonts (см. globals.css) — сборка не зависит от Google Fonts. */}
+        <link rel="preload" href="/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/inter-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('ent-radar-theme');if(t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')}catch(e){}})()` }} />
       </head>
       <body className="app-bg min-h-screen antialiased">

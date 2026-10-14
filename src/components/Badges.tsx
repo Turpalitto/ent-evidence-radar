@@ -84,6 +84,7 @@ const SOURCE_STYLES: Record<string, string> = {
   clinicaltrials: "bg-cyan-50 text-cyan-700 dark:bg-cyan-400/10 dark:text-cyan-300",
   medrxiv: "bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-300",
   "retraction-recheck": "bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300",
+  reclassify: "bg-violet-50 text-violet-700 dark:bg-violet-400/10 dark:text-violet-300",
 };
 
 export function SourceBadge({ k }: { k: string }) {

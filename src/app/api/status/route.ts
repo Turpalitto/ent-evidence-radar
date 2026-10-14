@@ -37,6 +37,8 @@ export async function GET() {
     lastStatus: s.lastStatus,
     lastError: s.lastError,
     healthy: s.lastStatus !== "error",
+    /** Часть тем источника упала (F-18): источник жив, но данные неполные. */
+    degraded: s.lastStatus === "degraded",
   }));
 
   return NextResponse.json({

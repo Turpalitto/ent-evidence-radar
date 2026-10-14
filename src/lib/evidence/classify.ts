@@ -2,6 +2,21 @@ import type { StudyDesign, TrustBreakdownItem } from "@/db/schema";
 import { journalTier } from "./journals";
 import { SUBSPECIALTIES } from "./taxonomy";
 
+/**
+ * Версия классификатора. Увеличивайте при любом изменении detectDesign / весов /
+ * журнальных tier / субспециальностей: записи с меньшей версией подлежат
+ * переклассификации (`POST /api/admin/reclassify`), иначе исправления затронут
+ * только новые статьи.
+ *
+ * История:
+ *  1 — исходная версия (до аудита).
+ *  2 — Cochrane ⇒ систематический обзор; вторичные/post-hoc анализы РКИ ⇒ когорта;
+ *      точные паттерны регистрации протокола и многоцентровости; ISO-аббревиатуры
+ *      журналов; Lancet-сабжурналы не Tier 1; субспециальности без ложных
+ *      срабатываний «adenoid cystic» / «allergen immunotherapy».
+ */
+export const CLASSIFIER_VERSION = 2;
+
 export interface RawArticle {
   pmid?: string | null;
   doi?: string | null;
@@ -40,6 +55,29 @@ export interface Classified {
 
 const PT = (types: string[], re: RegExp) => types.some((t) => re.test(t));
 
+/** Cochrane Database of Systematic Reviews (полное название и MEDLINE-аббревиатура). */
+function isCochraneReviewJournal(journal: string | null | undefined): boolean {
+  return !!journal && /cochrane database (of )?syst(ematic)? rev/i.test(journal);
+}
+
+/** Заголовки вторичных анализов данных РКИ. */
+const SECONDARY_ANALYSIS_RE =
+  /\b(secondary|post[- ]?hoc|exploratory|subgroup|pooled|ancillary|follow-up)\s+analys[ie]s\b.*\b(trial|RCT|randomi[sz]ed)\b|\b(long-term|extended) follow-up of (the|a) .*randomi[sz]ed/i;
+
+/**
+ * Регистрация протокола: только конкретные идентификаторы/реестры или явная фраза
+ * о регистрации. Раньше хватало слова «registered» — срабатывало на «registered nurses».
+ */
+const REGISTRATION_RE =
+  /PROSPERO|CRD\d{11}|NCT\d{8}|ISRCTN\s?\d{8}|ChiCTR|DRKS\d{8}|ACTRN\d{14}|UMIN\d{9}|jRCT|EudraCT|ClinicalTrials\.gov|(trial|protocol|study)\s+(was\s+)?(prospectively\s+)?registered\b|(trial|protocol)\s+registration|registration\s+(number|no\.?|ID)/i;
+
+/**
+ * Многоцентровое / международное исследование: слово «international» само по себе
+ * слишком частое («International Classification of Diseases», названия обществ).
+ */
+const MULTICENTER_RE =
+  /multi[- ]?cent(er|re|ric)|multi[- ]?national|multi[- ]?site|\b\d+\s+(centers|centres|sites|hospitals|institutions|countries)\b|international multi|international,? (randomi[sz]ed|prospective|retrospective|cohort|registry|collaborative)/i;
+
 export function detectDesign(a: RawArticle): StudyDesign {
   const types = a.publicationTypes ?? [];
   const text = `${a.title} ${a.abstract ?? ""}`;
@@ -59,6 +97,16 @@ export function detectDesign(a: RawArticle): StudyDesign {
   if (/^protocol\b|study protocol|protocol for\b|trial protocol/i.test(title) || PT(types, /protocol/i)) {
     return "other";
   }
+
+  // Cochrane Database of Systematic Reviews публикует только систематические обзоры
+  // (и их протоколы — отсечены выше). Тип публикации «Systematic Review» PubMed проставляет
+  // при индексации с задержкой, а темы забирают записи по дате появления (edat) — без этого
+  // правила свежие кокрейновские обзоры получали «нарративный обзор», уровень 5.
+  if (isCochraneReviewJournal(a.journal) && !/\bwithdrawn\b/i.test(title)) return "systematic_review";
+
+  // Вторичный / post-hoc / подгрупповой анализ РКИ — наблюдательный анализ данных
+  // рандомизированного исследования, а не само РКИ (уровень 2 ему не положен).
+  if (SECONDARY_ANALYSIS_RE.test(title) && !PT(types, /randomized controlled trial/i)) return "cohort";
 
   if (PT(types, /systematic review|meta-analysis/i)) return "systematic_review";
   if (PT(types, /guideline|consensus development conference/i)) {
@@ -128,6 +176,10 @@ export function evidenceLevel(design: StudyDesign, sampleSize: number | null): n
   }
 }
 
+/** Контекст слева от числа, при котором «2019 patients were included» — это год, а не выборка. */
+const YEAR_CONTEXT_BEFORE_RE =
+  /(?:\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?|\b(?:and|to|until|till|through|since|in|from|by|between|of)|[–—-]|\d{4},?)\s*$/i;
+
 export function extractSampleSize(text: string): number | null {
   // 1. Приоритетные паттерны: явно включённые, рандомизированные или завершившие пациенты
   const priorityCandidates: number[] = [];
@@ -143,7 +195,14 @@ export function extractSampleSize(text: string): number | null {
     while ((m = p.exec(text)) !== null) {
       const n = parseInt(m[1].replace(/,/g, ""), 10);
       if (Number.isNaN(n) || n < 5 || n > 5_000_000) continue;
-      if (n >= 2019 && n <= 2099) continue;
+      // «n = 2020» или «enrolled 2021 patients» — это выборка, а не год: явный контекст
+      // (n =, enrolled/included … patients) исключает прочтение как даты. Исключение —
+      // число перед существительным, которому предшествует дата/диапазон:
+      // «from 2015 to 2019 patients were included», «in 2023, 2024 subjects were analyzed».
+      if (n >= 1990 && n <= 2099 && m[0].search(/^[\d,]/) === 0) {
+        const before = text.slice(Math.max(0, m.index - 24), m.index);
+        if (YEAR_CONTEXT_BEFORE_RE.test(before)) continue;
+      }
       priorityCandidates.push(n);
     }
   }
@@ -245,7 +304,7 @@ export function classify(a: RawArticle): Classified {
   const srcPts = a.sourceKey === "pubmed" ? 10 : a.sourceKey === "europepmc" ? 8 : a.sourceKey === "clinicaltrials" ? 6 : 0;
   b.push({ label: a.sourceKey === "pubmed" ? "Индексация MEDLINE/PubMed" : `Источник: ${a.sourceKey}`, points: srcPts });
 
-  if (/PROSPERO|CRD\d{11}|NCT\d{8}|ISRCTN|ClinicalTrials\.gov|registered/i.test(text) || a.nctId) {
+  if (REGISTRATION_RE.test(text) || a.nctId) {
     b.push({ label: "Регистрация протокола (PROSPERO/NCT/ISRCTN)", points: 6 });
   }
   if (/GRADE|PRISMA|CONSORT|STROBE/i.test(text)) {
@@ -266,7 +325,7 @@ export function classify(a: RawArticle): Classified {
       b.push({ label: "Анализ intention-to-treat (ITT)", points: 2 });
     }
   }
-  if (/multicent(er|re)|multinational|international/i.test(text) && design !== "systematic_review") {
+  if (MULTICENTER_RE.test(text) && design !== "systematic_review") {
     b.push({ label: "Многоцентровое / международное", points: 3 });
   }
   if (isPreprint) b.push({ label: "Препринт без рецензирования", points: -20 });
@@ -274,6 +333,9 @@ export function classify(a: RawArticle): Classified {
   if (!a.abstract || a.abstract.length < 200) b.push({ label: "Нет / короткая аннотация", points: -4 });
   if (a.sourceKey === "clinicaltrials" && a.hasResults) b.push({ label: "Опубликованы результаты в реестре", points: 8 });
   if (/pilot|preliminary|feasibility/i.test(a.title)) b.push({ label: "Пилотное / предварительное", points: -5 });
+  if (design === "cohort" && SECONDARY_ANALYSIS_RE.test(a.title)) {
+    b.push({ label: "Вторичный / post-hoc анализ данных РКИ", points: 0 });
+  }
   if (/in vitro|animal model|\brats?\b|\bmice\b|murine|guinea pig/i.test(text) && !/patients|participants/i.test(text)) {
     b.push({ label: "Доклиническое (животные / in vitro)", points: -10 });
   }

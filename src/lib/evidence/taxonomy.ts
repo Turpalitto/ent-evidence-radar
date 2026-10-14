@@ -52,7 +52,11 @@ export const SUBSPECIALTIES: { key: string; label: string; short: string; patter
     patterns: [
       /head and neck (cancer|squamous|carcinoma|neoplasm|tumou?r|oncolog)/i, /\bHNSCC\b/, /oropharyn(x|geal)/i,
       /\bnasopharyn(x|geal) carcinoma/i, /laryngeal (cancer|carcinoma)/i, /thyroid (cancer|carcinoma|nodule|ectomy)/i,
-      /\bparotid/i, /salivary gland/i, /\bneck dissection/i, /\bHPV\b/i, /immunotherapy/i, /pembrolizumab/i, /nivolumab/i,
+      /\bparotid/i, /salivary gland/i, /\bneck dissection/i, /\bHPV\b/i,
+      // «immunotherapy» само по себе — ещё и аллерген-специфическая иммунотерапия (ринология):
+      // в онкологию относим только противоопухолевую.
+      /(cancer|tumou?r|checkpoint|immune checkpoint|anti-PD-?1|PD-L1|CTLA-4)\W+immunotherap/i, /immunotherapy\W+(for|in)\W+(head and neck|HNSCC|carcinoma|cancer|melanoma)/i,
+      /pembrolizumab/i, /nivolumab/i, /cemiplimab/i, /cetuximab/i, /adenoid cystic carcinoma/i,
       /\boral (cavity|cancer|squamous)/i, /\bchemoradi/i, /\bradiotherapy/i, /\bcarcinoma/i, /\bmelanoma\b/i,
       /\bparathyroid/i, /\bmalignan/i, /\bmetasta/i,
     ],
@@ -61,7 +65,12 @@ export const SUBSPECIALTIES: { key: string; label: string; short: string; patter
     key: "pediatric",
     label: "Детская ЛОР",
     short: "Педиатрия",
-    patterns: [/\bchild(ren)?\b/i, /\bpediatric/i, /\bpaediatric/i, /\binfant/i, /\bneonat/i, /\badenoid/i, /\btonsillectomy/i, /\badenotonsil/i, /\botitis media with effusion/i, /tympanostomy/i, /\bgrommet/i, /newborn hearing/i],
+    patterns: [
+      /\bchild(ren|hood)?\b/i, /\bpediatric/i, /\bpaediatric/i, /\binfant/i, /\bneonat/i,
+      // «adenoid cystic carcinoma» — опухоль слюнных желёз, не детская ЛОР.
+      /\badenoid(s|al|ectomy|itis)?\b(?!\s+cystic)/i, /adenoid (hypertrophy|vegetation|regrowth)/i,
+      /\btonsillectomy/i, /\badenotonsil/i, /\botitis media with effusion/i, /tympanostomy/i, /\bgrommet/i, /newborn hearing/i,
+    ],
   },
   {
     key: "sleep",
@@ -146,4 +155,5 @@ export const SOURCE_LABELS: Record<string, string> = {
   clinicaltrials: "ClinicalTrials.gov",
   medrxiv: "medRxiv (препринты)",
   "retraction-recheck": "Перепроверка отзывов",
+  reclassify: "Переклассификация",
 };

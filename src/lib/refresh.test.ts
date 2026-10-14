@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { planWrites, mergeRaw, type Candidate } from "@/lib/refresh";
-import { dedupKeyFor, type RawArticle } from "@/lib/evidence/classify";
+import { planWrites, mergeRaw, pubmedSourceStatus, type Candidate } from "@/lib/refresh";
+import { CLASSIFIER_VERSION, dedupKeyFor, type RawArticle } from "@/lib/evidence/classify";
 
 const raw = (over: Partial<RawArticle> = {}): RawArticle => ({
   sourceKey: "pubmed",
@@ -85,5 +85,28 @@ describe("planWrites", () => {
     const plan = planWrites(cands, new Map(), new Map(), new Map(), new Map(), 90);
     expect(plan.toInsert).toHaveLength(0);
     expect(plan.toUpdate).toHaveLength(0);
+  });
+});
+
+describe("pubmedSourceStatus (F-18)", () => {
+  it("ok только без ошибок, degraded при частичных сбоях, error при полном", () => {
+    expect(pubmedSourceStatus(0, 14)).toBe("ok");
+    expect(pubmedSourceStatus(1, 14)).toBe("degraded");
+    expect(pubmedSourceStatus(13, 14)).toBe("degraded");
+    expect(pubmedSourceStatus(14, 14)).toBe("error");
+    expect(pubmedSourceStatus(0, 0)).toBe("ok");
+    expect(pubmedSourceStatus(1, 0)).toBe("error");
+  });
+});
+
+describe("planWrites — версия классификатора (I-04)", () => {
+  it("проставляет текущую CLASSIFIER_VERSION и для вставок, и для обновлений", () => {
+    const a = raw({ pmid: "1" });
+    const cands = new Map<string, Candidate>([[dedupKeyFor(a), candidate(a, [1])]]);
+    const plan = planWrites(cands, new Map(), new Map(), new Map(), new Map(), 0);
+    expect(plan.toInsert[0]?.values.classifierVersion).toBe(CLASSIFIER_VERSION);
+
+    const plan2 = planWrites(cands, new Map(), new Map([[dedupKeyFor(a), { id: 5, topicIds: [], sourceKeys: [] }]]), new Map(), new Map(), 0);
+    expect(plan2.toUpdate[0]?.values.classifierVersion).toBe(CLASSIFIER_VERSION);
   });
 });

@@ -84,6 +84,8 @@ export const articles = pgTable(
     sampleSize: integer("sample_size"),
     isPreprint: boolean("is_preprint").notNull().default(false),
     isRetracted: boolean("is_retracted").notNull().default(false),
+    /** Версия эвристик классификатора, которой размечена запись (0 — до версионирования). */
+    classifierVersion: integer("classifier_version").notNull().default(0),
     topicIds: jsonb("topic_ids").$type<number[]>().notNull().default([]),
     isRead: boolean("is_read").notNull().default(false),
     isBookmarked: boolean("is_bookmarked").notNull().default(false),
@@ -101,6 +103,7 @@ export const articles = pgTable(
     index("articles_trust_idx").on(t.trustScore),
     index("articles_pmid_idx").on(t.pmid),
     index("articles_doi_idx").on(t.doi),
+    index("articles_classifier_version_idx").on(t.classifierVersion),
   ],
 );
 

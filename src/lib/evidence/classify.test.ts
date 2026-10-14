@@ -53,6 +53,30 @@ describe("detectDesign", () => {
     expect(detectDesign(base({ title: "Adherence to EPOS guidelines in clinical practice", publicationTypes: ["Guideline"] }))).toBe("cohort");
     expect(detectDesign(base({ title: "EPOS 2020: European Position Paper on Rhinosinusitis" }))).toBe("guideline");
   });
+
+  it("Cochrane reviews are systematic reviews even before PubMed assigns the publication type (audit F-06)", () => {
+    const cochrane = base({
+      title: "Antibiotics for acute otitis media in children",
+      journal: "The Cochrane database of systematic reviews",
+      publicationTypes: ["Journal Article", "Review"],
+    });
+    expect(detectDesign(cochrane)).toBe("systematic_review");
+    expect(detectDesign({ ...cochrane, journal: "Cochrane Database Syst Rev" })).toBe("systematic_review");
+    expect(classify(cochrane).evidenceLevel).toBe(1);
+    // Протоколы и отозванные (withdrawn) обзоры Cochrane — не систематические обзоры
+    expect(detectDesign({ ...cochrane, title: "Protocol for antibiotics for acute otitis media" })).toBe("other");
+    expect(detectDesign({ ...cochrane, title: "WITHDRAWN: Antibiotics for acute otitis media in children" })).not.toBe("systematic_review");
+  });
+
+  it("secondary / post-hoc analyses of RCTs are not RCTs (audit F-13)", () => {
+    expect(detectDesign(base({ title: "Secondary analysis of the XYZ randomized trial: hearing outcomes" }))).toBe("cohort");
+    expect(detectDesign(base({ title: "Post hoc analysis of a randomised controlled trial of dupilumab in CRSwNP" }))).toBe("cohort");
+    expect(detectDesign(base({ title: "Long-term follow-up of the TONSIL randomised trial" }))).toBe("cohort");
+    // Настоящее РКИ с явным типом публикации не понижается
+    expect(detectDesign(base({ title: "Subgroup analyses from a randomized trial", publicationTypes: ["Randomized Controlled Trial"] }))).toBe("rct");
+    expect(detectDesign(base({ title: "Intratympanic steroids: a randomized controlled trial" }))).toBe("rct");
+    expect(classify(base({ title: "Secondary analysis of the XYZ randomized trial" })).evidenceLevel).toBeGreaterThanOrEqual(3);
+  });
 });
 
 describe("evidenceLevel", () => {
@@ -86,10 +110,18 @@ describe("extractSampleSize", () => {
     expect(extractSampleSize("We included 75 patients with vestibular schwannoma")).toBe(75);
   });
 
-  it("ignores implausibly small samples and year-like numbers", () => {
+  it("ignores implausibly small samples and year-like numbers without explicit context", () => {
     expect(extractSampleSize("n=3 patients")).toBeNull();
-    expect(extractSampleSize("n = 2024")).toBeNull();
     expect(extractSampleSize("In 2023, 2024 subjects were analyzed")).toBeNull();
+    expect(extractSampleSize("From 2015 to 2019 patients were included")).toBeNull();
+    expect(extractSampleSize("Between January 2010 and December 2019 patients with CRS were included")).toBeNull();
+  });
+
+  it("explicit n= / enrolled context wins even for year-like numbers (audit F-33)", () => {
+    expect(extractSampleSize("n = 2024")).toBe(2024);
+    expect(extractSampleSize("We enrolled 2020 patients between 2015 and 2019")).toBe(2020);
+    expect(extractSampleSize("Overall, 2021 patients were analyzed")).toBe(2021);
+    expect(extractSampleSize("A total of 1,250 patients were included")).toBe(1250);
   });
 });
 
@@ -102,6 +134,19 @@ describe("detectSubspecialties", () => {
   it("detects otology from hearing terms", () => {
     const ss = detectSubspecialties(base({ title: "Sensorineural hearing loss in adults" }));
     expect(ss).toContain("otology");
+  });
+
+  it("does not confuse adenoid cystic carcinoma with paediatric adenoids, or allergen immunotherapy with oncology (audit F-12)", () => {
+    const acc = detectSubspecialties(base({ title: "Adenoid cystic carcinoma of the parotid gland: outcomes after surgery and radiotherapy" }));
+    expect(acc).toContain("head_neck_oncology");
+    expect(acc).not.toContain("pediatric");
+
+    const slit = detectSubspecialties(base({ title: "Sublingual immunotherapy for allergic rhinitis: a randomized trial", abstract: "Allergen immunotherapy reduced nasal symptoms." }));
+    expect(slit).toContain("rhinology");
+    expect(slit).not.toContain("head_neck_oncology");
+
+    expect(detectSubspecialties(base({ title: "Adenoidectomy for otitis media with effusion in children" }))).toContain("pediatric");
+    expect(detectSubspecialties(base({ title: "Pembrolizumab immunotherapy for recurrent head and neck squamous cell carcinoma" }))).toContain("head_neck_oncology");
   });
 
   it("is consistent across multiple calls without regex state leak", () => {
@@ -148,6 +193,20 @@ describe("classify trust scoring", () => {
     );
     expect(retracted.isRetracted).toBe(true);
     expect(retracted.trustScore).toBeLessThan(50);
+  });
+
+  it("does not award registration / multicentre bonuses for unrelated words (audit F-11)", () => {
+    const labels = (a: RawArticle) => classify(a).trustBreakdown.map((b) => b.label);
+    const nurses = base({ title: "Hearing screening by registered nurses", abstract: "x".repeat(200) + " Coding used the International Classification of Diseases." });
+    expect(labels(nurses).some((l) => l.startsWith("Регистрация протокола"))).toBe(false);
+    expect(labels(nurses).some((l) => l.startsWith("Многоцентровое"))).toBe(false);
+
+    const registered = base({ title: "Trial of X", abstract: "x".repeat(200) + " The trial was prospectively registered (NCT01234567) and conducted at 12 centers in 4 countries." });
+    expect(labels(registered).some((l) => l.startsWith("Регистрация протокола"))).toBe(true);
+    expect(labels(registered).some((l) => l.startsWith("Многоцентровое"))).toBe(true);
+
+    const prospero = base({ title: "Meta-analysis", abstract: "x".repeat(200) + " Registered with PROSPERO (CRD42024000001). Multicentre data." });
+    expect(labels(prospero).some((l) => l.startsWith("Регистрация протокола"))).toBe(true);
   });
 
   it("penalizes predatory journals", () => {

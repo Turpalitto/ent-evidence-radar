@@ -14,12 +14,18 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          // Согласовано с CSP frame-ancestors 'none' в proxy.ts: приложение нигде не встраивается во фреймы.
+          { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           // Игнорируется браузером на HTTP — безопасно и для сам-хостинга без TLS.
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
         ],
+      },
+      {
+        // Самостоятельно хостимые шрифты неизменяемы (версия — в имени файла при обновлении).
+        source: "/fonts/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
       {
         // API не индексируем и не кэшируем: ответы динамические и могут содержать персональные данные.

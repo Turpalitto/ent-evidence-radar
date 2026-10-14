@@ -2,13 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { listArticles, parseFilters } from "@/lib/queries";
 import { DESIGN_LABELS } from "@/lib/evidence/taxonomy";
 import { checkApiAuth } from "@/lib/security";
+import { csvRow } from "@/lib/export";
 
 export const dynamic = "force-dynamic";
-
-function csvEscape(v: unknown) {
-  const s = v === null || v === undefined ? "" : String(v);
-  return `"${s.replace(/"/g, '""')}"`;
-}
 
 export async function GET(req: NextRequest) {
   const auth = checkApiAuth(req);
@@ -53,10 +49,10 @@ export async function GET(req: NextRequest) {
   }
   const header = ["id", "title", "journal", "published", "design", "evidence_level", "trust_score", "subspecialties", "pmid", "doi", "nct", "sources", "url", "authors"];
   const rows = items.map((a) =>
-    [
+    csvRow([
       a.id, a.title, a.journal, a.publishedAt ? new Date(a.publishedAt).toISOString().slice(0, 10) : "", DESIGN_LABELS[a.studyDesign], a.evidenceLevel,
       a.trustScore, a.subspecialties.join("; "), a.pmid ?? "", a.doi ?? "", a.nctId ?? "", a.sourceKeys.join("; "), a.url, a.authors.join("; "),
-    ].map(csvEscape).join(","),
+    ]),
   );
   const csv = "\uFEFF" + [header.join(","), ...rows].join("\r\n");
   return new NextResponse(csv, {

@@ -1,13 +1,14 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail } from "@/db/schema";
-import { classify, dedupKeyFor, type RawArticle } from "@/lib/evidence/classify";
+import { CLASSIFIER_VERSION, classify, dedupKeyFor, type RawArticle } from "@/lib/evidence/classify";
 import { DEFAULT_SETTINGS, DEFAULT_SOURCES, DEFAULT_TOPICS, type AppSettings } from "@/lib/defaults";
 import { fetchPubmed } from "@/lib/sources/pubmed";
 import { fetchEuropePmc } from "@/lib/sources/europepmc";
 import { fetchClinicalTrials } from "@/lib/sources/clinicaltrials";
 import { fetchMedrxiv } from "@/lib/sources/medrxiv";
 import { recheckRetractions } from "@/lib/retraction";
+import { isReclassifyRunning, reclassifyArticles } from "@/lib/reclassify";
 import { invalidateStatsCache } from "@/lib/stats";
 
 const g = globalThis as typeof globalThis & {
@@ -22,6 +23,10 @@ export function isRefreshRunning() {
 // ---- Кросс-инстансная блокировка запуска (через settings; без новой миграции).
 // Позволяет нескольким процессам (self-host + cron) не запускать рефреш одновременно.
 const LOCK_KEY = "lock_refresh";
+/** Сколько устаревших записей переразмечать за один запуск refresh (ограничивает время запуска). */
+const RECLASSIFY_PER_RUN = 2000;
+/** Служебные шаги запуска, попадающие в details наряду с источниками. */
+const SERVICE_STEPS = new Set(["retraction-recheck", "reclassify"]);
 const LOCK_LEASE_MS = 6 * 60 * 1000;
 
 async function acquireLock(holder: string): Promise<boolean> {
@@ -90,6 +95,19 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<AppSett
 export interface Candidate {
   raw: RawArticle;
   topicIds: Set<number>;
+}
+
+/** Статус источника после опроса: ok — без ошибок, degraded — часть тем упала, error — все. */
+export type SourceStatus = "ok" | "degraded" | "error";
+
+/**
+ * Чистая функция: статус PubMed по числу упавших тем (аудит F-18). Раньше источник
+ * считался «ok», пока жива хотя бы одна тема, — 13 упавших тем из 14 не были видны в /api/status.
+ */
+export function pubmedSourceStatus(failedTopics: number, totalTopics: number): SourceStatus {
+  if (failedTopics <= 0) return "ok";
+  if (totalTopics > 0 && failedTopics < totalTopics) return "degraded";
+  return "error";
 }
 
 export function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
@@ -174,6 +192,7 @@ export function planWrites(
       sampleSize: c.sampleSize,
       isPreprint: c.isPreprint,
       isRetracted: c.isRetracted,
+      classifierVersion: CLASSIFIER_VERSION,
       topicIds: Array.from(cand.topicIds),
       updatedAt: new Date(),
     };
@@ -240,10 +259,10 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
   const enabledSources = new Set((await db.select().from(sources).where(eq(sources.enabled, true))).map((s) => s.key));
   const enabledTopics = await db.select().from(topics).where(eq(topics.enabled, true));
 
-  const markSource = async (key: string, ok: boolean, err?: string) => {
+  const markSource = async (key: string, status: SourceStatus, err?: string) => {
     await db
       .update(sources)
-      .set({ lastFetchedAt: new Date(), lastStatus: ok ? "ok" : "error", lastError: err ?? null })
+      .set({ lastFetchedAt: new Date(), lastStatus: status, lastError: err ?? null })
       .where(eq(sources.key, key));
   };
 
@@ -263,7 +282,12 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
       }
     }
     details.push({ source: "pubmed", found, added: 0, updated: 0, durationMs: Date.now() - t0, error: errors.length ? errors.join(" | ") : undefined });
-    await markSource("pubmed", errors.length < enabledTopics.length, errors.length ? errors.join(" | ").slice(0, 1000) : undefined);
+    const status = pubmedSourceStatus(errors.length, enabledTopics.length);
+    await markSource(
+      "pubmed",
+      status,
+      errors.length ? `${status === "degraded" ? `Ошибка в ${errors.length} из ${enabledTopics.length} тем: ` : ""}${errors.join(" | ")}`.slice(0, 1000) : undefined,
+    );
   }
 
   // ---- Остальные источники параллельно
@@ -277,11 +301,11 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
           const items = await fn();
           for (const it of items) addCandidate(it);
           details.push({ source: key, found: items.length, added: 0, updated: 0, durationMs: Date.now() - t0 });
-          await markSource(key, true);
+          await markSource(key, "ok");
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           details.push({ source: key, found: 0, added: 0, updated: 0, durationMs: Date.now() - t0, error: msg });
-          await markSource(key, false, msg);
+          await markSource(key, "error", msg);
         }
       })(),
     );
@@ -360,8 +384,24 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
     });
   }
 
+  // ---- Догоняющая переклассификация: записи, размеченные старой версией эвристик
+  // (см. CLASSIFIER_VERSION), переразмечаются порциями в конце каждого запуска, чтобы
+  // правки классификатора применялись ко всей базе, а не только к новым статьям.
+  if (!isReclassifyRunning()) {
+    const tReclass = Date.now();
+    try {
+      const r = await reclassifyArticles({ limit: RECLASSIFY_PER_RUN });
+      if (r.scanned > 0) {
+        // found = просмотрено, added = у скольких изменилась оценка (trust score).
+        details.push({ source: "reclassify", found: r.scanned, added: r.changed.trustScore, updated: r.updated, durationMs: Date.now() - tReclass });
+      }
+    } catch (e) {
+      details.push({ source: "reclassify", found: 0, added: 0, updated: 0, durationMs: Date.now() - tReclass, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   for (const d of details) {
-    if (d.source === "retraction-recheck") continue; // added уже проставлен перепроверкой
+    if (SERVICE_STEPS.has(d.source)) continue; // added/updated уже проставлены самим шагом
     d.added = addedBySource[d.source] ?? 0;
     d.updated = updatedBySource[d.source] ?? 0;
   }
@@ -372,7 +412,9 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
     .set({
       status,
       finishedAt: new Date(),
-      totalFound: details.reduce((s, d) => s + d.found, 0),
+      // «Найдено» считаем только по реальным источникам: служебные шаги (перепроверка
+      // отзывов, переклассификация) используют found как «проверено/просмотрено».
+      totalFound: details.filter((d) => !SERVICE_STEPS.has(d.source)).reduce((s, d) => s + d.found, 0),
       newAdded,
       updated,
       details,

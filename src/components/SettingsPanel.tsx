@@ -126,7 +126,7 @@ export function SettingsPanel() {
                 <span className="block text-sm font-medium text-[color:var(--ink)]">{SOURCE_LABELS[s.key] ?? s.name}</span>
                 <span className="block text-xs text-[color:var(--ink-muted)]">{s.description}</span>
                 <span className="block text-[11px] text-[color:var(--ink-subtle)]">
-                  Последний опрос: {formatDateTime(s.lastFetchedAt)} {s.lastStatus === "error" ? <span className="text-rose-600 dark:text-rose-400">· ошибка</span> : s.lastStatus === "ok" ? <span className="text-emerald-600 dark:text-emerald-400">· ок</span> : ""}
+                  Последний опрос: {formatDateTime(s.lastFetchedAt)} {s.lastStatus === "error" ? <span className="text-rose-600 dark:text-rose-400">· ошибка</span> : s.lastStatus === "degraded" ? <span className="text-amber-600 dark:text-amber-400" title={s.lastError ?? undefined}>· частично</span> : s.lastStatus === "ok" ? <span className="text-emerald-600 dark:text-emerald-400">· ок</span> : ""}
                 </span>
               </span>
             </label>
