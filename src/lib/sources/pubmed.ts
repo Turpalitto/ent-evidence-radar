@@ -43,6 +43,27 @@ export async function pubmedSearch(query: string, days: number, maxResults: numb
 
 type AnyObj = Record<string, unknown>;
 
+/**
+ * Парсер PubMed XML.
+ *
+ * `stopNodes` критичны: ArticleTitle/AbstractText содержат смешанный контент
+ * (<i>Staphylococcus aureus</i>, 10<sup>6</sup>, <b>…</b>). Без stopNodes fast-xml-parser
+ * раскладывает такой узел на отдельные ключи, и склейка текста переставляет фрагменты
+ * («Role ofbiofilm… Staphylococcus aureus systematic»). Со stopNodes узел приходит
+ * сырым inner-XML, который корректно чистит stripTags().
+ *
+ * `parseTagValue: false` — чтобы PMID/год/идентификаторы оставались строками.
+ */
+export function createPubmedParser(): XMLParser {
+  return new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: "@_",
+    textNodeName: "#text",
+    parseTagValue: false,
+    stopNodes: ["*.ArticleTitle", "*.VernacularTitle", "*.AbstractText", "*.CopyrightInformation", "*.Keyword", "*.CollectiveName"],
+  });
+}
+
 function textOf(node: unknown): string {
   if (node === undefined || node === null) return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -78,11 +99,101 @@ function parseDate(article: AnyObj): Date | null {
   return null;
 }
 
+/**
+ * Чистый разбор ответа efetch (PubmedArticleSet) в RawArticle[] — без сети, покрыт тестами
+ * на реальных фрагментах XML (см. pubmed.test.ts). Некорректные записи пропускаются.
+ */
+export function parsePubmedArticlesXml(xml: string): RawArticle[] {
+  const out: RawArticle[] = [];
+  const doc = createPubmedParser().parse(xml) as AnyObj;
+  const set = (doc.PubmedArticleSet as AnyObj) ?? {};
+  const items = toArray(set.PubmedArticle as AnyObj | AnyObj[]);
+
+  for (const item of items) {
+    try {
+      const citation = item.MedlineCitation as AnyObj;
+      const article = citation.Article as AnyObj;
+      const pmid = textOf((citation.PMID as AnyObj)?.["#text"] ?? citation.PMID).trim();
+      const title = stripTags(textOf(article.ArticleTitle));
+      if (!title) continue;
+
+      const abstractNodes = toArray(((article.Abstract as AnyObj)?.AbstractText as unknown) as AnyObj | AnyObj[] | string);
+      const abstract = abstractNodes
+        .map((n) => {
+          // Со stopNodes узел — либо сырая строка, либо { "#text": raw, "@_Label": … }.
+          const label = typeof n === "object" && n !== null ? (n as AnyObj)["@_Label"] : undefined;
+          const t = stripTags(textOf(n));
+          return label ? `${label}: ${t}` : t;
+        })
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+
+      const journal = stripTags(textOf((article.Journal as AnyObj)?.Title));
+      const authors = toArray(((article.AuthorList as AnyObj)?.Author as unknown) as AnyObj | AnyObj[])
+        .map((a) => {
+          const last = textOf(a.LastName);
+          const ini = textOf(a.Initials);
+          const coll = textOf(a.CollectiveName);
+          return coll || `${last} ${ini}`.trim();
+        })
+        .filter(Boolean);
+
+      const pubTypes = toArray(((article.PublicationTypeList as AnyObj)?.PublicationType as unknown) as AnyObj | AnyObj[] | string).map((t) =>
+        stripTags(textOf(t)),
+      );
+      const mesh = toArray(((citation.MeshHeadingList as AnyObj)?.MeshHeading as unknown) as AnyObj | AnyObj[]).map((m) =>
+        stripTags(textOf((m as AnyObj).DescriptorName)),
+      );
+      const keywords = toArray(((citation.KeywordList as AnyObj)?.Keyword as unknown) as AnyObj | AnyObj[] | string).map((k) =>
+        stripTags(textOf(k)),
+      );
+      const lang = textOf(toArray(article.Language as string | string[])[0]) || null;
+
+      let doi: string | null = null;
+      let pmcid: string | null = null;
+      const ids = toArray((((item.PubmedData as AnyObj)?.ArticleIdList as AnyObj)?.ArticleId as unknown) as AnyObj | AnyObj[]);
+      for (const id of ids) {
+        const type = String((id as AnyObj)["@_IdType"] ?? "");
+        const val = textOf(id).trim();
+        if (type === "doi") doi = val;
+        if (type === "pmc") pmcid = val;
+      }
+      const eloc = toArray((article.ELocationID as unknown) as AnyObj | AnyObj[]);
+      for (const e of eloc) if (String((e as AnyObj)["@_EIdType"]) === "doi" && !doi) doi = textOf(e).trim();
+
+      const nct = `${abstract}`.match(/NCT\d{8}/)?.[0] ?? null;
+      const isRetracted = pubTypes.some((t) => /retracted publication/i.test(t)) || /^retracted/i.test(title);
+
+      out.push({
+        pmid,
+        doi,
+        pmcid,
+        nctId: nct,
+        title,
+        abstract,
+        journal,
+        authors,
+        publishedAt: parseDate(article),
+        publicationTypes: pubTypes,
+        meshTerms: mesh,
+        keywords,
+        language: lang,
+        sourceKey: "pubmed",
+        url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
+        isRetracted,
+      });
+    } catch {
+      // пропускаем некорректную запись
+    }
+  }
+  return out;
+}
+
 export async function pubmedFetch(pmids: string[]): Promise<RawArticle[]> {
   if (!pmids.length) return [];
   const { key, throttleMs, email, tool } = ncbiParams();
   const out: RawArticle[] = [];
-  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", textNodeName: "#text" });
 
   // efetch принимает до 200 id за запрос — вдвое меньше раундов, чем при батче 100.
   for (let i = 0; i < pmids.length; i += 200) {
@@ -90,87 +201,7 @@ export async function pubmedFetch(pmids: string[]): Promise<RawArticle[]> {
     const p = new URLSearchParams({ db: "pubmed", id: chunk.join(","), retmode: "xml", tool, email });
     if (key) p.set("api_key", key);
     const xml = await fetchText(`${BASE}/efetch.fcgi?${p}`, { throttleKey: "ncbi", throttleMs, timeoutMs: 40_000 });
-    const doc = parser.parse(xml) as AnyObj;
-    const set = (doc.PubmedArticleSet as AnyObj) ?? {};
-    const items = toArray(set.PubmedArticle as AnyObj | AnyObj[]);
-
-    for (const item of items) {
-      try {
-        const citation = item.MedlineCitation as AnyObj;
-        const article = citation.Article as AnyObj;
-        const pmid = textOf((citation.PMID as AnyObj)?.["#text"] ?? citation.PMID).trim();
-        const title = stripTags(textOf(article.ArticleTitle));
-        if (!title) continue;
-
-        const abstractNodes = toArray(((article.Abstract as AnyObj)?.AbstractText as unknown) as AnyObj | AnyObj[] | string);
-        const abstract = abstractNodes
-          .map((n) => {
-            if (typeof n === "string") return n;
-            const label = (n as AnyObj)["@_Label"];
-            const t = stripTags(textOf(n));
-            return label ? `${label}: ${t}` : t;
-          })
-          .join("\n")
-          .trim();
-
-        const journal = stripTags(textOf((article.Journal as AnyObj)?.Title));
-        const authors = toArray(((article.AuthorList as AnyObj)?.Author as unknown) as AnyObj | AnyObj[])
-          .map((a) => {
-            const last = textOf(a.LastName);
-            const ini = textOf(a.Initials);
-            const coll = textOf(a.CollectiveName);
-            return coll || `${last} ${ini}`.trim();
-          })
-          .filter(Boolean);
-
-        const pubTypes = toArray(((article.PublicationTypeList as AnyObj)?.PublicationType as unknown) as AnyObj | AnyObj[] | string).map((t) =>
-          stripTags(textOf(t)),
-        );
-        const mesh = toArray(((citation.MeshHeadingList as AnyObj)?.MeshHeading as unknown) as AnyObj | AnyObj[]).map((m) =>
-          stripTags(textOf((m as AnyObj).DescriptorName)),
-        );
-        const keywords = toArray(((citation.KeywordList as AnyObj)?.Keyword as unknown) as AnyObj | AnyObj[] | string).map((k) =>
-          stripTags(textOf(k)),
-        );
-        const lang = textOf(toArray(article.Language as string | string[])[0]) || null;
-
-        let doi: string | null = null;
-        let pmcid: string | null = null;
-        const ids = toArray((((item.PubmedData as AnyObj)?.ArticleIdList as AnyObj)?.ArticleId as unknown) as AnyObj | AnyObj[]);
-        for (const id of ids) {
-          const type = String((id as AnyObj)["@_IdType"] ?? "");
-          const val = textOf(id).trim();
-          if (type === "doi") doi = val;
-          if (type === "pmc") pmcid = val;
-        }
-        const eloc = toArray((article.ELocationID as unknown) as AnyObj | AnyObj[]);
-        for (const e of eloc) if (String((e as AnyObj)["@_EIdType"]) === "doi" && !doi) doi = textOf(e).trim();
-
-        const nct = `${abstract}`.match(/NCT\d{8}/)?.[0] ?? null;
-        const isRetracted = pubTypes.some((t) => /retracted publication/i.test(t)) || /^retracted/i.test(title);
-
-        out.push({
-          pmid,
-          doi,
-          pmcid,
-          nctId: nct,
-          title,
-          abstract,
-          journal,
-          authors,
-          publishedAt: parseDate(article),
-          publicationTypes: pubTypes,
-          meshTerms: mesh,
-          keywords,
-          language: lang,
-          sourceKey: "pubmed",
-          url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
-          isRetracted,
-        });
-      } catch {
-        // пропускаем некорректную запись
-      }
-    }
+    out.push(...parsePubmedArticlesXml(xml));
   }
   return out;
 }
@@ -185,31 +216,36 @@ export async function fetchPubmed(query: string, days: number, maxResults: numbe
  * PubMed проставляет отзыв задним числом — статья, сохранённая ранее, осталась бы «не отозванной».
  * Возвращает map: pmid -> отозвана ли. Отсутствующие в ответе PMID в map не попадают.
  */
+export function parsePubmedRetractionsXml(xml: string): Map<string, boolean> {
+  const out = new Map<string, boolean>();
+  const doc = createPubmedParser().parse(xml) as AnyObj;
+  const set = (doc.PubmedArticleSet as AnyObj) ?? {};
+  const items = toArray(set.PubmedArticle as AnyObj | AnyObj[]);
+
+  for (const item of items) {
+    const citation = item.MedlineCitation as AnyObj | undefined;
+    if (!citation) continue;
+    const pmid = textOf((citation.PMID as AnyObj)?.["#text"] ?? citation.PMID).trim();
+    if (!pmid) continue;
+    const article = citation.Article as AnyObj | undefined;
+    const pubTypes = toArray(((article?.PublicationTypeList as AnyObj)?.PublicationType as unknown) as AnyObj | AnyObj[]).map((t) =>
+      stripTags(textOf(t)),
+    );
+    out.set(pmid, pubTypes.some((t) => /retracted publication/i.test(t)));
+  }
+  return out;
+}
+
 export async function pubmedRetractionMap(pmids: string[]): Promise<Map<string, boolean>> {
   const out = new Map<string, boolean>();
   const { key, throttleMs, email, tool } = ncbiParams();
-  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", textNodeName: "#text" });
 
   for (let i = 0; i < pmids.length; i += 200) {
     const chunk = pmids.slice(i, i + 200);
     const p = new URLSearchParams({ db: "pubmed", id: chunk.join(","), retmode: "xml", tool, email });
     if (key) p.set("api_key", key);
     const xml = await fetchText(`${BASE}/efetch.fcgi?${p}`, { throttleKey: "ncbi", throttleMs, timeoutMs: 40_000 });
-    const doc = parser.parse(xml) as AnyObj;
-    const set = (doc.PubmedArticleSet as AnyObj) ?? {};
-    const items = toArray(set.PubmedArticle as AnyObj | AnyObj[]);
-
-    for (const item of items) {
-      const citation = item.MedlineCitation as AnyObj | undefined;
-      if (!citation) continue;
-      const pmid = textOf((citation.PMID as AnyObj)?.["#text"] ?? citation.PMID).trim();
-      if (!pmid) continue;
-      const article = citation.Article as AnyObj | undefined;
-      const pubTypes = toArray(((article?.PublicationTypeList as AnyObj)?.PublicationType as unknown) as AnyObj | AnyObj[]).map((t) =>
-        stripTags(textOf(t)),
-      );
-      out.set(pmid, pubTypes.some((t) => /retracted publication/i.test(t)));
-    }
+    for (const [pmid, retracted] of parsePubmedRetractionsXml(xml)) out.set(pmid, retracted);
   }
   return out;
 }

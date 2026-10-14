@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useSyncExternalStore } from "react";
 import { RefreshButton } from "./RefreshButton";
+import { AuthStatus } from "./AuthStatus";
 
 const navLinks = [
   {
@@ -147,6 +148,7 @@ export function AppNav() {
           <div className="ml-auto flex items-center gap-2">
             {/* ThemeToggle только на десктопе — на мобиле он в нижнем баре */}
             <span className="hidden md:block"><ThemeToggle /></span>
+            <AuthStatus />
             <RefreshButton />
           </div>
         </div>

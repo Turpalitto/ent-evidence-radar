@@ -17,6 +17,7 @@ build/
 
 # embedded postgres (PGlite)
 .pglite/
+.pglite.broken-*/
 *.pglite
 
 # drizzle

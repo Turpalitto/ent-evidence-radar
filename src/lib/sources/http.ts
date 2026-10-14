@@ -63,13 +63,38 @@ export function toArray<T>(v: T | T[] | undefined | null): T[] {
   return Array.isArray(v) ? v : [v];
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00a0",
+};
+
+/**
+ * Декодирует XML/HTML-сущности: именованные (&amp; &lt; &gt; &quot; &apos; &nbsp;)
+ * и числовые (&#8805; &#x2264;). Один проход — двойное кодирование (`&amp;lt;`)
+ * даёт `&lt;` как текст, а не тег.
+ */
+export function decodeEntities(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, ent: string) => {
+    if (ent[0] === "#") {
+      const code = ent[1]?.toLowerCase() === "x" ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
+      if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return match;
+      return String.fromCodePoint(code);
+    }
+    return NAMED_ENTITIES[ent.toLowerCase()] ?? match;
+  });
+}
+
+/**
+ * Снимает inline-разметку (<i>, <b>, <sup>, <sub>, <mml:…>) и декодирует сущности.
+ * Порядок важен: сначала теги, потом сущности — тогда `&lt;img&gt;` остаётся текстом.
+ */
 export function stripTags(s: string | undefined | null): string {
   if (!s) return "";
-  return String(s)
-    .replace(/<[^>]+>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
+  return decodeEntities(String(s).replace(/<[^>]+>/g, ""))
     .replace(/\s+/g, " ")
     .trim();
 }

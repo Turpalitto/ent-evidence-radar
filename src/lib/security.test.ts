@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { checkRateLimit, checkApiAuth, getClientIp } from "@/lib/security";
+import { SESSION_COOKIE, createSessionToken, verifySessionToken } from "@/lib/session";
 
 describe("checkRateLimit", () => {
   it("allows requests within limit", () => {
@@ -32,16 +33,18 @@ describe("checkRateLimit", () => {
 describe("checkApiAuth", () => {
   const SECRET = "test-secret-123";
 
-  function req(headers: Record<string, string>) {
-    return { headers: { get: (n: string) => headers[n.toLowerCase()] ?? null } };
+  function req(headers: Record<string, string>, method = "POST") {
+    return { method, headers: { get: (n: string) => headers[n.toLowerCase()] ?? null } };
   }
 
   beforeEach(() => {
     process.env.API_SECRET = SECRET;
+    delete process.env.SESSION_SECRET;
   });
 
   afterEach(() => {
     delete process.env.API_SECRET;
+    delete process.env.SESSION_SECRET;
   });
 
   it("open access when API_SECRET is not set", () => {
@@ -61,30 +64,73 @@ describe("checkApiAuth", () => {
     expect(r.status).toBe(401);
   });
 
-  it("accepts same-origin browser request (exact host match)", () => {
-    expect(checkApiAuth(req({ origin: "https://app.example.com", host: "app.example.com" })).ok).toBe(true);
-  });
-
-  it("accepts same-origin via sec-fetch-site even without Origin", () => {
-    expect(checkApiAuth(req({ "sec-fetch-site": "same-origin", host: "app.example.com" })).ok).toBe(true);
-  });
-
-  it("REJECTS spoofed origin that merely contains the host (bypass fix)", () => {
-    const r = checkApiAuth(req({ origin: "https://evil.example/app.example.com", host: "app.example.com" }));
+  // Главный регрессионный тест аудита (F-01): заголовки, которые любой HTTP-клиент
+  // выставляет произвольно, НЕ являются аутентификацией.
+  it("REJECTS spoofed Sec-Fetch-Site: same-origin without token or session", () => {
+    const r = checkApiAuth(req({ "sec-fetch-site": "same-origin", host: "app.example.com" }));
     expect(r.ok).toBe(false);
     expect(r.status).toBe(401);
   });
 
-  it("rejects cross-origin and malformed origin", () => {
-    expect(checkApiAuth(req({ origin: "https://other.example", host: "app.example.com" })).ok).toBe(false);
-    expect(checkApiAuth(req({ origin: "not-a-url", host: "app.example.com" })).ok).toBe(false);
-    expect(checkApiAuth(req({ origin: "https://app.example.com", host: "other.example" })).ok).toBe(false);
+  it("REJECTS spoofed Origin equal to Host without token or session", () => {
+    const r = checkApiAuth(req({ origin: "https://app.example.com", host: "app.example.com" }));
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe(401);
   });
 
-  it("rejects when neither token nor origin present", () => {
+  it("rejects when neither token nor session present", () => {
     const r = checkApiAuth(req({ host: "app.example.com" }));
     expect(r.ok).toBe(false);
     expect(r.status).toBe(401);
+  });
+
+  describe("session cookie", () => {
+    const cookie = () => `${SESSION_COOKIE}=${createSessionToken()}`;
+
+    it("accepts a valid session cookie on a same-origin mutating request", () => {
+      expect(checkApiAuth(req({ cookie: cookie(), "sec-fetch-site": "same-origin", host: "app.example.com" })).ok).toBe(true);
+      expect(checkApiAuth(req({ cookie: cookie(), origin: "https://app.example.com", host: "app.example.com" })).ok).toBe(true);
+    });
+
+    it("accepts a valid session cookie on GET without origin headers (downloads/navigation)", () => {
+      expect(checkApiAuth(req({ cookie: cookie(), host: "app.example.com" }, "GET")).ok).toBe(true);
+    });
+
+    it("REJECTS a mutating request with a valid cookie but cross-site origin (CSRF)", () => {
+      const r1 = checkApiAuth(req({ cookie: cookie(), "sec-fetch-site": "cross-site", origin: "https://evil.example", host: "app.example.com" }));
+      expect(r1.ok).toBe(false);
+      expect(r1.status).toBe(403);
+      const r2 = checkApiAuth(req({ cookie: cookie(), origin: "https://evil.example/app.example.com", host: "app.example.com" }));
+      expect(r2.ok).toBe(false);
+      const r3 = checkApiAuth(req({ cookie: cookie(), host: "app.example.com" }));
+      expect(r3.ok).toBe(false);
+    });
+
+    it("rejects forged, tampered and expired tokens", () => {
+      const forged = `${SESSION_COOKIE}=v1.9999999999.abc.notasignature`;
+      expect(checkApiAuth(req({ cookie: forged, "sec-fetch-site": "same-origin", host: "a" })).ok).toBe(false);
+
+      const valid = createSessionToken()!;
+      const tampered = valid.replace(/^v1\.(\d+)/, (_m, exp: string) => `v1.${Number(exp) + 100000}`);
+      expect(verifySessionToken(tampered)).toBe(false);
+
+      const expired = createSessionToken(Date.now() - 400 * 24 * 3600 * 1000, 60)!;
+      expect(verifySessionToken(expired)).toBe(false);
+      expect(verifySessionToken("")).toBe(false);
+      expect(verifySessionToken("v1.1.2")).toBe(false);
+    });
+
+    it("invalidates sessions when the secret changes", () => {
+      const token = createSessionToken()!;
+      expect(verifySessionToken(token)).toBe(true);
+      process.env.API_SECRET = "another-secret";
+      expect(verifySessionToken(token)).toBe(false);
+    });
+
+    it("cannot create a session when no secret is configured", () => {
+      delete process.env.API_SECRET;
+      expect(createSessionToken()).toBeNull();
+    });
   });
 });
 

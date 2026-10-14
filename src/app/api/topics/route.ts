@@ -3,6 +3,7 @@ import { asc } from "drizzle-orm";
 import { db } from "@/db";
 import { topics } from "@/db/schema";
 import { ensureSeeded } from "@/lib/refresh";
+import { apiError, isSubspecialtyKey, normalizeTopicLookback, readJsonObject, TOPIC_LIMITS } from "@/lib/api";
 import { checkApiAuth } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -15,15 +16,22 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const auth = checkApiAuth(req);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status ?? 401 });
-  }
+  if (!auth.ok) return apiError(auth.status ?? 401, auth.error ?? "unauthorized");
 
-  const body = (await req.json()) as { name?: string; query?: string; subspecialty?: string; lookbackDays?: number | null };
-  if (!body.name?.trim() || !body.query?.trim()) return NextResponse.json({ error: "name и query обязательны" }, { status: 400 });
+  const body = await readJsonObject<{ name?: unknown; query?: unknown; subspecialty?: unknown; lookbackDays?: unknown }>(req);
+  if (!body) return apiError(400, "Ожидается JSON-объект");
+
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const query = typeof body.query === "string" ? body.query.trim() : "";
+  if (!name || !query) return apiError(400, "name и query обязательны");
+  if (name.length > TOPIC_LIMITS.name) return apiError(400, `Название темы длиннее ${TOPIC_LIMITS.name} символов`);
+  if (query.length > TOPIC_LIMITS.query) return apiError(400, `Поисковый запрос длиннее ${TOPIC_LIMITS.query} символов`);
+  const subspecialty = body.subspecialty === undefined ? "general" : body.subspecialty;
+  if (!isSubspecialtyKey(subspecialty)) return apiError(400, "Неизвестная субспециальность");
+
   const [row] = await db
     .insert(topics)
-    .values({ name: body.name.trim(), query: body.query.trim(), subspecialty: body.subspecialty ?? "general", lookbackDays: typeof body.lookbackDays === "number" && body.lookbackDays > 0 ? Math.min(730, Math.round(body.lookbackDays)) : null })
+    .values({ name, query, subspecialty, lookbackDays: normalizeTopicLookback(body.lookbackDays) })
     .returning();
   return NextResponse.json(row, { status: 201 });
 }

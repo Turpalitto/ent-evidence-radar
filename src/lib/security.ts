@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { hasValidSession } from "./session";
 
 interface RateLimitEntry {
   count: number;
@@ -201,11 +202,33 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Проверяет авторизацию запроса.
- * Если API_SECRET не задан — разрешает доступ (для простоты локальной разработки).
- * Если API_SECRET задан — требует Bearer токен или заголовок X-API-Key, либо same-origin браузерный запрос.
+ * Признак «браузерный запрос с нашей же страницы» (anti-CSRF).
+ *
+ * ВАЖНО: это НЕ аутентификация. Заголовки Sec-Fetch-Site/Origin любой не-браузерный
+ * клиент выставляет произвольно, поэтому сами по себе они ничего не удостоверяют.
+ * Мы используем их только как дополнительный барьер для запросов, которые уже
+ * удостоверены сессионной cookie: браузер проставляет их сам и не даст чужому сайту
+ * отправить запрос «от имени» залогиненного пользователя.
  */
-export function checkApiAuth(req: { headers: HeadersLike }): { ok: boolean; status?: number; error?: string } {
+export function isSameOriginRequest(headers: HeadersLike): boolean {
+  if (headers.get("sec-fetch-site") === "same-origin") return true;
+  return isSameOrigin(headers);
+}
+
+export const AUTH_REQUIRED_MESSAGE = "Требуется авторизация: войдите через /login или передайте API_SECRET (Bearer / X-API-Key)";
+
+/**
+ * Проверяет авторизацию запроса.
+ *
+ * - API_SECRET не задан — доступ открыт (локальная разработка / доверенная сеть).
+ * - API_SECRET задан — принимаются:
+ *   1) Bearer-токен или заголовок X-API-Key, равный секрету (внешний cron, скрипты);
+ *   2) действующая сессионная cookie (вход через /login). Для изменяющих методов
+ *      дополнительно требуется same-origin (anti-CSRF), для GET/HEAD — нет.
+ *
+ * Подделанные Sec-Fetch-Site/Origin БЕЗ cookie и БЕЗ токена отклоняются (401).
+ */
+export function checkApiAuth(req: { headers: HeadersLike; method?: string }): { ok: boolean; status?: number; error?: string } {
   const secret = process.env.API_SECRET;
   if (!secret) return { ok: true };
 
@@ -214,11 +237,12 @@ export function checkApiAuth(req: { headers: HeadersLike }): { ok: boolean; stat
 
   if (token && safeEqual(token, secret)) return { ok: true };
 
-  // Разрешаем запросы из того же источника (браузерный интерфейс приложения)
-  const secFetchSite = req.headers.get("sec-fetch-site");
-  if (secFetchSite === "same-origin") return { ok: true };
+  if (hasValidSession(req.headers)) {
+    const method = (req.method ?? "GET").toUpperCase();
+    if (method === "GET" || method === "HEAD") return { ok: true };
+    if (isSameOriginRequest(req.headers)) return { ok: true };
+    return { ok: false, status: 403, error: "Запрос отклонён: источник запроса не совпадает с сайтом (защита от CSRF)" };
+  }
 
-  if (isSameOrigin(req.headers)) return { ok: true };
-
-  return { ok: false, status: 401, error: "Требуется авторизация (API_SECRET)" };
+  return { ok: false, status: 401, error: AUTH_REQUIRED_MESSAGE };
 }

@@ -93,10 +93,37 @@ async function initDb() {
 
   try {
     return await open();
-  } catch {
-    fs.rmSync(dataDir, { recursive: true, force: true });
+  } catch (e) {
+    // Раньше здесь был `fs.rmSync(dataDir)`: любая ошибка открытия или миграции
+    // (неудачная новая миграция, диск заполнен, несовместимый формат после обновления
+    // PGlite) молча уничтожала ВСЕ данные пользователя — закладки, заметки, темы.
+    // Теперь данные никогда не удаляются: по умолчанию падаем с понятной ошибкой,
+    // а при явном PGLITE_RESET_ON_FAILURE=1 откладываем каталог в сторону и стартуем с нуля.
+    const reason = e instanceof Error ? e.message : String(e);
+    try {
+      await g.__entRadarPglite?.close();
+    } catch {}
     g.__entRadarPglite = undefined;
     g.__entRadarDb = undefined;
+
+    const hasData = fs.existsSync(dataDir) && fs.readdirSync(dataDir).length > 0;
+    const resetAllowed = /^(1|true|yes|on)$/i.test(process.env.PGLITE_RESET_ON_FAILURE ?? "");
+
+    if (!hasData || !resetAllowed) {
+      console.error(`[ent-radar] Не удалось открыть или мигрировать базу PGlite в ${dataDir}: ${reason}`);
+      throw new Error(
+        `Не удалось открыть базу PGlite (${dataDir}): ${reason}. ` +
+          "Данные НЕ тронуты. Проверьте свободное место и версию @electric-sql/pglite; " +
+          "чтобы начать с чистой базы, переименуйте каталог вручную или задайте PGLITE_RESET_ON_FAILURE=1 " +
+          "(повреждённый каталог будет перемещён в .pglite.broken-<дата>, а не удалён).",
+      );
+    }
+
+    const quarantine = `${dataDir}.broken-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    fs.renameSync(dataDir, quarantine);
+    console.error(
+      `[ent-radar] База PGlite не открылась (${reason}). Каталог перемещён в ${quarantine} (PGLITE_RESET_ON_FAILURE=1); создаю новую пустую базу.`,
+    );
     return await open();
   }
 }
