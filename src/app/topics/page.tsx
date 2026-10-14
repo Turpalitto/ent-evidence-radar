@@ -109,10 +109,13 @@ export default function TopicsPage() {
   const enabledCount = topics.filter((tp) => tp.enabled).length;
   // Структурные ошибки запроса (непарные скобки/кавычки, повисший оператор) — предупреждение, не блокировка:
   // PubMed вернул бы ошибку, и тема молча осталась бы пустой до следующего обновления.
-  const queryWarnings = useMemo(
-    () => lintPubmedQuery(form.query).map((k) => t(QUERY_LINT[k])).map((w) => w.charAt(0).toLowerCase() + w.slice(1)),
-    [form.query, t],
+  const describeLint = useCallback(
+    (query: string) => lintPubmedQuery(query).map((k) => t(QUERY_LINT[k])).map((w) => w.charAt(0).toLowerCase() + w.slice(1)),
+    [t],
   );
+  const queryWarnings = useMemo(() => describeLint(form.query), [form.query, describeLint]);
+  // То же для уже сохранённых тем: сломанный запрос (например, после правки в строке) виден сразу, а не через пустую тему.
+  const savedWarnings = useMemo(() => new Map(topics.map((tp) => [tp.id, describeLint(tp.query)])), [topics, describeLint]);
 
   return (
     <main className="mx-auto max-w-5xl space-y-6">
@@ -221,6 +224,11 @@ export default function TopicsPage() {
                     className="mt-1 w-full truncate rounded-lg border border-transparent bg-transparent px-2 py-1 font-mono text-sm text-[color:var(--ink-muted)] outline-none transition hover:border-[color:var(--hairline)] focus:border-[color:var(--brand-a)] focus:bg-[color:var(--surface-1)] focus:text-[color:var(--ink)]"
                     title={t("Кликните, чтобы изменить запрос (сохранение при потере фокуса)")}
                   />
+                  {(savedWarnings.get(tp.id)?.length ?? 0) > 0 && (
+                    <p className="mt-0.5 px-2 text-xs text-amber-700 dark:text-amber-400" role="status">
+                      {t("Проверьте запрос:")} {savedWarnings.get(tp.id)!.join("; ")}.
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={() => void remove(tp)}

@@ -122,6 +122,14 @@ describe("/topics (управление темами)", () => {
     await waitFor(() => expect(calls.filter((c) => c.init?.method === "PATCH")).toHaveLength(2));
     expect(JSON.parse(String(calls.at(-2)!.init?.body))).toEqual({ query: "otitis media AND child*" });
     await waitFor(() => expect(screen.getByRole("textbox", { name: "Поисковый запрос темы «Средний отит»" })).toHaveValue("otitis media AND child*"));
+    expect(within(rowOf("Средний отит")).queryByRole("status")).toBeNull();
+
+    // Сломанный запрос сохраняется (сервер принимает), но строка сразу получает подсказку.
+    const q2 = screen.getByRole("textbox", { name: "Поисковый запрос темы «Средний отит»" });
+    await user.clear(q2);
+    await user.type(q2, "(otitis media AND");
+    await user.tab();
+    await waitFor(() => expect(within(rowOf("Средний отит")).getByRole("status")).toHaveTextContent("Проверьте запрос: непарные круглые скобки; оператор AND/OR/NOT без операнда."));
   });
 
   it("удаление спрашивает подтверждение: отказ — без запроса, согласие — DELETE и тема исчезает", async () => {
