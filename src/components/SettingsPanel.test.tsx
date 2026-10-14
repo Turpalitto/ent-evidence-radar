@@ -133,6 +133,76 @@ describe("<SettingsPanel />", () => {
     expect(await screen.findByText("Диагностика недоступна: Требуется авторизация")).toBeInTheDocument();
   });
 
+  it("диагностика: зависшая блокировка и источники с ошибками показываются; «Снять блокировку» — подтверждение → POST → перезагрузка; отказ — без запроса", async () => {
+    const user = userEvent.setup();
+    let locked = true;
+    const posts: unknown[] = [];
+    setup({
+      extra: {
+        "GET /api/admin/diagnostics": () => ({
+          app: { version: "0.3.0", commit: "", node: "v22", uptimeSec: 400_000, pid: 1, startedAt: "2026-10-14T00:00:00Z", timezone: "UTC", now: "2026-10-14T00:00:10Z" },
+          db: { kind: "postgres", sizeBytes: null, counts: { articles: 10, hidden: 1, bookmarked: 2, withNotes: 1, overridden: 0, retracted: 1, pendingReclassify: 0, topics: 1, sources: 2, runs: 1, aiCache: 0 } },
+          lock: locked ? { holder: "pid-777@host", expiresAt: "2026-10-14T00:10:00Z", leaseSecLeft: 42 } : null,
+          refreshRunning: null,
+          scheduler: { started: true, alive: false, lastTickAt: "2026-10-13T00:00:00Z" },
+          retractionCursor: 15,
+          sources: [{ key: "pubmed", enabled: true, lastStatus: "error", lastError: "HTTP 429 Too Many Requests", lastFetchedAt: "2026-10-14T00:00:00Z" }, { key: "medrxiv", enabled: false, lastStatus: null, lastError: null, lastFetchedAt: null }],
+          lastRuns: [{ id: 7, status: "failed", trigger: "manual", startedAt: "2026-10-14T00:00:00Z", finishedAt: null, newAdded: 0, updated: 0, errorMessage: "aborted" }],
+          backups: { dir: "./backups", lastAt: "2026-10-13T00:00:00Z", files: 3 },
+          digest: { lastSentAt: "2026-10-12T06:00:00Z", lastDryRun: true, lastError: "SMTP down" },
+          ai: { calls: 5, budget: 200, inFlight: 1 },
+          metrics: { sinceIso: "2026-10-14T00:00:00Z", counters: { "http.requests{source=pubmed}": 3 }, timings: {} },
+          env: { API_SECRET: true },
+          settings: {},
+        }),
+        "POST /api/admin/diagnostics": (_u, init) => {
+          posts.push(JSON.parse(String(init?.body)));
+          locked = false;
+          return { ok: true, released: true };
+        },
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: /Показать диагностику/ }));
+    expect(await screen.findByText("pid-777@host, ещё 42 с")).toBeInTheDocument();
+    expect(screen.getByText("запущен, но молчит")).toBeInTheDocument();
+    expect(screen.getByText(/HTTP 429 Too Many Requests/)).toBeInTheDocument();
+    expect(screen.getByText(/^выкл · — ·/)).toBeInTheDocument();
+    expect(screen.getByText(/#7 manual/)).toBeInTheDocument();
+    expect(screen.getByText(/failed .* \+0\/~0 · aborted/)).toBeInTheDocument();
+    expect(screen.getByText(/\(dry-run\)/)).toBeInTheDocument();
+    expect(screen.getByText("5 / 200 вызовов, в полёте 1")).toBeInTheDocument();
+    expect(screen.getByText("10 (скрыто 1, закладок 2, с заметками 1, правок 0)")).toBeInTheDocument();
+    expect(screen.getByText("4 д 15 ч")).toBeInTheDocument(); // аптайм 400 000 с
+
+    const release = screen.getByRole("button", { name: "Снять блокировку" });
+    expect(release).toBeEnabled();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    await user.click(release);
+    expect(posts).toHaveLength(0);
+    confirm.mockReturnValueOnce(true);
+    await user.click(release);
+    await waitFor(() => expect(posts).toEqual([{ action: "release_lock" }]));
+    expect(await screen.findByText("Блокировка снята")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("свободна")).toBeInTheDocument()); // диагностика перезагружена
+    expect(screen.getByRole("button", { name: "Снять блокировку" })).toBeDisabled();
+    confirm.mockRestore();
+  });
+
+  it("диагностика: ошибка действия показывает текст сервера", async () => {
+    const user = userEvent.setup();
+    setup({
+      extra: {
+        "POST /api/admin/diagnostics": () => new Response(JSON.stringify({ ok: false, error: "Нужен администратор" }), { status: 403, headers: { "content-type": "application/json" } }),
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: /Показать диагностику/ }));
+    await screen.findByText(/abc1234/);
+    vi.spyOn(window, "confirm").mockReturnValueOnce(true);
+    await user.click(screen.getByRole("button", { name: "Сбросить курсор отзывов" }));
+    expect(await screen.findByText("Не выполнено: Нужен администратор")).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
+
   it("диагностика (A-12) загружается по кнопке и показывает коммит и движок БД", async () => {
     const user = userEvent.setup();
     setup();
