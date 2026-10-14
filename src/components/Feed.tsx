@@ -27,6 +27,7 @@ import { DESIGN_LABELS, DESIGN_SHORT, SOURCE_LABELS, SUBSPECIALTIES, EVIDENCE_LE
 import { extractConclusion } from "@/lib/evidence/abstract";
 import { DesignBadge, LevelBadge, SourceBadge, SubBadge, TierBadge, TrustScore, formatDate } from "./Badges";
 import { ArticleDrawer } from "./ArticleDrawer";
+import { Highlight } from "./Highlight";
 import { useFocusTrap } from "./useFocusTrap";
 
 interface Filters {
@@ -43,7 +44,9 @@ interface Filters {
   unread: boolean;
   topicId: string;
   excludePreprints: boolean;
-  sort: "date" | "trust" | "fetched";
+  sort: "date" | "trust" | "fetched" | "relevance";
+  /** Область поиска: везде или только заголовок. */
+  scope: "all" | "title";
 }
 
 const initial: Filters = {
@@ -61,6 +64,7 @@ const initial: Filters = {
   topicId: "",
   excludePreprints: false,
   sort: "date",
+  scope: "all",
 };
 
 const THIS_YEAR = new Date().getFullYear();
@@ -91,7 +95,9 @@ function toParams(f: Filters, page: number, pageSize: number) {
   if (f.unread) p.set("unread", "1");
   if (f.topicId) p.set("topicId", f.topicId);
   if (f.excludePreprints) p.set("excludePreprints", "1");
-  p.set("sort", f.sort);
+  // Без явного выбора сортировки поиск идёт по релевантности, лента — по дате (решает сервер).
+  if (!(f.sort === "date" && f.q)) p.set("sort", f.sort);
+  if (f.scope === "title" && f.q) p.set("scope", "title");
   p.set("page", String(page));
   p.set("pageSize", String(pageSize));
   return p;
@@ -129,7 +135,8 @@ function parseUrlSearch(): { f: Filters; page: number; q: string } {
     unread: p.get("unread") === "1",
     topicId: p.get("topicId") ?? "",
     excludePreprints: p.get("excludePreprints") === "1",
-    sort: sort === "trust" || sort === "date" || sort === "fetched" ? sort : initial.sort,
+    sort: sort === "trust" || sort === "date" || sort === "fetched" || sort === "relevance" ? sort : initial.sort,
+    scope: p.get("scope") === "title" ? "title" : "all",
   };
   const page = Math.max(1, Math.round(num("page")) || 1);
   return { f, page, q: f.q };
@@ -144,7 +151,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 30;
-  const [data, setData] = useState<{ items: Article[]; total: number }>({ items: [], total: 0 });
+  const [data, setData] = useState<{ items: Article[]; total: number; searchTerms: string[] }>({ items: [], total: 0, searchTerms: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Article | null>(null);
@@ -237,10 +244,10 @@ export function Feed({ topics }: { topics: Topic[] }) {
     try {
       const r = await fetch(`/api/articles?${toParams(f, page, pageSize)}`, { cache: "no-store", signal: ctrl.signal });
       if (!r.ok) throw new Error(`Ошибка сервера ${r.status}`);
-      const parsed = (await r.json()) as { items?: Article[]; total?: number };
+      const parsed = (await r.json()) as { items?: Article[]; total?: number; searchTerms?: string[] };
       if (ctrl.signal.aborted) return;
       const items = parsed.items ?? [];
-      setData({ items, total: parsed.total ?? 0 });
+      setData({ items, total: parsed.total ?? 0, searchTerms: parsed.searchTerms ?? [] });
       setFocusedIdx(-1);
     } catch (e) {
       if (ctrl.signal.aborted) return; // отменён более новым запросом или размонтированием
@@ -553,13 +560,13 @@ export function Feed({ topics }: { topics: Topic[] }) {
       <div className="border-t border-[color:var(--hairline)] pt-4">
         <span className="eyebrow mb-2 block">Экспорт выборки</span>
         <div className="flex gap-1.5">
-          {(["csv", "ris", "json"] as const).map((fmt) => (
+          {(["csv", "ris", "bibtex", "json"] as const).map((fmt) => (
             <a key={fmt} href={`/api/export?format=${fmt}&${exportParams}`} className="btn-ghost flex-1 rounded-xl py-1.5 text-center text-xs font-semibold uppercase">
               {fmt}
             </a>
           ))}
         </div>
-        <p className="mt-1.5 text-[11px] text-[color:var(--ink-subtle)]">RIS — для Zotero / EndNote / Mendeley</p>
+        <p className="mt-1.5 text-[11px] text-[color:var(--ink-subtle)]">RIS — для Zotero / EndNote / Mendeley; BibTeX — для LaTeX</p>
       </div>
     </div>
   );
@@ -654,7 +661,13 @@ export function Feed({ topics }: { topics: Topic[] }) {
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="12" y1="18" x2="12" y2="18" /></svg>
             {activeCount ? `Фильтры (${activeCount})` : "Фильтры"}
           </button>
-          <select value={f.sort} onChange={(e) => set({ sort: e.target.value as Filters["sort"] })} className="field rounded-xl px-3 py-2.5 text-sm text-[color:var(--ink-soft)]">
+          <select
+            value={f.q && f.sort === "date" ? "relevance" : f.sort}
+            onChange={(e) => set({ sort: e.target.value as Filters["sort"] })}
+            className="field rounded-xl px-3 py-2.5 text-sm text-[color:var(--ink-soft)]"
+            aria-label="Сортировка"
+          >
+            {f.q && <option value="relevance">По релевантности</option>}
             <option value="date">Новые</option>
             <option value="fetched">Недавние</option>
             <option value="trust">По доверию</option>
@@ -687,6 +700,20 @@ export function Feed({ topics }: { topics: Topic[] }) {
             {loading ? "…" : `${data.total.toLocaleString("ru-RU")} ст.`}
           </span>
         </div>
+
+        {f.q && (
+          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1 text-xs text-[color:var(--ink-muted)]">
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input type="checkbox" checked={f.scope === "title"} onChange={(e) => set({ scope: e.target.checked ? "title" : "all" })} className="h-3.5 w-3.5 accent-[color:var(--brand-a)]" />
+              Только в заголовке
+            </label>
+            {data.searchTerms.length > 0 && (
+              <span className="min-w-0 truncate" title={data.searchTerms.join(", ")}>
+                Искали по термам: <span className="text-[color:var(--ink-soft)]">{data.searchTerms.slice(0, 8).join(", ")}{data.searchTerms.length > 8 ? ` +${data.searchTerms.length - 8}` : ""}</span>
+              </span>
+            )}
+          </div>
+        )}
 
         {loading && data.items.length === 0 && (
           <div className="stagger space-y-2.5" aria-hidden>
@@ -800,13 +827,13 @@ export function Feed({ topics }: { topics: Topic[] }) {
                       <span className="ml-auto flex items-center gap-1">{a.sourceKeys.map((s) => <SourceBadge key={s} k={s} />)}</span>
                     </div>
                     <h3 className={`text-[15px] leading-snug transition-colors ${a.isRead ? "font-medium text-[color:var(--ink-soft)]" : "font-semibold text-[color:var(--ink)]"} group-hover:text-[color:var(--brand-ink)]`}>
-                      {a.title}
+                      <Highlight text={a.title} terms={data.searchTerms} />
                     </h3>
                     {conclusion ? (
                       <div className="mt-2 rounded-xl border border-teal-100 bg-teal-50/70 p-2.5 dark:border-teal-900/50 dark:bg-teal-950/30">
                         <p className="line-clamp-2 text-[12.5px] leading-relaxed text-teal-950 dark:text-teal-100">
                           <span className="font-semibold text-teal-700 dark:text-teal-400">💡 Вывод: </span>
-                          {conclusion}
+                          <Highlight text={conclusion} terms={data.searchTerms} />
                         </p>
                       </div>
                     ) : (
@@ -845,13 +872,13 @@ export function Feed({ topics }: { topics: Topic[] }) {
                     </button>
                   </div>
                   <h3 className={`text-sm leading-snug ${a.isRead ? "font-medium text-[color:var(--ink-soft)]" : "font-semibold text-[color:var(--ink)]"}`}>
-                    {a.title}
+                    <Highlight text={a.title} terms={data.searchTerms} />
                   </h3>
                   {conclusion && (
                     <div className="mt-1.5 rounded-lg border border-teal-100 bg-teal-50/60 p-2 dark:border-teal-900/40 dark:bg-teal-950/20">
                       <p className="line-clamp-2 text-[11px] leading-relaxed text-teal-900 dark:text-teal-200">
                         <span className="font-semibold text-teal-700 dark:text-teal-400">💡 Вывод: </span>
-                        {conclusion}
+                        <Highlight text={conclusion} terms={data.searchTerms} />
                       </p>
                     </div>
                   )}

@@ -9,8 +9,16 @@ import {
   real,
   index,
   uniqueIndex,
+  customType,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+
+/** tsvector — у drizzle нет встроенного типа; хранится как строка лексем (читать не нужно). */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
+import { sql, getTableColumns } from "drizzle-orm";
 
 export type SourceKey = "pubmed" | "europepmc" | "clinicaltrials" | "medrxiv";
 
@@ -92,9 +100,21 @@ export const articles = pgTable(
     notes: text("notes").notNull().default(""),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Полнотекстовый индекс (аудит F-09/I-02): генерируемая колонка, Postgres сам
+     * пересчитывает её при изменении title/abstract/journal/authors. Веса: заголовок A,
+     * аннотация B, журнал C, авторы D — используются в ts_rank_cd при сортировке по релевантности.
+     * Конфигурация 'english' для всех полей (документ и запрос должны стеммиться одинаково,
+     * иначе «Laryngoscope» → 'laryngoscop' не найдёт нестеммированное 'laryngoscope');
+     * кириллица индексируется как есть (русские запросы идут через словарь синонимов RU→EN).
+     */
+    searchTsv: tsvector("search_tsv").generatedAlwaysAs(
+      sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(abstract, '')), 'B') || setweight(to_tsvector('english', coalesce(journal, '')), 'C') || setweight(to_tsvector('english', coalesce(authors::text, '')), 'D')`,
+    ),
   },
   (t) => [
     uniqueIndex("articles_dedup_key_idx").on(t.dedupKey),
+    index("articles_search_tsv_gin").using("gin", t.searchTsv),
     // Частичные уникальные индексы: не дают появиться дублям при гонке/импорте
     // (вторичная дедупликация refresh работает только внутри одного запуска).
     uniqueIndex("articles_pmid_unique_idx").on(t.pmid).where(sql`${t.pmid} is not null and ${t.pmid} <> ''`),
@@ -159,7 +179,9 @@ export const aiCache = pgTable("ai_cache", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export type Article = typeof articles.$inferSelect;
+/** Колонки статьи для выборок: без служебной `search_tsv` (тяжёлая строка лексем, клиенту не нужна). */
+export const articleColumns = (({ searchTsv: _searchTsv, ...rest }) => rest)(getTableColumns(articles));
+export type Article = Omit<typeof articles.$inferSelect, "searchTsv">;
 export type NewArticle = typeof articles.$inferInsert;
 export type Topic = typeof topics.$inferSelect;
 export type Source = typeof sources.$inferSelect;

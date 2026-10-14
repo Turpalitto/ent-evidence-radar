@@ -14,10 +14,15 @@ export interface ArticleFilters {
   unread?: boolean;
   topicId?: number;
   excludePreprints?: boolean;
-  sort?: "date" | "trust" | "fetched";
+  /** `relevance` — по ts_rank (имеет смысл только с `q`; без запроса равносилен `date`). */
+  sort?: "date" | "trust" | "fetched" | "relevance";
+  /** Область поиска: везде (по умолчанию) или только по заголовку. */
+  scope?: "all" | "title";
   page?: number;
   pageSize?: number;
 }
+
+const SORTS = new Set(["date", "trust", "fetched", "relevance"]);
 
 export function parseFilters(sp: URLSearchParams): ArticleFilters {
   const num = (k: string) => {
@@ -49,7 +54,9 @@ export function parseFilters(sp: URLSearchParams): ArticleFilters {
     unread: sp.get("unread") === "1",
     topicId: num("topicId"),
     excludePreprints: sp.get("excludePreprints") === "1",
-    sort: (sp.get("sort") as ArticleFilters["sort"]) ?? "date",
+    // Без явной сортировки поисковая выдача идёт по релевантности, лента — по дате.
+    sort: SORTS.has(sp.get("sort") ?? "") ? (sp.get("sort") as ArticleFilters["sort"]) : sp.get("q")?.trim() ? "relevance" : "date",
+    scope: sp.get("scope") === "title" ? "title" : "all",
     page: Math.max(1, num("page") ?? 1),
     pageSize: Math.min(num("pageSize") ?? 30, 200),
   };

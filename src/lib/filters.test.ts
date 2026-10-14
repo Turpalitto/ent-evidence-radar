@@ -23,6 +23,7 @@ describe("parseFilters", () => {
       topicId: undefined,
       excludePreprints: false,
       sort: "date",
+      scope: "all",
       page: 1,
       pageSize: 30,
     });

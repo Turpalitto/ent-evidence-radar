@@ -1,28 +1,52 @@
-import { and, desc, asc, eq, ne, gte, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, asc, eq, ne, gte, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { articles, type Article } from "@/db/schema";
+import { articles, articleColumns, type Article } from "@/db/schema";
 import { expandQuery } from "@/lib/search";
 import { parseFilters, type ArticleFilters } from "@/lib/filters";
 
 export { parseFilters, type ArticleFilters };
 
-function termLike(t: string): SQL {
-  // Экранируем спецсимволы LIKE (Postgres по умолчанию использует backslash как escape):
-  // иначе ввод вида «%» или «_» становится wildcard и матчит всю базу.
-  const esc = t.replace(/\\/g, "\\\\").replace(/[%_]/g, "\\$&");
-  const like = `%${esc}%`;
-  return or(ilike(articles.title, like), ilike(articles.abstract, like), ilike(articles.journal, like), sql`${articles.authors}::text ilike ${like}`)!;
+/**
+ * Строка в синтаксисе websearch_to_tsquery для одной концепт-группы: все варианты в кавычках
+ * (многословные → фраза, однословные → лексема) через OR. Кавычки внутри терма убираем —
+ * иначе они сломают разбор; остальное websearch_to_tsquery трактует как обычный текст.
+ */
+export function groupToWebsearch(terms: string[]): string {
+  return terms
+    .map((t) => t.replace(/["']/g, " ").trim())
+    .filter(Boolean)
+    .map((t) => `"${t}"`)
+    .join(" OR ");
+}
+
+/**
+ * tsquery для пользовательского запроса (аудит F-09/I-02): каждая концепт-группа (слово +
+ * синонимы RU↔EN) — OR внутри, группы — AND между собой. Совпадение идёт по лексемам, а не по
+ * подстроке: «ear» больше не находит year/hearing/early, а «children» находит «child».
+ */
+export function searchTsQuery(q: string): SQL | null {
+  const groups = expandQuery(q).map(groupToWebsearch).filter(Boolean);
+  if (!groups.length) return null;
+  const parts = groups.map((g) => sql`websearch_to_tsquery('english', ${g})`);
+  return sql.join(parts, sql` && `);
+}
+
+/** Плоский список термов, по которым шёл поиск (для подсветки и подсказки «по каким термам искали»). */
+export function searchTerms(q: string): string[] {
+  const seen = new Set<string>();
+  for (const g of expandQuery(q)) for (const t of g) seen.add(t.toLowerCase());
+  return [...seen];
 }
 
 export function buildWhere(f: ArticleFilters): SQL | undefined {
   const conds: SQL[] = [];
   if (f.q) {
-    // Расширяем запрос синонимами (RU↔EN): каждая концепт-группа — OR по своим вариантам,
-    // разные понятия (слова) — через AND. Так «отит» найдёт и «otitis», и «otitis media».
-    const groups = expandQuery(f.q);
-    if (groups.length) {
-      const groupConds = groups.map((g) => or(...g.map(termLike))!);
-      conds.push(and(...groupConds)!);
+    const tsq = searchTsQuery(f.q);
+    if (tsq) {
+      // Пустой tsquery (одни стоп-слова) не должен превращаться в «ничего не найдено».
+      const nonEmpty = sql`numnode(${tsq}) > 0`;
+      const doc = f.scope === "title" ? sql`to_tsvector('english', coalesce(${articles.title}, ''))` : articles.searchTsv;
+      conds.push(sql`(${doc} @@ (${tsq}) OR NOT (${nonEmpty}))`);
     }
   }
   if (f.subspecialty) conds.push(sql`${articles.subspecialties} @> ${JSON.stringify([f.subspecialty])}::jsonb`);
@@ -44,21 +68,24 @@ export async function listArticles(f: ArticleFilters) {
   const where = buildWhere(f);
   const page = f.page ?? 1;
   const pageSize = f.pageSize ?? 30;
-  const order =
-    f.sort === "trust"
+  const tsq = f.q ? searchTsQuery(f.q) : null;
+  const relevance = f.sort === "relevance" && tsq ? sql`ts_rank_cd(${articles.searchTsv}, ${tsq})` : null;
+  const order = relevance
+    ? [desc(relevance), desc(articles.publishedAt)]
+    : f.sort === "trust"
       ? [desc(articles.trustScore), desc(articles.publishedAt)]
       : f.sort === "fetched"
         ? [desc(articles.fetchedAt), desc(articles.trustScore)]
         : [desc(articles.publishedAt), desc(articles.trustScore)];
   const [items, [{ total }]] = await Promise.all([
-    db.select().from(articles).where(where).orderBy(...order, asc(articles.id)).limit(pageSize).offset((page - 1) * pageSize),
+    db.select(articleColumns).from(articles).where(where).orderBy(...order, asc(articles.id)).limit(pageSize).offset((page - 1) * pageSize),
     db.select({ total: sql<number>`count(*)::int` }).from(articles).where(where),
   ]);
-  return { items, total, page, pageSize };
+  return { items, total, page, pageSize, searchTerms: f.q ? searchTerms(f.q) : [] };
 }
 
 export async function findRelatedArticles(id: number, limit = 5): Promise<Article[]> {
-  const [target] = await db.select().from(articles).where(eq(articles.id, id));
+  const [target] = await db.select(articleColumns).from(articles).where(eq(articles.id, id));
   if (!target) return [];
 
   const conds: SQL[] = [ne(articles.id, id)];
@@ -81,7 +108,7 @@ export async function findRelatedArticles(id: number, limit = 5): Promise<Articl
   }
 
   const related = await db
-    .select()
+    .select(articleColumns)
     .from(articles)
     .where(and(...conds))
     .orderBy(desc(articles.trustScore), desc(articles.publishedAt))

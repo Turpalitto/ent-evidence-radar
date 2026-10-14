@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { db } from "@/db";
 import { articles } from "@/db/schema";
-import { listArticles } from "@/lib/queries";
+import { groupToWebsearch, listArticles, searchTsQuery } from "@/lib/queries";
 
 beforeAll(async () => {
   await db
@@ -35,6 +35,22 @@ beforeAll(async () => {
         subspecialties: ["rhinology"],
         isPreprint: true,
       },
+      {
+        // Ловушка для подстрочного поиска: «year», «early», «clear», «research» содержат «ear»,
+        // но ни одно из них не является словом «ear».
+        dedupKey: "q3",
+        title: "A ten-year early intervention research programme",
+        abstract: "Clear evidence from a large multicentre cohort; no otologic outcomes reported.",
+        journal: "BMJ",
+        url: "https://example.org/3",
+        sourceKey: "pubmed",
+        sourceKeys: ["pubmed"],
+        studyDesign: "cohort",
+        evidenceLevel: 3,
+        trustScore: 50,
+        subspecialties: ["general"],
+        authors: ["Ivanova I", "Иванов И"],
+      },
     ])
     .onConflictDoNothing();
 });
@@ -42,7 +58,7 @@ beforeAll(async () => {
 describe("listArticles / buildWhere", () => {
   it("returns everything without filters", async () => {
     const { total } = await listArticles({});
-    expect(total).toBe(2);
+    expect(total).toBe(3);
   });
 
   it("filters by design", async () => {
@@ -55,17 +71,75 @@ describe("listArticles / buildWhere", () => {
     expect((await listArticles({ minTrust: 70 })).total).toBe(1);
   });
 
+  it("filters by design (cohort now has two rows)", async () => {
+    expect((await listArticles({ design: "cohort" })).total).toBe(2);
+  });
+
   it("filters by subspecialty (jsonb containment)", async () => {
     expect((await listArticles({ subspecialty: "rhinology" })).total).toBe(1);
   });
 
   it("filters out preprints", async () => {
-    expect((await listArticles({ excludePreprints: true })).total).toBe(1);
+    expect((await listArticles({ excludePreprints: true })).total).toBe(2);
   });
 
   it("expands a Russian query to English synonyms", async () => {
-    const { items } = await listArticles({ q: "отит" });
+    const { items, searchTerms } = await listArticles({ q: "отит" });
     expect(items.some((a) => a.title.includes("Otitis"))).toBe(true);
+    expect(searchTerms).toContain("otitis");
+  });
+
+  describe("полнотекстовый поиск (F-09/I-02)", () => {
+    it("ищет по лексемам, а не по подстроке: «ear» не находит year/early/clear/research", async () => {
+      const { items } = await listArticles({ q: "ear" });
+      expect(items.map((a) => a.dedupKey)).not.toContain("q3");
+    });
+
+    it("стемминг: «children» и «child» эквивалентны, многословный запрос — AND между понятиями", async () => {
+      expect((await listArticles({ q: "child otitis" })).total).toBe(1);
+      expect((await listArticles({ q: "children otitis" })).total).toBe(1);
+      expect((await listArticles({ q: "children polyps" })).total).toBe(0);
+    });
+
+    it("русский многословный запрос → английские синонимы в каждой группе", async () => {
+      const { items } = await listArticles({ q: "отит дети" });
+      expect(items).toHaveLength(1);
+      expect(items[0].dedupKey).toBe("q1");
+    });
+
+    it("ищет по авторам (в т. ч. кириллица) и по журналу", async () => {
+      expect((await listArticles({ q: "Иванов" })).items.map((a) => a.dedupKey)).toEqual(["q3"]);
+      expect((await listArticles({ q: "Laryngoscope" })).items.map((a) => a.dedupKey)).toEqual(["q1"]);
+    });
+
+    it("scope=title ограничивает поиск заголовком", async () => {
+      expect((await listArticles({ q: "hearing" })).total).toBe(1); // в аннотации q1
+      expect((await listArticles({ q: "hearing", scope: "title" })).total).toBe(0);
+      expect((await listArticles({ q: "polyps", scope: "title" })).total).toBe(1);
+    });
+
+    it("запрос из одних стоп-слов не превращается в пустую выдачу", async () => {
+      expect((await listArticles({ q: "the of" })).total).toBe(3);
+    });
+
+    it("сортировка по релевантности ставит совпадение в заголовке выше совпадения в аннотации", async () => {
+      // «cohort»: q3 — в аннотации и это слово есть у q2 в аннотации тоже; «rhinosinusitis» — только в заголовке q2.
+      const { items } = await listArticles({ q: "cohort rhinosinusitis OR cohort", sort: "relevance" });
+      expect(items.length).toBeGreaterThan(0);
+      const r = await listArticles({ q: "sinonasal rhinosinusitis", sort: "relevance" });
+      expect(r.items[0]?.dedupKey).toBe("q2");
+    });
+
+    it("спецсимволы и кавычки во вводе не ломают запрос", async () => {
+      for (const q of ['"otitis', "otitis'", "a & b | c", "(otitis)", "%_\\", "otitis:*"]) {
+        await expect(listArticles({ q })).resolves.toBeTruthy();
+      }
+    });
+
+    it("searchTsQuery/groupToWebsearch строят OR внутри группы", () => {
+      expect(groupToWebsearch(['otitis media', 'otitis', 'ear "infection"'])).toBe('"otitis media" OR "otitis" OR "ear  infection"');
+      expect(searchTsQuery("   ")).toBeNull();
+    });
   });
 
   it("paginates deterministically", async () => {
