@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ENT Evidence Radar API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     REST API радара доказательной оториноларингологии. Все ответы — JSON (кроме экспорта и Atom-ленты).
 
