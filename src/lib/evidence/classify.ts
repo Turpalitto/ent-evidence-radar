@@ -14,8 +14,12 @@ import { SUBSPECIALTIES } from "./taxonomy";
  *      точные паттерны регистрации протокола и многоцентровости; ISO-аббревиатуры
  *      журналов; Lancet-сабжурналы не Tier 1; субспециальности без ложных
  *      срабатываний «adenoid cystic» / «allergen immunotherapy».
+ *  3 — расширен белый список журналов (+~90: смежные Q1 с ЛОР-релевантными РКИ —
+ *      анестезия, педиатрия, неврология, аллергия, визуализация; национальные
+ *      ЛОР-журналы MEDLINE/PMC, в т. ч. «Вестник оториноларингологии»; аудиология,
+ *      фониатрия, сон). Записи с tier 0 из этих журналов получают честный tier.
  */
-export const CLASSIFIER_VERSION = 2;
+export const CLASSIFIER_VERSION = 3;
 
 export interface RawArticle {
   pmid?: string | null;
