@@ -92,6 +92,13 @@
       "when": 1791990159118,
       "tag": "0012_editorial_notice",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791990835622,
+      "tag": "0013_guideline_issuer",
+      "breakpoints": true
     }
   ]
 }

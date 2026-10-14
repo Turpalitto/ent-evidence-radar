@@ -1,4 +1,5 @@
 import type { ManualOverrides, StudyDesign, TrustBreakdownItem } from "@/db/schema";
+import { detectGuidelineIssuer } from "./guidelines";
 import { journalTier } from "./journals";
 import { SUBSPECIALTIES } from "./taxonomy";
 
@@ -18,8 +19,9 @@ import { SUBSPECIALTIES } from "./taxonomy";
  *      анестезия, педиатрия, неврология, аллергия, визуализация; национальные
  *      ЛОР-журналы MEDLINE/PMC, в т. ч. «Вестник оториноларингологии»; аудиология,
  *      фониатрия, сон). Записи с tier 0 из этих журналов получают честный tier.
+ *  4 — орган-издатель руководства (`guidelineIssuer`, A-06).
  */
-export const CLASSIFIER_VERSION = 3;
+export const CLASSIFIER_VERSION = 4;
 
 export interface RawArticle {
   pmid?: string | null;
@@ -62,6 +64,8 @@ export interface Classified {
   sampleSize: number | null;
   isPreprint: boolean;
   isRetracted: boolean;
+  /** Орган-издатель руководства (A-06), только для design = guideline; иначе null. */
+  guidelineIssuer: string | null;
 }
 
 const PT = (types: string[], re: RegExp) => types.some((t) => re.test(t));
@@ -393,6 +397,7 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
     sampleSize,
     isPreprint,
     isRetracted,
+    guidelineIssuer: design === "guideline" ? detectGuidelineIssuer(a) : null,
   };
 }
 

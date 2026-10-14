@@ -365,6 +365,7 @@ export function planWrites(
       // undefined — не трогать при UPDATE (PubMed-запись не знает о препринте), null не пишем.
       publishedDoi: raw.publishedDoi ?? undefined,
       isRetracted: c.isRetracted,
+      guidelineIssuer: c.guidelineIssuer,
       classifierVersion: CLASSIFIER_VERSION,
       topicIds: Array.from(cand.topicIds),
       updatedAt: new Date(),

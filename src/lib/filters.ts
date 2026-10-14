@@ -2,6 +2,8 @@ export interface ArticleFilters {
   q?: string;
   subspecialty?: string;
   design?: string;
+  /** Орган-издатель руководства (A-06): ключ из GUIDELINE_ISSUERS или `other` — руководства без распознанного издателя. */
+  issuer?: string;
   level?: number;
   minTrust?: number;
   source?: string;
@@ -46,6 +48,7 @@ export function parseFilters(sp: URLSearchParams): ArticleFilters {
     q: (sp.get("q") ?? "").trim().slice(0, 200) || undefined,
     subspecialty: sp.get("subspecialty") ?? undefined,
     design: sp.get("design") ?? undefined,
+    issuer: sp.get("issuer")?.trim().slice(0, 40) || undefined,
     level: num("level"),
     minTrust: num("minTrust"),
     source: sp.get("source") ?? undefined,

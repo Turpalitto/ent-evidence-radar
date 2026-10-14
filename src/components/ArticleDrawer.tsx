@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Article } from "@/db/schema";
 import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTIES, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
-import { DesignBadge, LevelBadge, NOTICE_LABELS, NoticeBadge, TierBadge, TrustScore, formatDate } from "./Badges";
+import { DesignBadge, IssuerBadge, LevelBadge, NOTICE_LABELS, NoticeBadge, TierBadge, TrustScore, formatDate } from "./Badges";
 import { citeBibtex, citeGost, citeVancouver } from "@/lib/citation";
 import { useFocusTrap } from "./useFocusTrap";
 
@@ -234,6 +234,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             <DesignBadge design={a.studyDesign} />
             <LevelBadge level={a.evidenceLevel} />
             <TierBadge tier={a.journalTier} />
+            <IssuerBadge issuer={a.guidelineIssuer} />
             {a.isPreprint && <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">ПРЕПРИНТ</span>}
             {a.isPreprint && a.publishedDoi && <span className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" title="Есть рецензированная журнальная версия">ОПУБЛИКОВАН В ЖУРНАЛЕ</span>}
             {a.isRetracted && <span className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">ОТОЗВАНА</span>}

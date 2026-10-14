@@ -74,6 +74,11 @@ components:
       name: design
       in: query
       schema: { $ref: "#/components/schemas/StudyDesign" }
+    ArticleFilters_issuer:
+      name: issuer
+      in: query
+      description: "Орган-издатель руководства (A-06): ключ из таксономии (aao-hns, epos, icar, nice, aap, who, …) или `other` — руководства без распознанного издателя. Подразумевает design=guideline."
+      schema: { type: string, maxLength: 40 }
     ArticleFilters_level:
       name: level
       in: query
@@ -225,6 +230,7 @@ components:
         isPreprint: { type: boolean }
         publishedDoi: { type: [string, "null"], description: "DOI рецензированной версии препринта (medRxiv)" }
         isRetracted: { type: boolean }
+        guidelineIssuer: { type: [string, "null"], description: "Орган-издатель руководства (A-06), только для studyDesign=guideline" }
         editorialNotice:
           oneOf: [{ $ref: "#/components/schemas/EditorialNotice" }, { type: "null" }]
           description: "Редакционное уведомление Crossref по DOI (A-04); null — уведомлений нет"
@@ -370,6 +376,7 @@ paths:
         - $ref: "#/components/parameters/ArticleFilters_scope"
         - $ref: "#/components/parameters/ArticleFilters_subspecialty"
         - $ref: "#/components/parameters/ArticleFilters_design"
+        - $ref: "#/components/parameters/ArticleFilters_issuer"
         - $ref: "#/components/parameters/ArticleFilters_level"
         - $ref: "#/components/parameters/ArticleFilters_minTrust"
         - $ref: "#/components/parameters/ArticleFilters_source"
@@ -698,6 +705,7 @@ paths:
         - $ref: "#/components/parameters/ArticleFilters_q"
         - $ref: "#/components/parameters/ArticleFilters_subspecialty"
         - $ref: "#/components/parameters/ArticleFilters_design"
+        - $ref: "#/components/parameters/ArticleFilters_issuer"
         - $ref: "#/components/parameters/ArticleFilters_level"
         - $ref: "#/components/parameters/ArticleFilters_minTrust"
         - $ref: "#/components/parameters/ArticleFilters_source"
@@ -1033,6 +1041,7 @@ paths:
         - $ref: "#/components/parameters/ArticleFilters_scope"
         - $ref: "#/components/parameters/ArticleFilters_subspecialty"
         - $ref: "#/components/parameters/ArticleFilters_design"
+        - $ref: "#/components/parameters/ArticleFilters_issuer"
         - $ref: "#/components/parameters/ArticleFilters_level"
         - $ref: "#/components/parameters/ArticleFilters_minTrust"
         - $ref: "#/components/parameters/ArticleFilters_source"

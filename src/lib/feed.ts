@@ -2,13 +2,14 @@
  * Atom-лента с фильтрами (подписка на сохранённый поиск). Чистые помощники без I/O,
  * вынесены из route.ts (файл маршрута может экспортировать только обработчики).
  */
+import { guidelineIssuerLabel } from "@/lib/evidence/guidelines";
 import { DESIGN_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { parseFilters, type ArticleFilters } from "@/lib/filters";
 
 export const FEED_LIMIT = 60;
 
 /** Публичные параметры ленты: те же, что у /api/articles, кроме персональных флагов. */
-export const FEED_PARAMS = ["q", "scope", "subspecialty", "design", "level", "minTrust", "source", "days", "fromYear", "toYear", "topicId", "excludePreprints"] as const;
+export const FEED_PARAMS = ["q", "scope", "subspecialty", "design", "issuer", "level", "minTrust", "source", "days", "fromYear", "toYear", "topicId", "excludePreprints"] as const;
 
 /** Фильтры для ленты: персональное состояние (закладки/прочитано/скрытые) наружу не отдаём. */
 export function feedFilters(sp: URLSearchParams): ArticleFilters {
@@ -21,7 +22,8 @@ export function describeFeedFilters(f: ArticleFilters, topicName?: string | null
   const parts: string[] = [];
   if (topicName) parts.push(`тема «${topicName}»`);
   if (f.subspecialty) parts.push(SUBSPECIALTY_LABELS[f.subspecialty] ?? f.subspecialty);
-  if (f.design) parts.push(DESIGN_LABELS[f.design as keyof typeof DESIGN_LABELS] ?? f.design);
+  if (f.design && !f.issuer) parts.push(DESIGN_LABELS[f.design as keyof typeof DESIGN_LABELS] ?? f.design);
+  if (f.issuer) parts.push(f.issuer === "other" ? "руководства без распознанного издателя" : `руководства ${guidelineIssuerLabel(f.issuer)?.label ?? f.issuer}`);
   if (f.level) parts.push(`уровень ≤ ${f.level}`);
   if (f.minTrust) parts.push(`доверие ≥ ${f.minTrust}`);
   if (f.source) parts.push(SOURCE_LABELS[f.source] ?? f.source);

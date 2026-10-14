@@ -66,5 +66,8 @@ describe("/feed.xml с фильтрами (подписка на сохранё�
     const b = feedFilters(new URLSearchParams("q=tinnitus&level=2"));
     expect(b.sort).toBe("relevance");
     expect(describeFeedFilters(b)).toEqual(["уровень ≤ 2", "поиск «tinnitus»"]);
+    // Издатель руководства (A-06) описывается вместо дизайна
+    expect(describeFeedFilters(feedFilters(new URLSearchParams("design=guideline&issuer=aao-hns")))).toEqual(["руководства AAO-HNS"]);
+    expect(describeFeedFilters(feedFilters(new URLSearchParams("issuer=other")))).toEqual(["руководства без распознанного издателя"]);
   });
 });

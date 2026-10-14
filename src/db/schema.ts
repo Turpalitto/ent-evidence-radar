@@ -122,6 +122,8 @@ export const articles = pgTable(
     isRetracted: boolean("is_retracted").notNull().default(false),
     /** Редакционное уведомление Crossref по DOI (A-04): retraction / expression of concern / correction. */
     editorialNotice: jsonb("editorial_notice").$type<EditorialNotice | null>(),
+    /** Орган-издатель руководства (A-06), ключ из GUIDELINE_ISSUERS; только для studyDesign = guideline. */
+    guidelineIssuer: text("guideline_issuer"),
     /** Версия эвристик классификатора, которой размечена запись (0 — до версионирования). */
     classifierVersion: integer("classifier_version").notNull().default(0),
     topicIds: jsonb("topic_ids").$type<number[]>().notNull().default([]),

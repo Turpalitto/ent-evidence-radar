@@ -51,6 +51,11 @@ export function buildWhere(f: ArticleFilters): SQL | undefined {
   }
   if (f.subspecialty) conds.push(sql`${articles.subspecialties} @> ${JSON.stringify([f.subspecialty])}::jsonb`);
   if (f.design) conds.push(eq(articles.studyDesign, f.design as typeof articles.$inferSelect.studyDesign));
+  // Издатель руководства подразумевает дизайн «руководство»; `other` — руководства без распознанного органа.
+  if (f.issuer) {
+    conds.push(eq(articles.studyDesign, "guideline"));
+    conds.push(f.issuer === "other" ? sql`${articles.guidelineIssuer} is null` : eq(articles.guidelineIssuer, f.issuer));
+  }
   if (f.level) conds.push(sql`${articles.evidenceLevel} <= ${f.level}`);
   if (f.minTrust) conds.push(gte(articles.trustScore, f.minTrust));
   if (f.source) conds.push(sql`${articles.sourceKeys} @> ${JSON.stringify([f.source])}::jsonb`);
@@ -79,11 +84,25 @@ export async function listArticles(f: ArticleFilters) {
       : f.sort === "fetched"
         ? [desc(articles.fetchedAt), desc(articles.trustScore)]
         : [desc(articles.publishedAt), desc(articles.trustScore)];
-  const [items, [{ total }]] = await Promise.all([
+  // Фасет по издателю руководств (A-06): считается по тем же фильтрам без самого `issuer`,
+  // чтобы чипы показывали, сколько руководств у каждого органа при текущем поиске/периоде.
+  const wantIssuers = f.design === "guideline" || !!f.issuer;
+  const facetWhere = wantIssuers ? buildWhere({ ...f, issuer: undefined, design: "guideline" }) : undefined;
+  const [items, [{ total }], issuerRows] = await Promise.all([
     db.select(articleColumns).from(articles).where(where).orderBy(...order, asc(articles.id)).limit(pageSize).offset((page - 1) * pageSize),
     db.select({ total: sql<number>`count(*)::int` }).from(articles).where(where),
+    wantIssuers
+      ? db.select({ key: articles.guidelineIssuer, count: sql<number>`count(*)::int` }).from(articles).where(facetWhere).groupBy(articles.guidelineIssuer).orderBy(desc(sql`count(*)`))
+      : Promise.resolve([] as { key: string | null; count: number }[]),
   ]);
-  return { items, total, page, pageSize, searchTerms: f.q ? searchTerms(f.q) : [] };
+  return {
+    items,
+    total,
+    page,
+    pageSize,
+    searchTerms: f.q ? searchTerms(f.q) : [],
+    ...(wantIssuers ? { issuers: issuerRows.map((r) => ({ key: r.key ?? "other", count: r.count })) } : {}),
+  };
 }
 
 export async function findRelatedArticles(id: number, limit = 5): Promise<Article[]> {

@@ -93,6 +93,7 @@ export function reclassifyRow(row: Row, overrides: ManualOverrides) {
     sampleSize: c.sampleSize,
     isPreprint: c.isPreprint,
     isRetracted: c.isRetracted,
+    guidelineIssuer: c.guidelineIssuer,
     classifierVersion: CLASSIFIER_VERSION,
     updatedAt: new Date(),
   };
@@ -238,6 +239,7 @@ export async function reclassifyArticles(opts: ReclassifyOptions = {}): Promise<
               sampleSize: c.sampleSize,
               isPreprint: c.isPreprint,
               isRetracted: c.isRetracted,
+              guidelineIssuer: c.guidelineIssuer,
               classifierVersion: CLASSIFIER_VERSION,
             })
             .where(eq(articles.id, row.id));

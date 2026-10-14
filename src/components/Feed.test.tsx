@@ -12,6 +12,8 @@ const findTitle = (text: string) => screen.findAllByText(text);
 const ARTICLES = [
   makeArticle({ id: 1, title: "Tympanostomy tubes versus watchful waiting", isRead: false, topicIds: [1] }),
   makeArticle({ id: 2, title: "Dupilumab for nasal polyps", isRead: false, subspecialties: ["rhinology"], topicIds: [2] }),
+  makeArticle({ id: 4, title: "Clinical Practice Guideline: Tinnitus", isRead: true, studyDesign: "guideline", evidenceLevel: 1, trustScore: 80, guidelineIssuer: "aao-hns" }),
+  makeArticle({ id: 5, title: "Consensus without issuer", isRead: true, studyDesign: "guideline", evidenceLevel: 1, trustScore: 60, guidelineIssuer: null }),
   makeArticle({ id: 3, title: "Already read cohort", isRead: true, studyDesign: "cohort", evidenceLevel: 3, trustScore: 40, editorialNotice: { type: "expression_of_concern", noticeDoi: "10.1/eoc", date: "2025-01-02", source: "crossref", checkedAt: "2026-10-14T00:00:00Z" } }),
 ];
 
@@ -21,8 +23,20 @@ function setup(items = ARTICLES) {
     "GET /api/ai": () => ({ configured: false }),
     "GET /api/articles": (url) => {
       const sub = url.searchParams.get("subspecialty");
-      const list = sub ? state.items.filter((a) => a.subspecialties?.includes(sub)) : state.items;
-      return { items: list, total: list.length, page: 1, pageSize: 30, searchTerms: url.searchParams.get("q") ? [url.searchParams.get("q")] : [] };
+      const design = url.searchParams.get("design");
+      const issuer = url.searchParams.get("issuer");
+      let list = sub ? state.items.filter((a) => a.subspecialties?.includes(sub)) : state.items;
+      if (design) list = list.filter((a) => a.studyDesign === design);
+      if (issuer) list = list.filter((a) => (a.guidelineIssuer ?? "other") === issuer);
+      const guidelines = design === "guideline" || issuer;
+      return {
+        items: list,
+        total: list.length,
+        page: 1,
+        pageSize: 30,
+        searchTerms: url.searchParams.get("q") ? [url.searchParams.get("q")] : [],
+        ...(guidelines ? { issuers: [{ key: "aao-hns", count: 1 }, { key: "other", count: 1 }] } : {}),
+      };
     },
     "POST /api/articles/bulk": (_url, init) => {
       const body = JSON.parse(String(init?.body)) as { ids: number[]; isRead?: boolean };
@@ -52,7 +66,7 @@ describe("<Feed />", () => {
     setup();
     await findTitle("Tympanostomy tubes versus watchful waiting");
     expect(seen("Dupilumab for nasal polyps")).toBe(true);
-    expect(screen.getByText("3 ст.")).toBeInTheDocument();
+    expect(screen.getByText("5 ст.")).toBeInTheDocument();
     // Бейдж редакционного уведомления Crossref (A-04) с датой в подсказке
     const eoc = screen.getAllByText("EXPRESSION OF CONCERN");
     expect(eoc.length).toBeGreaterThan(0);
@@ -127,5 +141,31 @@ describe("<Feed />", () => {
     // 8 нажатий → не 8 запросов (дебаунс 200 мс)
     expect(after.length - before).toBeLessThanOrEqual(3);
     expect(after.at(-1)!.url.searchParams.get("sort")).toBeNull(); // поиск — релевантность решает сервер
+  });
+
+  it("руководства (A-06): при дизайне «руководство» появляются чипы издателей; клик фильтрует по issuer и пишет его в URL", async () => {
+    const user = userEvent.setup();
+    const { calls } = setup();
+    await findTitle("Clinical Practice Guideline: Tinnitus");
+    expect(screen.queryByTestId("issuer-facet")).toBeNull();
+    expect(screen.getAllByText("AAO-HNS").length).toBeGreaterThan(0); // бейдж издателя на карточке
+
+    const designSelect = screen.getAllByText("Дизайн исследования")[0].closest("label")!.querySelector("select")!;
+    await user.selectOptions(designSelect, "guideline");
+    const facet = await screen.findByTestId("issuer-facet");
+    const chip = within(facet).getByRole("button", { name: /AAO-HNS/ });
+    expect(within(facet).getByRole("button", { name: /Без издателя/ })).toBeInTheDocument();
+
+    await user.click(chip);
+    await waitFor(() => expect(calls.some((c) => c.url.pathname === "/api/articles" && c.url.searchParams.get("issuer") === "aao-hns")).toBe(true));
+    await waitFor(() => expect(new URL(window.location.href).searchParams.get("issuer")).toBe("aao-hns"));
+    expect(within(facet).getByRole("button", { name: /AAO-HNS/ })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(seen("Consensus without issuer")).toBe(false));
+    expect(seen("Clinical Practice Guideline: Tinnitus")).toBe(true);
+
+    // Смена дизайна на не-руководство сбрасывает издателя
+    await user.selectOptions(designSelect, "rct");
+    await waitFor(() => expect(new URL(window.location.href).searchParams.get("issuer")).toBeNull());
+    expect(screen.queryByTestId("issuer-facet")).toBeNull();
   });
 });

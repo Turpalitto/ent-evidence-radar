@@ -142,6 +142,43 @@ describe("listArticles / buildWhere", () => {
     });
   });
 
+  it("issuer=… фильтрует руководства по издателю и возвращает фасет издателей (A-06)", async () => {
+    await db
+      .insert(articles)
+      .values([
+        { dedupKey: "g1", title: "Clinical Practice Guideline: Tinnitus", abstract: "", journal: "Otolaryngol Head Neck Surg", url: "https://example.org/g1", sourceKey: "pubmed", sourceKeys: ["pubmed"], studyDesign: "guideline", evidenceLevel: 1, trustScore: 80, subspecialties: ["otology"], guidelineIssuer: "aao-hns" },
+        { dedupKey: "g2", title: "Clinical Practice Guideline: Otitis Media with Effusion", abstract: "", journal: "Otolaryngol Head Neck Surg", url: "https://example.org/g2", sourceKey: "pubmed", sourceKeys: ["pubmed"], studyDesign: "guideline", evidenceLevel: 1, trustScore: 80, subspecialties: ["otology"], guidelineIssuer: "aao-hns" },
+        { dedupKey: "g3", title: "EPOS 2020", abstract: "", journal: "Rhinology", url: "https://example.org/g3", sourceKey: "pubmed", sourceKeys: ["pubmed"], studyDesign: "guideline", evidenceLevel: 1, trustScore: 85, subspecialties: ["rhinology"], guidelineIssuer: "epos" },
+        { dedupKey: "g4", title: "Consensus statement without a known issuer", abstract: "", journal: "", url: "https://example.org/g4", sourceKey: "pubmed", sourceKeys: ["pubmed"], studyDesign: "guideline", evidenceLevel: 1, trustScore: 60, subspecialties: ["general"], guidelineIssuer: null },
+      ])
+      .onConflictDoNothing();
+
+    const aao = await listArticles({ issuer: "aao-hns" });
+    expect(aao.total).toBe(2);
+    expect(aao.items.every((a) => a.guidelineIssuer === "aao-hns")).toBe(true);
+    // Фасет считается без учёта самого issuer — чипы показывают все органы при текущих остальных фильтрах.
+    expect(aao.issuers).toEqual([
+      { key: "aao-hns", count: 2 },
+      { key: "epos", count: 1 },
+      { key: "other", count: 1 },
+    ]);
+
+    const other = await listArticles({ issuer: "other" });
+    expect(other.total).toBe(1);
+    expect(other.items[0].title).toMatch(/without a known issuer/);
+
+    // issuer с другим дизайном в запросе всё равно означает «руководства»; фасет есть и при design=guideline без issuer
+    const all = await listArticles({ design: "guideline" });
+    expect(all.total).toBe(4);
+    expect(all.issuers?.length).toBe(3);
+    // Остальные фильтры сужают фасет
+    const rhin = await listArticles({ design: "guideline", subspecialty: "rhinology" });
+    expect(rhin.issuers).toEqual([{ key: "epos", count: 1 }]);
+    // Без руководств в запросе фасета нет
+    const rct = await listArticles({ design: "rct" });
+    expect("issuers" in rct).toBe(false);
+  });
+
   it("paginates deterministically", async () => {
     const p1 = await listArticles({ pageSize: 1, page: 1 });
     const p2 = await listArticles({ pageSize: 1, page: 2 });

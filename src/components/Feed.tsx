@@ -25,7 +25,8 @@ function getServerNotificationSnapshot(): string {
 import type { Article, Topic } from "@/db/schema";
 import { DESIGN_LABELS, DESIGN_SHORT, SOURCE_LABELS, SUBSPECIALTIES, EVIDENCE_LEVEL_LABELS } from "@/lib/evidence/taxonomy";
 import { extractConclusion } from "@/lib/evidence/abstract";
-import { DesignBadge, LevelBadge, NoticeBadge, SourceBadge, SubBadge, TierBadge, TrustScore, formatDate } from "./Badges";
+import { DesignBadge, IssuerBadge, LevelBadge, NoticeBadge, SourceBadge, SubBadge, TierBadge, TrustScore, formatDate } from "./Badges";
+import { guidelineIssuerLabel } from "@/lib/evidence/guidelines";
 import { ArticleDrawer } from "./ArticleDrawer";
 import { Highlight } from "./Highlight";
 import { useFocusTrap } from "./useFocusTrap";
@@ -34,6 +35,8 @@ interface Filters {
   q: string;
   subspecialty: string;
   design: string;
+  /** Орган-издатель руководства (A-06); подразумевает design = guideline. */
+  issuer: string;
   level: string;
   minTrust: number;
   source: string;
@@ -55,6 +58,7 @@ const initial: Filters = {
   q: "",
   subspecialty: "",
   design: "",
+  issuer: "",
   level: "",
   minTrust: 0,
   source: "",
@@ -115,6 +119,7 @@ function toParams(f: Filters, page: number, pageSize: number) {
   if (f.q) p.set("q", f.q);
   if (f.subspecialty) p.set("subspecialty", f.subspecialty);
   if (f.design) p.set("design", f.design);
+  if (f.issuer) p.set("issuer", f.issuer);
   if (f.level) p.set("level", f.level);
   if (f.minTrust) p.set("minTrust", String(f.minTrust));
   if (f.source) p.set("source", f.source);
@@ -156,6 +161,7 @@ function parseUrlSearch(): { f: Filters; page: number; q: string } {
     q: p.get("q") ?? "",
     subspecialty: p.get("subspecialty") ?? "",
     design: p.get("design") ?? "",
+    issuer: p.get("issuer") ?? "",
     level: p.get("level") ?? "",
     minTrust: num("minTrust") || 0,
     source: p.get("source") ?? "",
@@ -190,7 +196,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 30;
-  const [data, setData] = useState<{ items: Article[]; total: number; searchTerms: string[] }>({ items: [], total: 0, searchTerms: [] });
+  const [data, setData] = useState<{ items: Article[]; total: number; searchTerms: string[]; issuers: { key: string; count: number }[] }>({ items: [], total: 0, searchTerms: [], issuers: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Article | null>(null);
@@ -283,10 +289,10 @@ export function Feed({ topics }: { topics: Topic[] }) {
     try {
       const r = await fetch(`/api/articles?${toParams(f, page, pageSize)}`, { cache: "no-store", signal: ctrl.signal });
       if (!r.ok) throw new Error(`Ошибка сервера ${r.status}`);
-      const parsed = (await r.json()) as { items?: Article[]; total?: number; searchTerms?: string[] };
+      const parsed = (await r.json()) as { items?: Article[]; total?: number; searchTerms?: string[]; issuers?: { key: string; count: number }[] };
       if (ctrl.signal.aborted) return;
       const items = parsed.items ?? [];
-      setData({ items, total: parsed.total ?? 0, searchTerms: parsed.searchTerms ?? [] });
+      setData({ items, total: parsed.total ?? 0, searchTerms: parsed.searchTerms ?? [], issuers: parsed.issuers ?? [] });
       setFocusedIdx(-1);
     } catch (e) {
       if (ctrl.signal.aborted) return; // отменён более новым запросом или размонтированием
@@ -577,11 +583,39 @@ export function Feed({ topics }: { topics: Topic[] }) {
 
       <label className="block">
         <span className="eyebrow mb-1.5 block">Дизайн исследования</span>
-        <select value={f.design} onChange={(e) => set({ design: e.target.value })} className={SELECT_CLS}>
+        <select value={f.design} onChange={(e) => set({ design: e.target.value, ...(e.target.value !== "guideline" ? { issuer: "" } : {}) })} className={SELECT_CLS}>
           <option value="">Все</option>
           {Object.entries(DESIGN_SHORT).map(([k, v]) => <option key={k} value={k} title={DESIGN_LABELS[k as keyof typeof DESIGN_LABELS]}>{v}</option>)}
         </select>
       </label>
+
+      {(f.design === "guideline" || f.issuer) && (
+        <div className="block" data-testid="issuer-facet">
+          <span className="eyebrow mb-1.5 block">Издатель руководства</span>
+          {data.issuers.length === 0 ? (
+            <p className="text-xs text-[color:var(--ink-subtle)]">Нет руководств под текущие фильтры.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {data.issuers.map(({ key, count }) => {
+                const l = key === "other" ? { label: "Без издателя", name: "Руководства, у которых орган-издатель не распознан" } : guidelineIssuerLabel(key) ?? { label: key, name: key };
+                const active = f.issuer === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => set({ issuer: active ? "" : key, design: "guideline" })}
+                    aria-pressed={active}
+                    title={l.name}
+                    className={`rounded-lg border px-2 py-1 text-xs transition ${active ? "border-violet-400 bg-violet-100 font-semibold text-violet-900 dark:border-violet-500/50 dark:bg-violet-950/50 dark:text-violet-200" : "border-[color:var(--hairline)] text-[color:var(--ink-soft)] hover:border-violet-300 hover:text-violet-800 dark:hover:text-violet-300"}`}
+                  >
+                    {l.label} <span className="tabular-nums opacity-70">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <label className="block">
         <span className="eyebrow mb-1.5 block">Уровень доказательности (не ниже)</span>
@@ -933,6 +967,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                   <div className="min-w-0 flex-1">
                     <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                       <DesignBadge design={a.studyDesign} />
+                      <IssuerBadge issuer={a.guidelineIssuer} />
                       <LevelBadge level={a.evidenceLevel} />
                       <TierBadge tier={a.journalTier} />
                       {a.subspecialties.map((s) => <SubBadge key={s} k={s} />)}
@@ -979,6 +1014,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                     <TrustScore score={a.trustScore} size="sm" />
                     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
                       <DesignBadge design={a.studyDesign} />
+                      <IssuerBadge issuer={a.guidelineIssuer} size="sm" />
                       <LevelBadge level={a.evidenceLevel} />
                       {a.isPreprint && <span className="rounded bg-rose-600 px-1 py-0.5 text-[9px] font-bold text-white">ПРЕПРИНТ</span>}
                       {a.isRetracted && <span className="rounded bg-red-700 px-1 py-0.5 text-[9px] font-bold text-white">ОТОЗВАНА</span>}

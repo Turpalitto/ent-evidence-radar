@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { EditorialNotice, StudyDesign } from "@/db/schema";
 import { DESIGN_LABELS, DESIGN_SHORT, SUBSPECIALTY_LABELS, SUBSPECIALTY_SHORT, SOURCE_LABELS, EVIDENCE_LEVEL_LABELS } from "@/lib/evidence/taxonomy";
+import { guidelineIssuerLabel } from "@/lib/evidence/guidelines";
 
 /** Палитра дизайнов исследования: светлая и тёмная темы. */
 const DESIGN_STYLES: Record<StudyDesign, string> = {
@@ -119,6 +120,17 @@ export function TierBadge({ tier }: { tier: number }) {
   return (
     <span title={hint} className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold shadow-sm ${c}`}>
       {label}
+    </span>
+  );
+}
+
+/** Орган-издатель руководства (A-06). */
+export function IssuerBadge({ issuer, size = "md" }: { issuer: string | null | undefined; size?: "sm" | "md" }) {
+  const l = guidelineIssuerLabel(issuer);
+  if (!l) return null;
+  return (
+    <span title={`Руководство: ${l.name}`} className={`rounded border border-violet-300 bg-violet-50 font-semibold text-violet-800 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300 ${size === "sm" ? "px-1 py-0.5 text-[9px]" : "px-1.5 py-0.5 text-[10px]"}`}>
+      {l.label}
     </span>
   );
 }
