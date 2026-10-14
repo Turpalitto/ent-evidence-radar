@@ -72,6 +72,7 @@ type Row = Pick<
   | "evidenceLevel"
   | "trustScore"
   | "overrides"
+  | "publishedDoi"
 >;
 
 /**
@@ -124,6 +125,7 @@ const ROW_COLUMNS = {
   evidenceLevel: articles.evidenceLevel,
   trustScore: articles.trustScore,
   overrides: articles.overrides,
+  publishedDoi: articles.publishedDoi,
 };
 
 /** Колонки, нужные `reclassifyRow` (для выборки в API). */
@@ -159,6 +161,7 @@ export function rowToRaw(row: Row): RawArticle {
     url: row.url,
     // Флаги, которые могли быть выставлены позже источником (перепроверка отзывов) — сохраняем.
     isPreprint: row.isPreprint,
+    publishedDoi: row.publishedDoi,
     isRetracted: row.isRetracted,
   };
   if (sourceKey === "clinicaltrials") {

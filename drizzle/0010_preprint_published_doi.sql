@@ -1,0 +1,2 @@
+ALTER TABLE "articles" ADD COLUMN "published_doi" text;--> statement-breakpoint
+CREATE INDEX "articles_published_doi_idx" ON "articles" USING btree (lower("published_doi")) WHERE "articles"."published_doi" is not null;

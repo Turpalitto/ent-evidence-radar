@@ -145,9 +145,12 @@ export function pubmedSourceStatus(failedTopics: number, totalTopics: number): S
 }
 
 export function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
-  // Предпочитаем PubMed-запись как более полную; дополняем недостающие поля.
-  const primary = a.sourceKey === "pubmed" ? a : b.sourceKey === "pubmed" ? b : a;
+  // Предпочитаем PubMed-запись как более полную, затем рецензированную версию перед препринтом;
+  // недостающие поля дополняем из второй записи.
+  const primary = a.sourceKey === "pubmed" ? a : b.sourceKey === "pubmed" ? b : a.isPreprint && !b.isPreprint ? b : a;
   const secondary = primary === a ? b : a;
+  const doi = primary.doi ?? secondary.doi ?? null;
+  const publishedDoi = primary.publishedDoi ?? secondary.publishedDoi ?? null;
   return {
     ...secondary,
     ...primary,
@@ -160,6 +163,8 @@ export function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
     keywords: Array.from(new Set([...(primary.keywords ?? []), ...(secondary.keywords ?? [])])),
     publicationTypes: Array.from(new Set([...(primary.publicationTypes ?? []), ...(secondary.publicationTypes ?? [])])),
     isPreprint: !!(primary.isPreprint && secondary.isPreprint),
+    // Слитая журнальная версия не «опубликована» сама в себе.
+    publishedDoi: publishedDoi && publishedDoi !== doi ? publishedDoi : null,
   };
 }
 
@@ -185,8 +190,14 @@ export function makeCandidateCollector(candidates: Map<string, Candidate>, sourc
   };
   return (input: RawArticle, topicId?: number) => {
     const raw = normalizeIds(input);
+    // Препринт, у которого уже есть журнальная версия в этой же пачке (аудит A-05), сливается с ней:
+    // одна запись, источники объединяются, в карточке — ссылка на рецензированную версию.
     const key =
-      (raw.doi && keyByDoi.get(raw.doi)) || (raw.pmid && keyByPmid.get(raw.pmid)) || (raw.nctId && keyByNct.get(raw.nctId)) || dedupKeyFor(raw);
+      (raw.doi && keyByDoi.get(raw.doi)) ||
+      (raw.pmid && keyByPmid.get(raw.pmid)) ||
+      (raw.nctId && keyByNct.get(raw.nctId)) ||
+      (raw.publishedDoi && keyByDoi.get(raw.publishedDoi)) ||
+      dedupKeyFor(raw);
     const existing = candidates.get(key);
     if (existing) {
       existing.raw = mergeRaw(existing.raw, raw);
@@ -209,12 +220,33 @@ export function makeCandidateCollector(candidates: Map<string, Candidate>, sourc
       if (other && other !== key && candidates.has(other)) absorb(key, other);
       m.set(id, key);
     }
+    // Журнальная версия пришла после препринта той же пачки — поглощаем препринт (A-05).
+    if (merged.doi) {
+      for (const [k, c] of candidates) if (k !== key && c.raw.publishedDoi === merged.doi) absorb(key, k);
+    }
   };
 }
 
 /** Насколько «полна» запись: PubMed-источник, длина аннотации, наличие PMID/MeSH. */
-function richness(v: { sourceKey: string; abstract?: string | null; pmid?: string | null; meshTerms?: string[] | null }): number {
+function richness(v: { sourceKey?: string; abstract?: string | null; pmid?: string | null; meshTerms?: string[] | null }): number {
   return (v.sourceKey === "pubmed" ? 1_000_000 : 0) + (v.pmid ? 100_000 : 0) + (v.meshTerms?.length ? 10_000 : 0) + (v.abstract?.length ?? 0);
+}
+
+/** Добавляет обновление, объединяя его с уже запланированным для той же строки (I-13/A-05). */
+function pushUpdate(toUpdate: PlannedUpdate[], updateIdx: Map<number, number>, planned: PlannedUpdate) {
+  const prevIdx = updateIdx.get(planned.id);
+  if (prevIdx === undefined) {
+    updateIdx.set(planned.id, toUpdate.length);
+    toUpdate.push(planned);
+    return;
+  }
+  const prev = toUpdate[prevIdx];
+  const topicIds = Array.from(new Set([...(prev.values.topicIds ?? []), ...(planned.values.topicIds ?? [])]));
+  const sourceKeys = Array.from(new Set([...(prev.values.sourceKeys ?? []), ...(planned.values.sourceKeys ?? [])]));
+  // «Только связать» никогда не перетирает полноценное обновление; иначе поля берём у более полной
+  // записи (PubMed > остальные, затем длина аннотации), темы/источники объединяем.
+  const full = prev.linkOnly && !planned.linkOnly ? planned : planned.linkOnly && !prev.linkOnly ? prev : richness(planned.values) > richness(prev.values) ? planned : prev;
+  toUpdate[prevIdx] = { id: planned.id, source: full.source, linkOnly: !!(prev.linkOnly && planned.linkOnly), values: { ...full.values, topicIds, sourceKeys } };
 }
 
 export interface PlannedInsert {
@@ -223,8 +255,10 @@ export interface PlannedInsert {
 }
 export interface PlannedUpdate {
   id: number;
-  values: Omit<NewArticle, "dedupKey">;
+  values: Partial<NewArticle>;
   source: string;
+  /** Только связать (темы/источники) — препринт к уже сохранённой журнальной версии (A-05). */
+  linkOnly?: boolean;
 }
 export interface WritePlan {
   toInsert: PlannedInsert[];
@@ -244,6 +278,8 @@ export function planWrites(
   byDoi: Map<string, ExistingRef>,
   byPmid: Map<string, ExistingRef>,
   minTrustToStore: number,
+  /** Строки-препринты по их `publishedDoi` (A-05). */
+  byPublishedDoi: Map<string, ExistingRef> = new Map(),
 ): WritePlan {
   const toInsert: PlannedInsert[] = [];
   const toUpdate: PlannedUpdate[] = [];
@@ -257,11 +293,31 @@ export function planWrites(
     const existing = existingByKey.get(key);
     const doiMatch = raw.doi ? byDoi.get(raw.doi.toLowerCase()) : undefined;
     const pmidMatch = raw.pmid ? byPmid.get(raw.pmid) : undefined;
+    // A-05: препринт, чья журнальная версия уже в базе → только связываем (темы/источники),
+    // не вставляем дубль и не портим журнальную запись данными препринта.
+    const journalOfPreprint = !existing && !doiMatch && !pmidMatch && raw.publishedDoi ? byDoi.get(raw.publishedDoi.toLowerCase()) : undefined;
+    if (journalOfPreprint) {
+      const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
+      pushUpdate(toUpdate, updateIdx, {
+        id: journalOfPreprint.id,
+        source: raw.sourceKey,
+        values: {
+          topicIds: Array.from(new Set([...(journalOfPreprint.topicIds ?? []), ...cand.topicIds])),
+          sourceKeys: Array.from(new Set([...(journalOfPreprint.sourceKeys ?? []), ...srcKeys])),
+          updatedAt: new Date(),
+        },
+        linkOnly: true,
+      });
+      continue;
+    }
+    // A-05 (обратный случай): в базе лежит препринт с publishedDoi = DOI пришедшей журнальной версии →
+    // обновляем ту же строку рецензированными данными (заметки/закладки врача остаются при статье).
+    const preprintMatch = !existing && !doiMatch && !pmidMatch && raw.doi ? byPublishedDoi.get(raw.doi.toLowerCase()) : undefined;
     // Ручные правки врача у существующей строки (аудит A-11) применяются поверх эвристик.
-    const overrides = existing?.overrides ?? doiMatch?.overrides ?? pmidMatch?.overrides ?? null;
+    const overrides = existing?.overrides ?? doiMatch?.overrides ?? pmidMatch?.overrides ?? preprintMatch?.overrides ?? null;
     const c = classify(raw, overrides);
     // Порог доверия — только для НОВЫХ записей: уже сохранённую статью обновляем всегда.
-    if (c.trustScore < minTrustToStore && !existing && !doiMatch && !pmidMatch) continue;
+    if (c.trustScore < minTrustToStore && !existing && !doiMatch && !pmidMatch && !preprintMatch) continue;
     const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
     const values: NewArticle = {
       dedupKey: key,
@@ -289,40 +345,31 @@ export function planWrites(
       subspecialties: c.subspecialties,
       sampleSize: c.sampleSize,
       isPreprint: c.isPreprint,
+      // undefined — не трогать при UPDATE (PubMed-запись не знает о препринте), null не пишем.
+      publishedDoi: raw.publishedDoi ?? undefined,
       isRetracted: c.isRetracted,
       classifierVersion: CLASSIFIER_VERSION,
       topicIds: Array.from(cand.topicIds),
       updatedAt: new Date(),
     };
 
-    const existingId = existing?.id ?? doiMatch?.id ?? pmidMatch?.id;
+    const existingId = existing?.id ?? doiMatch?.id ?? pmidMatch?.id ?? preprintMatch?.id;
 
     if (existingId) {
-      const prev = existing ?? doiMatch ?? pmidMatch ?? { topicIds: [] as number[], sourceKeys: [] as string[] };
+      const prev = existing ?? doiMatch ?? pmidMatch ?? preprintMatch ?? { topicIds: [] as number[], sourceKeys: [] as string[] };
       const mergedTopics = Array.from(new Set([...(prev.topicIds ?? []), ...values.topicIds!]));
       const mergedSources = Array.from(new Set([...(prev.sourceKeys ?? []), ...srcKeys]));
       // не перетираем пользовательские поля (isRead, isBookmarked, notes) и dedupKey
       const { dedupKey: _dk, ...upd } = values;
       void _dk;
-      const planned: PlannedUpdate = { id: existingId, values: { ...upd, topicIds: mergedTopics, sourceKeys: mergedSources }, source: raw.sourceKey };
-      const prevIdx = updateIdx.get(existingId);
-      if (prevIdx === undefined) {
-        updateIdx.set(existingId, toUpdate.length);
-        toUpdate.push(planned);
-      } else {
-        const prev = toUpdate[prevIdx];
-        // Поля берём у более полной записи (PubMed > остальные, затем длина аннотации), темы/источники объединяем.
-        const richer = richness(planned.values) > richness(prev.values) ? planned : prev;
-        toUpdate[prevIdx] = {
-          id: existingId,
-          source: richer.source,
-          values: {
-            ...richer.values,
-            topicIds: Array.from(new Set([...(prev.values.topicIds ?? []), ...mergedTopics])),
-            sourceKeys: Array.from(new Set([...(prev.values.sourceKeys ?? []), ...mergedSources])),
-          },
-        };
-      }
+      const planned: PlannedUpdate = {
+        id: existingId,
+        // Препринт «дорос» до журнальной статьи: строка получает идентичность журнальной версии
+        // (dedupKey/DOI), иначе следующий заход medRxiv вернул бы ей данные препринта.
+        values: { ...upd, topicIds: mergedTopics, sourceKeys: mergedSources, ...(preprintMatch ? { publishedDoi: null, dedupKey: key } : {}) },
+        source: raw.sourceKey,
+      };
+      pushUpdate(toUpdate, updateIdx, planned);
     } else {
       toInsert.push({ values, source: raw.sourceKey });
     }
@@ -511,14 +558,20 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
   const existingByKey = new Map(existingRows.map((r) => [r.dedupKey, r]));
 
   // вторичная дедупликация: та же DOI/PMID под другим ключом
-  const allDois = keys.length ? Array.from(candidates.values()).map((c) => c.raw.doi?.toLowerCase()).filter((x): x is string => !!x) : [];
+  const allDois = keys.length
+    ? Array.from(new Set(Array.from(candidates.values()).flatMap((c) => [c.raw.doi?.toLowerCase(), c.raw.publishedDoi?.toLowerCase()]).filter((x): x is string => !!x)))
+    : [];
   const allPmids = Array.from(candidates.values()).map((c) => c.raw.pmid).filter((x): x is string => !!x);
   const byDoi = new Map<string, ExistingRef>();
   const byPmid = new Map<string, ExistingRef>();
-  const refCols = { id: articles.id, doi: articles.doi, pmid: articles.pmid, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, overrides: articles.overrides };
+  const byPublishedDoi = new Map<string, ExistingRef>();
+  const refCols = { id: articles.id, doi: articles.doi, pmid: articles.pmid, publishedDoi: articles.publishedDoi, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, overrides: articles.overrides };
   if (allDois.length) {
     const rows = await db.select(refCols).from(articles).where(inArray(sql`lower(${articles.doi})`, allDois));
     for (const r of rows) if (r.doi) byDoi.set(r.doi.toLowerCase(), { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [], overrides: r.overrides });
+    // Препринты, журнальная версия которых пришла сейчас (A-05).
+    const pre = await db.select(refCols).from(articles).where(inArray(sql`lower(${articles.publishedDoi})`, allDois));
+    for (const r of pre) if (r.publishedDoi) byPublishedDoi.set(r.publishedDoi.toLowerCase(), { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [], overrides: r.overrides });
   }
   if (allPmids.length) {
     const rows = await db.select(refCols).from(articles).where(inArray(articles.pmid, allPmids));
@@ -528,7 +581,7 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
   // Сначала считаем решения (insert/update) чистой функцией, затем пишем пакетно в одной
   // транзакции: вставки — пачками по 100, обновления — в той же транзакции. Это убирает
   // N отдельных коммитов (fsync) на PGlite и N round-trip'ов на внешнем PostgreSQL.
-  const { toInsert, toUpdate } = planWrites(candidates, sourceKeysByDedup, existingByKey, byDoi, byPmid, cfg.minTrustToStore);
+  const { toInsert, toUpdate } = planWrites(candidates, sourceKeysByDedup, existingByKey, byDoi, byPmid, cfg.minTrustToStore, byPublishedDoi);
 
   const INSERT_CHUNK = 100;
   await db.transaction(async (tx) => {

@@ -71,6 +71,13 @@
       "when": 1791986398199,
       "tag": "0009_manual_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791986994713,
+      "tag": "0010_preprint_published_doi",
+      "breakpoints": true
     }
   ]
 }

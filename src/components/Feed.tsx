@@ -829,6 +829,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                       <TierBadge tier={a.journalTier} />
                       {a.subspecialties.map((s) => <SubBadge key={s} k={s} />)}
                       {a.isPreprint && <span title="Препринт" className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">ПРЕПРИНТ</span>}
+                      {a.isPreprint && a.publishedDoi && <span title={`Есть рецензированная журнальная версия: doi:${a.publishedDoi}`} className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">ОПУБЛИКОВАН</span>}
                       {a.isRetracted && <span title="Статья отозвана" className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">ОТОЗВАНА</span>}
                       <span className="ml-auto flex items-center gap-1">{a.sourceKeys.map((s) => <SourceBadge key={s} k={s} />)}</span>
                     </div>

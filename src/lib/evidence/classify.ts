@@ -34,6 +34,8 @@ export interface RawArticle {
   sourceKey: "pubmed" | "europepmc" | "clinicaltrials" | "medrxiv";
   url: string;
   isPreprint?: boolean;
+  /** DOI журнальной (рецензированной) версии препринта — medRxiv `published` (аудит A-05). */
+  publishedDoi?: string | null;
   isRetracted?: boolean;
   /** для ClinicalTrials.gov */
   hasResults?: boolean;
@@ -351,6 +353,7 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
     b.push({ label: "Многоцентровое / международное", points: 3 });
   }
   if (isPreprint) b.push({ label: "Препринт без рецензирования", points: -20 });
+  if (isPreprint && a.publishedDoi) b.push({ label: "Есть рецензированная журнальная версия", points: 5 });
   if (isRetracted) b.push({ label: "ОТОЗВАНА (retracted)", points: -60 });
   if (!a.abstract || a.abstract.length < 200) b.push({ label: "Нет / короткая аннотация", points: -4 });
   if (a.sourceKey === "clinicaltrials" && a.hasResults) b.push({ label: "Опубликованы результаты в реестре", points: 8 });
@@ -415,8 +418,10 @@ export function normalizeNct(nct: string | null | undefined): string | null {
 }
 
 /** Приводит идентификаторы записи к канонической форме (на месте не меняет — возвращает копию). */
-export function normalizeIds<T extends { doi?: string | null; pmid?: string | null; nctId?: string | null }>(a: T): T {
-  return { ...a, doi: normalizeDoi(a.doi), pmid: normalizePmid(a.pmid), nctId: normalizeNct(a.nctId) ?? (a.nctId ? null : a.nctId) };
+export function normalizeIds<T extends { doi?: string | null; pmid?: string | null; nctId?: string | null; publishedDoi?: string | null }>(a: T): T {
+  const out = { ...a, doi: normalizeDoi(a.doi), pmid: normalizePmid(a.pmid), nctId: normalizeNct(a.nctId) ?? (a.nctId ? null : a.nctId) };
+  if ("publishedDoi" in a) out.publishedDoi = normalizeDoi(a.publishedDoi);
+  return out;
 }
 
 export function dedupKeyFor(a: { doi?: string | null; pmid?: string | null; nctId?: string | null; title: string; publishedAt?: Date | null }): string {

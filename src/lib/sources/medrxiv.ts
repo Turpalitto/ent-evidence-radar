@@ -84,6 +84,7 @@ export async function fetchMedrxiv(days: number, maxResults: number, opts: Medrx
         sourceKey: "medrxiv",
         url: `https://doi.org/${it.doi}`,
         isPreprint: true,
+        publishedDoi: it.published && it.published !== "NA" ? it.published : null,
       });
     }
     const count = Number(msg?.count ?? items.length) || items.length;

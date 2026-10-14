@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { planWrites, mergeRaw, pubmedSourceStatus, makeCandidateCollector, type Candidate } from "@/lib/refresh";
-import { CLASSIFIER_VERSION, dedupKeyFor, normalizeDoi, normalizeNct, normalizePmid, type RawArticle } from "@/lib/evidence/classify";
+import { CLASSIFIER_VERSION, classify, dedupKeyFor, normalizeDoi, normalizeNct, normalizePmid, type RawArticle } from "@/lib/evidence/classify";
 
 const raw = (over: Partial<RawArticle> = {}): RawArticle => ({
   sourceKey: "pubmed",
@@ -164,5 +164,62 @@ describe("дедупликация по нормализованным иден�
     expect([...plan.toUpdate[0].values.topicIds!].sort()).toEqual([1, 2, 9]);
     expect([...plan.toUpdate[0].values.sourceKeys!].sort()).toEqual(["europepmc", "medrxiv", "pubmed"]);
     expect(plan.toUpdate[0].values.title).toBe("Via DOI"); // PubMed-запись полнее
+  });
+});
+
+describe("препринт ↔ журнальная версия (A-05)", () => {
+  const preprint = () =>
+    raw({ sourceKey: "medrxiv", doi: "10.1101/2024.01.01.24300777", pmid: null, title: "Preprint version", isPreprint: true, publishedDoi: "10.1002/LARY.777" });
+  const journal = () => raw({ sourceKey: "pubmed", pmid: "777", doi: "10.1002/lary.777", title: "Journal version", abstract: "x".repeat(400) });
+
+  it("в одной пачке препринт сливается с журнальной версией (в любом порядке прихода)", () => {
+    for (const order of [[preprint(), journal()], [journal(), preprint()]]) {
+      const candidates = new Map<string, Candidate>();
+      const srcKeys = new Map<string, Set<string>>();
+      const add = makeCandidateCollector(candidates, srcKeys);
+      for (const r of order) add(r, 1);
+      expect(candidates.size).toBe(1);
+      const [key, cand] = [...candidates.entries()][0];
+      expect(cand.raw.doi).toBe("10.1002/lary.777");
+      expect(cand.raw.isPreprint).toBe(false);
+      expect(cand.raw.publishedDoi).toBeNull();
+      expect([...srcKeys.get(key)!].sort()).toEqual(["medrxiv", "pubmed"]);
+    }
+  });
+
+  it("препринт при уже сохранённой журнальной версии только связывается (без дубля и без порчи полей)", () => {
+    const p = preprint();
+    const cands = new Map<string, Candidate>([[dedupKeyFor(p), candidate(p, [3])]]);
+    const existingJournal = { id: 11, topicIds: [1], sourceKeys: ["pubmed"] };
+    const plan = planWrites(cands, new Map(), new Map(), new Map([["10.1002/lary.777", existingJournal]]), new Map(), 0);
+    expect(plan.toInsert).toHaveLength(0);
+    expect(plan.toUpdate).toHaveLength(1);
+    expect(plan.toUpdate[0].linkOnly).toBe(true);
+    expect(plan.toUpdate[0].values.title).toBeUndefined();
+    expect([...plan.toUpdate[0].values.topicIds!].sort()).toEqual([1, 3]);
+    expect([...plan.toUpdate[0].values.sourceKeys!].sort()).toEqual(["medrxiv", "pubmed"]);
+  });
+
+  it("журнальная версия при сохранённом препринте обновляет ту же строку и переводит её идентичность на журнал", () => {
+    const j = journal();
+    const cands = new Map<string, Candidate>([[dedupKeyFor(j), candidate(j, [2])]]);
+    const existingPreprint = { id: 5, topicIds: [1], sourceKeys: ["medrxiv"] };
+    const plan = planWrites(cands, new Map(), new Map(), new Map(), new Map(), 0, new Map([["10.1002/lary.777", existingPreprint]]));
+    expect(plan.toInsert).toHaveLength(0);
+    expect(plan.toUpdate).toHaveLength(1);
+    const u = plan.toUpdate[0];
+    expect(u.id).toBe(5);
+    expect(u.values.title).toBe("Journal version");
+    expect(u.values.isPreprint).toBe(false);
+    expect(u.values.publishedDoi).toBeNull();
+    expect(u.values.dedupKey).toBe("doi:10.1002/lary.777");
+    expect([...u.values.sourceKeys!].sort()).toEqual(["medrxiv", "pubmed"]);
+  });
+
+  it("препринт с журнальной версией получает +5 к доверию", () => {
+    const withPub = classify(preprint());
+    const without = classify({ ...preprint(), publishedDoi: null });
+    expect(withPub.trustScore - without.trustScore).toBe(5);
+    expect(withPub.trustBreakdown.some((b) => /журнальная версия/.test(b.label))).toBe(true);
   });
 });

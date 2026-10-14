@@ -99,6 +99,8 @@ export const articles = pgTable(
     subspecialties: jsonb("subspecialties").$type<string[]>().notNull().default([]),
     sampleSize: integer("sample_size"),
     isPreprint: boolean("is_preprint").notNull().default(false),
+    /** DOI рецензированной журнальной версии препринта (medRxiv `published`), аудит A-05. */
+    publishedDoi: text("published_doi"),
     isRetracted: boolean("is_retracted").notNull().default(false),
     /** Версия эвристик классификатора, которой размечена запись (0 — до версионирования). */
     classifierVersion: integer("classifier_version").notNull().default(0),
@@ -140,6 +142,7 @@ export const articles = pgTable(
     index("articles_doi_idx").on(t.doi),
     index("articles_classifier_version_idx").on(t.classifierVersion),
     index("articles_hidden_idx").on(t.isHidden).where(sql`${t.isHidden}`),
+    index("articles_published_doi_idx").on(sql`lower(${t.publishedDoi})`).where(sql`${t.publishedDoi} is not null`),
   ],
 );
 
