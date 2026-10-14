@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { hasValidSession } from "./session";
+import { hasValidSession, readCookie, SESSION_COOKIE } from "./session";
 
 interface RateLimitEntry {
   count: number;
@@ -148,6 +148,25 @@ export function getClientIp(req: { headers: { get(name: string): string | null }
   }
 
   return "unknown";
+}
+
+/**
+ * Ключ rate-limit для запроса (аудит I-12). Без TRUST_PROXY все клиенты за прокси выглядят
+ * как «unknown» и один пользователь исчерпывал лимит для всех. Поэтому сначала различаем
+ * клиентов по учётным данным: сессионная cookie → свой бакет на сессию, токен API → свой
+ * бакет на токен; IP — только запасной вариант. Хэшируем, чтобы секреты не попадали в ключи/логи.
+ */
+export function rateLimitKey(req: { headers: HeadersLike }): string {
+  const session = readCookie(req.headers, SESSION_COOKIE);
+  if (session && hasValidSession(req.headers)) return `sess:${shortHash(session)}`;
+  const authHeader = req.headers.get("authorization");
+  const token = authHeader?.replace(/^Bearer\s+/i, "") ?? req.headers.get("x-api-key");
+  if (token) return `tok:${shortHash(token)}`;
+  return `ip:${getClientIp(req)}`;
+}
+
+function shortHash(s: string): string {
+  return createHash("sha256").update(s).digest("hex").slice(0, 16);
 }
 
 /** Проверяет in-memory лимит запросов по ключу. */

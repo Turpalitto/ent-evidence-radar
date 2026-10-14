@@ -45,9 +45,19 @@ export function SettingsPanel() {
   };
 
   const saveCfg = async (patch: Partial<AppSettings>) => {
-    const r = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
-    setCfg((await r.json()) as AppSettings);
-    flash("Настройки сохранены");
+    try {
+      const r = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+      const j = (await r.json().catch(() => null)) as (AppSettings & { error?: string }) | null;
+      if (!r.ok || !j || typeof j !== "object" || "error" in j) {
+        // Аудит F-30: при 401/400/500 раньше в состояние попадал объект ошибки и форма ломалась.
+        flash(j?.error ? `Не сохранено: ${j.error}` : `Не сохранено (ошибка ${r.status})`);
+        return;
+      }
+      setCfg(j);
+      flash("Настройки сохранены");
+    } catch (e) {
+      flash(`Не сохранено: ${e instanceof Error ? e.message : "ошибка сети"}`);
+    }
   };
 
   const toggleSource = async (s: Source) => {

@@ -163,6 +163,10 @@ export function parsePubmedArticlesXml(xml: string): RawArticle[] {
       for (const e of eloc) if (String((e as AnyObj)["@_EIdType"]) === "doi" && !doi) doi = textOf(e).trim();
 
       const nct = `${abstract}`.match(/NCT\d{8}/)?.[0] ?? null;
+      // Служебные уведомления (само уведомление об отзыве, опечатки) — не исследования:
+      // в ленте они выглядели как «other» (аудит F-33). Сам факт отзыва статьи мы получаем
+      // по типу «Retracted Publication» у оригинальной записи и через перепроверку.
+      if (pubTypes.some((t) => EDITORIAL_NOTICE_RE.test(t))) continue;
       const isRetracted = pubTypes.some((t) => /retracted publication/i.test(t)) || /^retracted/i.test(title);
 
       out.push({
@@ -189,6 +193,9 @@ export function parsePubmedArticlesXml(xml: string): RawArticle[] {
   }
   return out;
 }
+
+/** Типы публикаций PubMed, которые являются уведомлениями, а не исследованиями. */
+export const EDITORIAL_NOTICE_RE = /^(retraction of publication|published erratum|corrected and republished article|expression of concern)$/i;
 
 export async function pubmedFetch(pmids: string[]): Promise<RawArticle[]> {
   if (!pmids.length) return [];

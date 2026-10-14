@@ -3,6 +3,7 @@ import { writeFile, mkdir, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { db } from "@/db";
+import { invalidateArticleAggregates } from "@/lib/cache";
 import { articles, topics } from "@/db/schema";
 import { getSettings, saveSettings } from "@/lib/refresh";
 import { isSubspecialtyKey } from "@/lib/api";
@@ -268,5 +269,6 @@ export async function restoreUserData(input: BackupInput): Promise<RestoreResult
   }
   if (result.settings.applied.length) await saveSettings(patch);
 
+  invalidateArticleAggregates();
   return result;
 }

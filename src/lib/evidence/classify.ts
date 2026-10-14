@@ -366,9 +366,46 @@ export function normalizeTitle(t: string): string {
     .slice(0, 180);
 }
 
-export function dedupKeyFor(a: { doi?: string | null; pmid?: string | null; nctId?: string | null; title: string }): string {
-  if (a.doi) return `doi:${a.doi.toLowerCase().trim()}`;
-  if (a.pmid) return `pmid:${a.pmid}`;
-  if (a.nctId) return `nct:${a.nctId.toUpperCase()}`;
-  return `title:${normalizeTitle(a.title)}`;
+/**
+ * Нормализация DOI (аудит I-13): источники отдают его по-разному — «https://doi.org/10.1/X»,
+ * «doi:10.1/x», с хвостовой точкой из текста аннотации, в разном регистре. Без этого одна
+ * статья из PubMed и medRxiv получала разные dedupKey и хранилась дважды.
+ */
+export function normalizeDoi(doi: string | null | undefined): string | null {
+  if (!doi) return null;
+  let d = doi.trim().replace(/^(?:https?:\/\/)?(?:dx\.)?doi\.org\//i, "").replace(/^doi:\s*/i, "").trim();
+  d = d.replace(/[\s.,;)\]]+$/g, "").toLowerCase();
+  return /^10\.\d{4,9}\/\S+$/.test(d) ? d : d || null;
+}
+
+/** PMID — только цифры, без ведущих нулей и пробелов («0012345» ≡ «12345»). */
+export function normalizePmid(pmid: string | null | undefined): string | null {
+  if (!pmid) return null;
+  const digits = String(pmid).trim().replace(/^pmid:\s*/i, "").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  return digits || null;
+}
+
+/** NCT-номер — в верхнем регистре, формат NCT + 8 цифр; иначе null. */
+export function normalizeNct(nct: string | null | undefined): string | null {
+  if (!nct) return null;
+  const m = String(nct).toUpperCase().match(/NCT\d{8}/);
+  return m ? m[0] : null;
+}
+
+/** Приводит идентификаторы записи к канонической форме (на месте не меняет — возвращает копию). */
+export function normalizeIds<T extends { doi?: string | null; pmid?: string | null; nctId?: string | null }>(a: T): T {
+  return { ...a, doi: normalizeDoi(a.doi), pmid: normalizePmid(a.pmid), nctId: normalizeNct(a.nctId) ?? (a.nctId ? null : a.nctId) };
+}
+
+export function dedupKeyFor(a: { doi?: string | null; pmid?: string | null; nctId?: string | null; title: string; publishedAt?: Date | null }): string {
+  const doi = normalizeDoi(a.doi);
+  if (doi) return `doi:${doi}`;
+  const pmid = normalizePmid(a.pmid);
+  if (pmid) return `pmid:${pmid}`;
+  const nct = normalizeNct(a.nctId);
+  if (nct) return `nct:${nct}`;
+  // Без идентификаторов — заголовок + год: одноимённые ежегодные документы (обновления
+  // руководств) иначе схлопывались бы в одну запись.
+  const year = a.publishedAt instanceof Date && !Number.isNaN(a.publishedAt.getTime()) ? a.publishedAt.getUTCFullYear() : null;
+  return `title:${normalizeTitle(a.title)}${year ? `|${year}` : ""}`;
 }

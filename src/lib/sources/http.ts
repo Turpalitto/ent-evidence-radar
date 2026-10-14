@@ -1,14 +1,33 @@
 import { metrics, hostLabel } from "@/lib/metrics";
 
-const lastCall: Record<string, number> = {};
+/** Момент, на который уже «забронирован» следующий слот по ключу (а не время последнего вызова). */
+const nextSlot: Record<string, number> = {};
 
-/** Простой rate-limiter: минимум minIntervalMs между вызовами по ключу */
+/**
+ * Rate-limiter с бронированием слота: конкурентные вызовы выстраиваются в очередь с шагом
+ * minIntervalMs, а не стартуют пачкой после одной общей паузы (аудит F-32). Раньше N параллельных
+ * запросов к NCBI читали одно и то же `lastCall`, ждали одинаково и уходили одновременно → 429.
+ */
 async function throttle(key: string, minIntervalMs: number) {
   const now = Date.now();
-  const last = lastCall[key] ?? 0;
-  const wait = last + minIntervalMs - now;
-  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  lastCall[key] = Date.now();
+  const slot = Math.max(now, nextSlot[key] ?? 0);
+  nextSlot[key] = slot + minIntervalMs;
+  if (slot > now) await new Promise((r) => setTimeout(r, slot - now));
+}
+
+/** Сдвигает все последующие слоты по ключу на `ms` вперёд (сервер попросил подождать). */
+export function penalizeThrottle(key: string, ms: number) {
+  nextSlot[key] = Math.max(nextSlot[key] ?? 0, Date.now() + ms);
+}
+
+/** Пауза, которую просит сервер заголовком Retry-After (секунды или HTTP-дата), ограниченная сверху. */
+export function retryAfterMs(res: { headers: { get(name: string): string | null } }, maxMs = 60_000): number | null {
+  const h = res.headers.get("retry-after");
+  if (!h) return null;
+  const sec = Number(h);
+  if (Number.isFinite(sec)) return Math.min(maxMs, Math.max(0, sec * 1000));
+  const t = Date.parse(h);
+  return Number.isNaN(t) ? null : Math.min(maxMs, Math.max(0, t - Date.now()));
 }
 
 export interface FetchOpts {
@@ -46,7 +65,10 @@ export async function fetchWithRetry(url: string, opts: FetchOpts = {}): Promise
       if (res.status === 429 || res.status >= 500) {
         metrics.inc("http.errors", { host, status: res.status });
         lastErr = new Error(`HTTP ${res.status} from ${new URL(url).host}`);
-        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        // Уважаем Retry-After (NCBI и CT.gov его присылают), иначе линейный backoff.
+        const wait = retryAfterMs(res) ?? 800 * (attempt + 1);
+        if (throttleKey && res.status === 429) penalizeThrottle(throttleKey, wait);
+        await new Promise((r) => setTimeout(r, wait));
         continue;
       }
       return res;

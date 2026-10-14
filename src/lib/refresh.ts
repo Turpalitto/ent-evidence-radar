@@ -1,7 +1,7 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail } from "@/db/schema";
-import { CLASSIFIER_VERSION, classify, dedupKeyFor, type RawArticle } from "@/lib/evidence/classify";
+import { CLASSIFIER_VERSION, classify, dedupKeyFor, normalizeIds, type RawArticle } from "@/lib/evidence/classify";
 import { DEFAULT_SETTINGS, DEFAULT_SOURCES, DEFAULT_TOPICS, type AppSettings } from "@/lib/defaults";
 import { fetchPubmed } from "@/lib/sources/pubmed";
 import { fetchEuropePmc } from "@/lib/sources/europepmc";
@@ -12,6 +12,7 @@ import { isReclassifyRunning, reclassifyArticles } from "@/lib/reclassify";
 import { pruneAiCache } from "@/lib/ai";
 import { invalidateStatsCache } from "@/lib/stats";
 import { log } from "@/lib/log";
+import { invalidateArticleAggregates } from "@/lib/cache";
 import { metrics } from "@/lib/metrics";
 import { evaluateRunAlerts } from "@/lib/alerts";
 
@@ -162,6 +163,60 @@ export function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
   };
 }
 
+/**
+ * Сборщик кандидатов с дедупликацией внутри пачки (аудит I-13): идентификаторы нормализуются,
+ * а запись, у которой dedupKey другой (например, medRxiv дал только DOI, PubMed — PMID+DOI),
+ * всё равно сливается с уже собранным кандидатом по общему PMID/DOI/NCT.
+ */
+export function makeCandidateCollector(candidates: Map<string, Candidate>, sourceKeysByDedup: Map<string, Set<string>>) {
+  const keyByPmid = new Map<string, string>();
+  const keyByDoi = new Map<string, string>();
+  const keyByNct = new Map<string, string>();
+  /** Переливает кандидата `from` в `to` (темы, источники, поля) и перенаправляет индексы. */
+  const absorb = (to: string, from: string) => {
+    const a = candidates.get(to)!;
+    const b = candidates.get(from)!;
+    a.raw = mergeRaw(a.raw, b.raw);
+    for (const t of b.topicIds) a.topicIds.add(t);
+    for (const s of sourceKeysByDedup.get(from) ?? []) sourceKeysByDedup.get(to)!.add(s);
+    candidates.delete(from);
+    sourceKeysByDedup.delete(from);
+    for (const m of [keyByPmid, keyByDoi, keyByNct]) for (const [id, k] of m) if (k === from) m.set(id, to);
+  };
+  return (input: RawArticle, topicId?: number) => {
+    const raw = normalizeIds(input);
+    const key =
+      (raw.doi && keyByDoi.get(raw.doi)) || (raw.pmid && keyByPmid.get(raw.pmid)) || (raw.nctId && keyByNct.get(raw.nctId)) || dedupKeyFor(raw);
+    const existing = candidates.get(key);
+    if (existing) {
+      existing.raw = mergeRaw(existing.raw, raw);
+      if (topicId) existing.topicIds.add(topicId);
+    } else {
+      candidates.set(key, { raw, topicIds: new Set(topicId ? [topicId] : []) });
+    }
+    if (!sourceKeysByDedup.has(key)) sourceKeysByDedup.set(key, new Set());
+    sourceKeysByDedup.get(key)!.add(raw.sourceKey);
+    // Новая запись могла «связать» двух ранее независимых кандидатов (у одного был только DOI,
+    // у другого — только PMID): поглощаем второго, иначе в базе появятся две строки.
+    const merged = candidates.get(key)!.raw;
+    for (const [m, id] of [
+      [keyByPmid, merged.pmid],
+      [keyByDoi, merged.doi],
+      [keyByNct, merged.nctId],
+    ] as const) {
+      if (!id) continue;
+      const other = m.get(id);
+      if (other && other !== key && candidates.has(other)) absorb(key, other);
+      m.set(id, key);
+    }
+  };
+}
+
+/** Насколько «полна» запись: PubMed-источник, длина аннотации, наличие PMID/MeSH. */
+function richness(v: { sourceKey: string; abstract?: string | null; pmid?: string | null; meshTerms?: string[] | null }): number {
+  return (v.sourceKey === "pubmed" ? 1_000_000 : 0) + (v.pmid ? 100_000 : 0) + (v.meshTerms?.length ? 10_000 : 0) + (v.abstract?.length ?? 0);
+}
+
 export interface PlannedInsert {
   values: NewArticle;
   source: string;
@@ -192,6 +247,10 @@ export function planWrites(
 ): WritePlan {
   const toInsert: PlannedInsert[] = [];
   const toUpdate: PlannedUpdate[] = [];
+  // Две записи пачки могут вести к одной существующей строке разными путями (одна по DOI,
+  // другая по PMID). Раньше второй update затирал слияние первого (аудит I-13) — теперь
+  // обновления на одну строку объединяются.
+  const updateIdx = new Map<number, number>();
 
   for (const [key, cand] of candidates) {
     const raw = cand.raw;
@@ -242,7 +301,25 @@ export function planWrites(
       // не перетираем пользовательские поля (isRead, isBookmarked, notes) и dedupKey
       const { dedupKey: _dk, ...upd } = values;
       void _dk;
-      toUpdate.push({ id: existingId, values: { ...upd, topicIds: mergedTopics, sourceKeys: mergedSources }, source: raw.sourceKey });
+      const planned: PlannedUpdate = { id: existingId, values: { ...upd, topicIds: mergedTopics, sourceKeys: mergedSources }, source: raw.sourceKey };
+      const prevIdx = updateIdx.get(existingId);
+      if (prevIdx === undefined) {
+        updateIdx.set(existingId, toUpdate.length);
+        toUpdate.push(planned);
+      } else {
+        const prev = toUpdate[prevIdx];
+        // Поля берём у более полной записи (PubMed > остальные, затем длина аннотации), темы/источники объединяем.
+        const richer = richness(planned.values) > richness(prev.values) ? planned : prev;
+        toUpdate[prevIdx] = {
+          id: existingId,
+          source: richer.source,
+          values: {
+            ...richer.values,
+            topicIds: Array.from(new Set([...(prev.values.topicIds ?? []), ...mergedTopics])),
+            sourceKeys: Array.from(new Set([...(prev.values.sourceKeys ?? []), ...mergedSources])),
+          },
+        };
+      }
     } else {
       toInsert.push({ values, source: raw.sourceKey });
     }
@@ -301,6 +378,7 @@ export async function startRefresh(trigger: "manual" | "scheduled"): Promise<Ref
       metrics.inc("refresh.runs", { trigger, status: "failed" });
       return { runId: run.id };
     } finally {
+      invalidateArticleAggregates();
       clearInterval(heartbeat);
       await releaseLock(holder).catch(() => {});
       g.__entRadarRunning = false;
@@ -348,19 +426,7 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
       .catch(() => {});
   const candidates = new Map<string, Candidate>();
   const sourceKeysByDedup = new Map<string, Set<string>>();
-
-  const addCandidate = (raw: RawArticle, topicId?: number) => {
-    const key = dedupKeyFor(raw);
-    const existing = candidates.get(key);
-    if (existing) {
-      existing.raw = mergeRaw(existing.raw, raw);
-      if (topicId) existing.topicIds.add(topicId);
-    } else {
-      candidates.set(key, { raw, topicIds: new Set(topicId ? [topicId] : []) });
-    }
-    if (!sourceKeysByDedup.has(key)) sourceKeysByDedup.set(key, new Set());
-    sourceKeysByDedup.get(key)!.add(raw.sourceKey);
-  };
+  const addCandidate = makeCandidateCollector(candidates, sourceKeysByDedup);
 
   const enabledSources = new Set((await db.select().from(sources).where(eq(sources.enabled, true))).map((s) => s.key));
   const enabledTopics = await db.select().from(topics).where(eq(topics.enabled, true));

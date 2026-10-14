@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
+import { log } from "@/lib/log";
 import { SUBSPECIALTIES } from "@/lib/evidence/taxonomy";
 
 /**
@@ -10,6 +11,21 @@ import { SUBSPECIALTIES } from "@/lib/evidence/taxonomy";
 
 export function apiError(status: number, error: string, extra?: Record<string, unknown>) {
   return NextResponse.json({ error, ...extra }, { status });
+}
+
+/** Корреляционный id запроса, проставленный в proxy.ts (для логов и сообщений об ошибке). */
+export function requestIdOf(req: { headers: { get(name: string): string | null } }): string | null {
+  return req.headers.get("x-request-id");
+}
+
+/**
+ * Единый ответ на необработанную ошибку маршрута (аудит I-07): в лог — событие с requestId,
+ * стеком и маршрутом; клиенту — 500 без внутренних деталей, но с requestId для обращения.
+ */
+export function apiFailure(req: { headers: { get(name: string): string | null }; url?: string }, e: unknown, route: string) {
+  const requestId = requestIdOf(req);
+  log.error("api.unhandled", { route, requestId, error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
+  return NextResponse.json({ ok: false, error: "Внутренняя ошибка сервера", requestId }, { status: 500 });
 }
 
 /** Положительный целочисленный id из параметра маршрута; иначе null. */

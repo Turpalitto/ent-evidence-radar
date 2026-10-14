@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { planWrites, mergeRaw, pubmedSourceStatus, type Candidate } from "@/lib/refresh";
-import { CLASSIFIER_VERSION, dedupKeyFor, type RawArticle } from "@/lib/evidence/classify";
+import { planWrites, mergeRaw, pubmedSourceStatus, makeCandidateCollector, type Candidate } from "@/lib/refresh";
+import { CLASSIFIER_VERSION, dedupKeyFor, normalizeDoi, normalizeNct, normalizePmid, type RawArticle } from "@/lib/evidence/classify";
 
 const raw = (over: Partial<RawArticle> = {}): RawArticle => ({
   sourceKey: "pubmed",
@@ -108,5 +108,61 @@ describe("planWrites — версия классификатора (I-04)", () =
 
     const plan2 = planWrites(cands, new Map(), new Map([[dedupKeyFor(a), { id: 5, topicIds: [], sourceKeys: [] }]]), new Map(), new Map(), 0);
     expect(plan2.toUpdate[0]?.values.classifierVersion).toBe(CLASSIFIER_VERSION);
+  });
+});
+
+describe("дедупликация по нормализованным идентификаторам (I-13)", () => {
+  it("normalizeDoi/normalizePmid/normalizeNct", () => {
+    expect(normalizeDoi(" https://doi.org/10.1000/ABC.123. ")).toBe("10.1000/abc.123");
+    expect(normalizeDoi("doi:10.1000/x")).toBe("10.1000/x");
+    expect(normalizeDoi("http://dx.doi.org/10.1000/X,")).toBe("10.1000/x");
+    expect(normalizeDoi("")).toBeNull();
+    expect(normalizePmid("0012345")).toBe("12345");
+    expect(normalizePmid("PMID: 777")).toBe("777");
+    expect(normalizePmid("abc")).toBeNull();
+    expect(normalizeNct("nct01234567")).toBe("NCT01234567");
+    expect(normalizeNct("NCT123")).toBeNull();
+  });
+
+  it("dedupKeyFor одинаков для разных написаний DOI/PMID; без идентификаторов — заголовок + год", () => {
+    expect(dedupKeyFor({ doi: "https://doi.org/10.1/X", title: "t" })).toBe(dedupKeyFor({ doi: "10.1/x", title: "u" }));
+    expect(dedupKeyFor({ pmid: "007", title: "t" })).toBe("pmid:7");
+    expect(dedupKeyFor({ title: "Guideline: tonsillectomy", publishedAt: new Date("2019-05-01") })).toBe("title:guideline tonsillectomy|2019");
+    expect(dedupKeyFor({ title: "Guideline: tonsillectomy", publishedAt: new Date("2024-05-01") })).not.toBe(
+      dedupKeyFor({ title: "Guideline: tonsillectomy", publishedAt: new Date("2019-05-01") }),
+    );
+    expect(dedupKeyFor({ title: "No date" })).toBe("title:no date");
+  });
+
+  it("сборщик сливает записи пачки с разными dedupKey по общему PMID/DOI", () => {
+    const candidates = new Map<string, Candidate>();
+    const srcKeys = new Map<string, Set<string>>();
+    const add = makeCandidateCollector(candidates, srcKeys);
+    add(raw({ sourceKey: "medrxiv", doi: "10.1101/2024.01.01.24300001", pmid: null, title: "Preprint", isPreprint: true }), 1);
+    add(raw({ sourceKey: "europepmc", pmid: "42", doi: null, title: "Same paper via Europe PMC" }), 2);
+    add(raw({ sourceKey: "pubmed", pmid: "0042", doi: "HTTPS://DOI.ORG/10.1101/2024.01.01.24300001", title: "Same paper, PubMed" }), 3);
+    expect(candidates.size).toBe(1);
+    const [key, cand] = [...candidates.entries()][0];
+    expect(key).toBe("doi:10.1101/2024.01.01.24300001");
+    expect(cand.raw.sourceKey).toBe("pubmed");
+    expect(cand.raw.pmid).toBe("42");
+    expect([...cand.topicIds].sort()).toEqual([1, 2, 3]);
+    expect([...srcKeys.get(key)!].sort()).toEqual(["europepmc", "medrxiv", "pubmed"]);
+  });
+
+  it("planWrites объединяет два обновления одной существующей строки вместо затирания", () => {
+    const a = raw({ sourceKey: "europepmc", pmid: "555", doi: null, title: "Via PMID" });
+    const b = raw({ sourceKey: "pubmed", pmid: null, doi: "10.1/same", title: "Via DOI" });
+    const cands = new Map<string, Candidate>([
+      [dedupKeyFor(a), candidate(a, [1])],
+      [dedupKeyFor(b), candidate(b, [2])],
+    ]);
+    const existing = { id: 7, topicIds: [9], sourceKeys: ["medrxiv"] };
+    const plan = planWrites(cands, new Map(), new Map(), new Map([["10.1/same", existing]]), new Map([["555", existing]]), 0);
+    expect(plan.toUpdate).toHaveLength(1);
+    expect(plan.toUpdate[0].id).toBe(7);
+    expect([...plan.toUpdate[0].values.topicIds!].sort()).toEqual([1, 2, 9]);
+    expect([...plan.toUpdate[0].values.sourceKeys!].sort()).toEqual(["europepmc", "medrxiv", "pubmed"]);
+    expect(plan.toUpdate[0].values.title).toBe("Via DOI"); // PubMed-запись полнее
   });
 });

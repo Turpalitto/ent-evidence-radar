@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "test": "vitest run",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "db:migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.3.11",

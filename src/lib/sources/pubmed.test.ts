@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildRetractedTerm, parseEsearchIdList, parsePubmedArticlesXml, parsePubmedRetractionsXml, pubmedRetractedSet } from "@/lib/sources/pubmed";
+import { buildRetractedTerm, parseEsearchIdList, parsePubmedArticlesXml, parsePubmedRetractionsXml, pubmedRetractedSet, EDITORIAL_NOTICE_RE } from "@/lib/sources/pubmed";
 
 /**
  * Фрагмент реального формата efetch (PubmedArticleSet) со всеми «неудобными» местами:
@@ -189,5 +189,20 @@ describe("лёгкая перепроверка отзывов через esearc
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("служебные уведомления PubMed (F-33)", () => {
+  const record = (pt: string, pmid: string) => `<PubmedArticle><MedlineCitation><PMID>${pmid}</PMID><Article>
+    <Journal><Title>J</Title></Journal><ArticleTitle>Retraction: Something</ArticleTitle>
+    <PublicationTypeList><PublicationType>${pt}</PublicationType></PublicationTypeList>
+  </Article></MedlineCitation></PubmedArticle>`;
+  it("уведомление об отзыве и опечатка пропускаются, отозванная статья остаётся с флагом", () => {
+    const xml = `<PubmedArticleSet>${record("Retraction of Publication", "1")}${record("Published Erratum", "2")}${record("Retracted Publication", "3")}${record("Journal Article", "4")}</PubmedArticleSet>`;
+    const out = parsePubmedArticlesXml(xml);
+    expect(out.map((a) => a.pmid)).toEqual(["3", "4"]);
+    expect(out[0].isRetracted).toBe(true);
+    expect(EDITORIAL_NOTICE_RE.test("Expression of Concern")).toBe(true);
+    expect(EDITORIAL_NOTICE_RE.test("Retracted Publication")).toBe(false);
   });
 });

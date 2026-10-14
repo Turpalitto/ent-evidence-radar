@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { checkRateLimit, checkApiAuth, getClientIp } from "@/lib/security";
+import { checkRateLimit, checkApiAuth, getClientIp, rateLimitKey } from "@/lib/security";
 import { SESSION_COOKIE, createSessionToken, verifySessionToken } from "@/lib/session";
 
 describe("checkRateLimit", () => {
@@ -171,5 +171,42 @@ describe("getClientIp", () => {
     process.env.TRUST_PROXY = "1";
     process.env.CLIENT_IP_HEADER = "cf-connecting-ip";
     expect(getClientIp(req({ "cf-connecting-ip": "198.51.100.7", "x-forwarded-for": "1.2.3.4" }))).toBe("198.51.100.7");
+  });
+});
+
+describe("rateLimitKey (I-12)", () => {
+  function req(headers: Record<string, string>) {
+    return { headers: { get: (n: string) => headers[n.toLowerCase()] ?? null } };
+  }
+  beforeEach(() => {
+    process.env.API_SECRET = "s3cret";
+  });
+  afterEach(() => {
+    delete process.env.API_SECRET;
+    delete process.env.TRUST_PROXY;
+  });
+
+  it("разные сессии → разные бакеты, одна сессия → один бакет; секрет не попадает в ключ", () => {
+    const a = `${SESSION_COOKIE}=${createSessionToken(Date.now())}`;
+    const b = `${SESSION_COOKIE}=${createSessionToken(Date.now() + 1000)}`;
+    const ka = rateLimitKey(req({ cookie: a }));
+    expect(ka).toMatch(/^sess:[0-9a-f]{16}$/);
+    expect(rateLimitKey(req({ cookie: a }))).toBe(ka);
+    expect(rateLimitKey(req({ cookie: b }))).not.toBe(ka);
+    expect(ka).not.toContain(a.slice(-10));
+  });
+
+  it("токен API — свой бакет; просроченная cookie не считается сессией", () => {
+    const kt = rateLimitKey(req({ authorization: "Bearer s3cret" }));
+    expect(kt).toMatch(/^tok:[0-9a-f]{16}$/);
+    expect(rateLimitKey(req({ "x-api-key": "s3cret" }))).toBe(kt);
+    const expired = `${SESSION_COOKIE}=${createSessionToken(Date.now() - 100 * 86400_000, 60)}`;
+    expect(rateLimitKey(req({ cookie: expired }))).toBe("ip:unknown");
+  });
+
+  it("без учётных данных — по IP (с TRUST_PROXY — реальный, иначе unknown)", () => {
+    expect(rateLimitKey(req({ "x-forwarded-for": "1.2.3.4" }))).toBe("ip:unknown");
+    process.env.TRUST_PROXY = "1";
+    expect(rateLimitKey(req({ "x-forwarded-for": "1.2.3.4" }))).toBe("ip:1.2.3.4");
   });
 });

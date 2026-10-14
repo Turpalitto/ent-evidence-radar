@@ -13,7 +13,10 @@ async function currentData() {
   return { ...renderDigest(data), data };
 }
 
-export async function GET() {
+/** Предпросмотр дайджеста. Требует авторизации (аудит F-28): это тяжёлая выборка и полный состав ленты. */
+export async function GET(req: NextRequest) {
+  const auth = checkApiAuth(req);
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status ?? 401 });
   const { html, text, data } = await currentData();
   return NextResponse.json({ ok: true, days: data.days, generatedAt: data.generatedAt, html, text, data });
 }

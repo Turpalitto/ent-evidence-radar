@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { topics } from "@/db/schema";
+import { articles, topics } from "@/db/schema";
 import { apiError, isSubspecialtyKey, normalizeTopicLookback, parseId, readJsonObject, TOPIC_LIMITS } from "@/lib/api";
 import { checkApiAuth } from "@/lib/security";
 
@@ -52,5 +52,14 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
   const rows = await db.delete(topics).where(eq(topics.id, id)).returning({ id: topics.id });
   if (!rows.length) return apiError(404, "not found");
-  return NextResponse.json({ ok: true });
+  // Аудит F-29: убираем id удалённой темы из статей, иначе фильтр «по теме» и экспорт
+  // ссылаются на несуществующую тему.
+  const detached = await db
+    .update(articles)
+    .set({
+      topicIds: sql`coalesce((select jsonb_agg(e) from jsonb_array_elements(${articles.topicIds}) e where e <> to_jsonb(${id}::int)), '[]'::jsonb)`,
+    })
+    .where(sql`${articles.topicIds} @> ${JSON.stringify([id])}::jsonb`)
+    .returning({ id: articles.id });
+  return NextResponse.json({ ok: true, detachedArticles: detached.length });
 }

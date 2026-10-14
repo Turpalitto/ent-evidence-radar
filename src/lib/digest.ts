@@ -1,6 +1,7 @@
 import { gte } from "drizzle-orm";
 import { db } from "@/db";
-import { articles } from "@/db/schema";
+import { articles, articleColumns } from "@/db/schema";
+import { DESIGN_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 
 export interface DigestArticle {
   title: string;
@@ -35,7 +36,7 @@ export interface DigestData {
 
 export async function fetchDigestArticles(days: number): Promise<DigestArticle[]> {
   const cutoff = new Date(Date.now() - days * 86400_000);
-  const rows = await db.select().from(articles).where(gte(articles.fetchedAt, cutoff));
+  const rows = await db.select(articleColumns).from(articles).where(gte(articles.fetchedAt, cutoff));
   return rows.map((r) => ({
     title: r.title,
     journal: r.journal ?? null,
@@ -98,10 +99,11 @@ export function formatDate(d: Date | null): string {
   return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" }).format(d);
 }
 
-function countLabel(map: Record<string, number>): string {
+/** Человекочитаемые подписи вместо сырых ключей (аудит F-31): «Систематический обзор — 5», а не «systematic_review — 5». */
+function countLabel(map: Record<string, number>, labels: Record<string, string> = {}): string {
   const entries = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 8);
   if (!entries.length) return "нет";
-  return entries.map(([k, v]) => `${k} — ${v}`).join("; ");
+  return entries.map(([k, v]) => `${labels[k] ?? k} — ${v}`).join("; ");
 }
 
 function link(a: DigestArticle): string {
@@ -147,9 +149,9 @@ export function renderDigest(data: DigestData): { html: string; text: string } {
     `Сгенерировано: ${formatDate(new Date(data.generatedAt))}`,
     "",
     `Всего новых: ${data.total}`,
-    `По дизайну: ${countLabel(data.byDesign)}`,
-    `По источнику: ${countLabel(data.bySource)}`,
-    `По подспециализации: ${countLabel(data.bySubspecialty)}`,
+    `По дизайну: ${countLabel(data.byDesign, DESIGN_LABELS)}`,
+    `По источнику: ${countLabel(data.bySource, SOURCE_LABELS)}`,
+    `По подспециализации: ${countLabel(data.bySubspecialty, SUBSPECIALTY_LABELS)}`,
     `Препринтов: ${data.preprints}`,
     "",
     "TOP:",
@@ -170,9 +172,9 @@ export function renderDigest(data: DigestData): { html: string; text: string } {
 <h1>ENT Evidence Radar — дайджест</h1>
 <p class="muted">За последние <b>${data.days}</b> дн. · ${formatDate(new Date(data.generatedAt))}</p>
 <p>Всего новых: <b>${data.total}</b></p>
-<p class="muted">По дизайну: ${escapeHtml(countLabel(data.byDesign))}</p>
-<p class="muted">По источнику: ${escapeHtml(countLabel(data.bySource))}</p>
-<p class="muted">По подспециализации: ${escapeHtml(countLabel(data.bySubspecialty))}</p>
+<p class="muted">По дизайну: ${escapeHtml(countLabel(data.byDesign, DESIGN_LABELS))}</p>
+<p class="muted">По источнику: ${escapeHtml(countLabel(data.bySource, SOURCE_LABELS))}</p>
+<p class="muted">По подспециализации: ${escapeHtml(countLabel(data.bySubspecialty, SUBSPECIALTY_LABELS))}</p>
 <p class="muted">Препринтов: ${data.preprints}</p>
 <h2>Топ по индексу доверия</h2>
 <ul>${data.highTrust.map((a) => `<li><a href="${escapeHtml(safeHref(link(a)))}">${escapeHtml(a.title)}</a> — ${a.trustScore}</li>`).join("") || "<li>—</li>"}</ul>

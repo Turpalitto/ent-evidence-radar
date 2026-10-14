@@ -5,6 +5,7 @@ import type { Article } from "@/db/schema";
 import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
 import { DesignBadge, LevelBadge, TierBadge, TrustScore, formatDate } from "./Badges";
+import { citeBibtex, citeGost, citeVancouver } from "@/lib/citation";
 import { useFocusTrap } from "./useFocusTrap";
 
 interface Props {
@@ -18,18 +19,8 @@ function isMobile() {
   return typeof window !== "undefined" && window.innerWidth < 768;
 }
 
-function buildCitation(a: Article): string {
-  const authorPart = a.authors.length ? a.authors.slice(0, 6).join(", ") + (a.authors.length > 6 ? " et al." : "") : "Авт. не указан";
-  const year = a.publishedAt ? new Date(a.publishedAt).getFullYear() : "";
-  const journalPart = a.journal ? `${a.journal}. ` : "";
-  const yearPart = year ? `${year}. ` : "";
-  const doiPart = a.doi ? `doi:${a.doi}. ` : "";
-  const pmidPart = a.pmid ? `PMID:${a.pmid}.` : "";
-  return `${authorPart}. ${a.title}. ${journalPart}${yearPart}${doiPart}${pmidPart}`.trim();
-}
-
 function buildConsiliumSummary(a: Article): string {
-  const citation = buildCitation(a);
+  const citation = citeVancouver(a);
   const conclusion = extractConclusion(a.abstract);
   const design = DESIGN_LABELS[a.studyDesign] || a.studyDesign;
   const level = EVIDENCE_LEVEL_LABELS[a.evidenceLevel] || `Уровень ${a.evidenceLevel}`;
@@ -287,6 +278,28 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
           >
             {copied === "share" ? "✓ Скопировано" : "⧉ Поделиться"}
           </button>
+        </div>
+
+        {/* ── Цитирование (A-13): Vancouver / ГОСТ / BibTeX ── */}
+        <div className="flex flex-wrap items-center gap-1.5 text-xs" aria-label="Скопировать библиографическую ссылку">
+          <span className="text-slate-500 dark:text-slate-400">Цитата:</span>
+          {(
+            [
+              ["vancouver", "Vancouver", () => citeVancouver(a), "Формат ICMJE/NLM — для международных журналов"],
+              ["gost", "ГОСТ", () => citeGost(a), "ГОСТ Р 7.0.5-2008 — для российских журналов и диссертаций"],
+              ["bibtex", "BibTeX", () => citeBibtex(a), "Запись для LaTeX / менеджеров ссылок"],
+            ] as const
+          ).map(([key, label, build, title]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => void copyToClipboard(build(), key)}
+              title={title}
+              className="rounded-lg border border-slate-200 px-2 py-1 font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+            >
+              {copied === key ? "✓ Скопировано" : label}
+            </button>
+          ))}
         </div>
 
         {/* ── Идентификаторы (компактно) ── */}

@@ -13,8 +13,23 @@ import { NextRequest, NextResponse } from "next/server";
  */
 const CSP_ENABLED = !/^(1|true|yes|on)$/i.test(process.env.DISABLE_CSP ?? "");
 
+/** Корреляционный идентификатор запроса (аудит I-07): прокидывается в ответ и в JSON-логи API. */
+function requestId(request: NextRequest): string {
+  const incoming = request.headers.get("x-request-id");
+  // Принимаем id от доверенного прокси/балансировщика, но только безопасной формы и длины.
+  if (incoming && /^[A-Za-z0-9._:-]{8,128}$/.test(incoming)) return incoming;
+  return crypto.randomUUID();
+}
+
 export function proxy(request: NextRequest) {
-  if (!CSP_ENABLED) return NextResponse.next();
+  const rid = requestId(request);
+  if (!CSP_ENABLED) {
+    const headers = new Headers(request.headers);
+    headers.set("x-request-id", rid);
+    const res = NextResponse.next({ request: { headers } });
+    res.headers.set("x-request-id", rid);
+    return res;
+  }
 
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const isDev = process.env.NODE_ENV !== "production";
@@ -40,9 +55,11 @@ export function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", csp);
+  requestHeaders.set("x-request-id", rid);
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
+  response.headers.set("x-request-id", rid);
   return response;
 }
 

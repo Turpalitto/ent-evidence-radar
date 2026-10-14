@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { articles } from "@/db/schema";
 import { aiConfigured, getAiUsage, summarizeStream, translateStream } from "@/lib/ai";
 import { parseBody } from "@/lib/api";
-import { checkApiAuth, getClientIp } from "@/lib/security";
+import { checkApiAuth, rateLimitKey } from "@/lib/security";
 import { checkRateLimitShared } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -56,8 +56,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: false, error: auth.error }, { status: auth.status ?? 401 });
   }
 
-  const ip = getClientIp(req);
-  const rl = await checkRateLimitShared(`ai:${ip}`, 30, 60_000);
+  const rl = await checkRateLimitShared(`ai:${rateLimitKey(req)}`, 30, 60_000);
   if (!rl.allowed) {
     return Response.json(
       { ok: false, error: "Слишком много запросов к AI. Подождите немного." },

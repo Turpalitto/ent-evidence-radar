@@ -8,6 +8,7 @@ import { ensureSeeded, getSettings } from "@/lib/refresh";
 import { Feed } from "@/components/Feed";
 import { formatDateTime } from "@/components/Badges";
 import { pageMetadata } from "@/lib/metadata";
+import { ARTICLE_AGGREGATES_PREFIX, cached } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -49,16 +50,21 @@ export default async function HomePage() {
   const [topicRows, cfg, [totals], lastRun] = await Promise.all([
     db.select().from(topics).orderBy(asc(topics.id)),
     getSettings(),
-    db
-      .select({
-        total: sql<number>`count(*)::int`,
-        unread: sql<number>`count(*) filter (where not ${articles.isRead})::int`,
-        high: sql<number>`count(*) filter (where ${articles.trustScore} >= 70)::int`,
-        l1: sql<number>`count(*) filter (where ${articles.evidenceLevel} = 1)::int`,
-        last7: sql<number>`count(*) filter (where ${articles.fetchedAt} >= now() - interval '7 days')::int`,
-        guidelines: sql<number>`count(*) filter (where ${articles.studyDesign} = 'guideline')::int`,
-      })
-      .from(articles),
+    // Аудит I-11: счётчики по всей таблице кэшируются на 30 с и сбрасываются по событиям
+    // (прочитано/закладка/обновление/реклассификация), поэтому цифры не «отстают».
+    cached(`${ARTICLE_AGGREGATES_PREFIX}home-totals`, 30_000, async () => {
+      const [t] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          unread: sql<number>`count(*) filter (where not ${articles.isRead})::int`,
+          high: sql<number>`count(*) filter (where ${articles.trustScore} >= 70)::int`,
+          l1: sql<number>`count(*) filter (where ${articles.evidenceLevel} = 1)::int`,
+          last7: sql<number>`count(*) filter (where ${articles.fetchedAt} >= now() - interval '7 days')::int`,
+          guidelines: sql<number>`count(*) filter (where ${articles.studyDesign} = 'guideline')::int`,
+        })
+        .from(articles);
+      return [t];
+    }),
     db.select().from(fetchRuns).orderBy(desc(fetchRuns.startedAt)).limit(1),
   ]);
   const run = lastRun[0];

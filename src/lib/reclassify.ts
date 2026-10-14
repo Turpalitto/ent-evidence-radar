@@ -1,5 +1,6 @@
 import { asc, eq, gt, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { invalidateArticleAggregates } from "@/lib/cache";
 import { articles, type Article } from "@/db/schema";
 import { CLASSIFIER_VERSION, classify, type RawArticle } from "@/lib/evidence/classify";
 import { invalidateStatsCache } from "@/lib/stats";
@@ -221,6 +222,7 @@ export async function reclassifyArticles(opts: ReclassifyOptions = {}): Promise<
     return result;
   } finally {
     g.__entRadarReclassifying = false;
+    invalidateArticleAggregates();
   }
 }
 

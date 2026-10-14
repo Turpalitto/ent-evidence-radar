@@ -1,13 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { desc, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { articles, fetchRuns, sources, topics } from "@/db/schema";
 import { ensureSeeded } from "@/lib/refresh";
+import { checkApiAuth } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+/**
+ * Публичный статус: источники, последний запуск, счётчики. Тексты ошибок (внутренние URL,
+ * коды ответов внешних API, стек) видны только авторизованным — аудит F-28; анониму
+ * остаётся сам факт «ошибка/частично» и время.
+ */
+export async function GET(req: NextRequest) {
   await ensureSeeded();
+  const canSeeDetails = checkApiAuth(req).ok;
   const [srcRows, [last], [counts], enabledTopics] = await Promise.all([
     db.select().from(sources).orderBy(desc(sources.id)),
     db.select({
@@ -35,7 +42,7 @@ export async function GET() {
     enabled: s.enabled,
     lastFetchedAt: s.lastFetchedAt,
     lastStatus: s.lastStatus,
-    lastError: s.lastError,
+    lastError: canSeeDetails ? s.lastError : s.lastError ? "скрыто (нужна авторизация)" : null,
     healthy: s.lastStatus !== "error",
     /** Часть тем источника упала (F-18): источник жив, но данные неполные. */
     degraded: s.lastStatus === "degraded",
@@ -45,7 +52,7 @@ export async function GET() {
     ok: true,
     updatedAt: new Date().toISOString(),
     sources: src,
-    lastRun: last ?? null,
+    lastRun: last ? { ...last, errorMessage: canSeeDetails ? last.errorMessage : last.errorMessage ? "скрыто (нужна авторизация)" : null } : null,
     counts,
     topics: { total: enabledTopics.length, enabled: enabledTopics.filter((t) => t.enabled).length },
   });

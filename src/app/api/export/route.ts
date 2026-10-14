@@ -3,6 +3,7 @@ import { listArticles, parseFilters } from "@/lib/queries";
 import { DESIGN_LABELS } from "@/lib/evidence/taxonomy";
 import { checkApiAuth } from "@/lib/security";
 import { csvRow } from "@/lib/export";
+import { citeBibtex } from "@/lib/citation";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,12 @@ export async function GET(req: NextRequest) {
   if (format === "json") {
     return new NextResponse(JSON.stringify(items, null, 2), {
       headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="ent-radar-${stamp}.json"` },
+    });
+  }
+  if (format === "bibtex" || format === "bib") {
+    const body = items.map((a) => citeBibtex(a)).join("\n\n") + "\n";
+    return new NextResponse(body, {
+      headers: { "Content-Type": "application/x-bibtex; charset=utf-8", "Content-Disposition": `attachment; filename="ent-radar-${stamp}.bib"` },
     });
   }
   if (format === "ris") {

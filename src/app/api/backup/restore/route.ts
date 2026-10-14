@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { BackupSchema, restoreUserData } from "@/lib/backup";
-import { parseBody } from "@/lib/api";
+import { apiFailure, parseBody } from "@/lib/api";
 import { checkApiAuth } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +27,6 @@ export async function POST(req: NextRequest) {
     const result = await restoreUserData(parsed.data);
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    return apiFailure(req, e, "POST /api/backup/restore");
   }
 }

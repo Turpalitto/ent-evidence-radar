@@ -7,6 +7,7 @@ import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
+import { MIGRATION_LOCK_KEY, pendingMigrations, preMigrationBackup, shouldMigrateOnStart } from "./migrate-guard";
 
 const databaseUrl = process.env.DATABASE_URL;
 const migrationsFolder = path.join(process.cwd(), "drizzle");
@@ -18,24 +19,51 @@ const g = globalThis as typeof globalThis & {
   __entRadarClosed?: boolean;
 };
 
-/** Открывает PGlite и применяет миграции. */
+/** Бэкап пользовательских данных перед применением НОВЫХ миграций (аудит I-15); сбой бэкапа не блокирует старт. */
+async function backupBeforeMigrate(runner: { query(sql: string): Promise<{ rows: Record<string, unknown>[] }> }, label: string) {
+  try {
+    const pending = await pendingMigrations(runner, migrationsFolder);
+    if (!pending) return;
+    const file = await preMigrationBackup(runner);
+    console.log(`[ent-radar] ${label}: ${pending} новых миграций; снимок пользовательских данных: ${file ?? "не требуется (пустая база)"}`);
+  } catch (e) {
+    console.warn("[ent-radar] бэкап перед миграцией не удался:", e instanceof Error ? e.message : e);
+  }
+}
+
+/** Открывает PGlite и применяет миграции (файловый экземпляр — с бэкапом перед новыми миграциями). */
 async function openPglite(dataDir?: string) {
   // pg_trgm нужен миграции 0003 (GIN-индексы для ILIKE-поиска) — регистрируем заранее.
   const extensions = { pg_trgm };
   const pglite = dataDir ? new PGlite(dataDir, { extensions }) : new PGlite({ extensions });
   g.__entRadarPglite = pglite;
   const db = drizzlePglite(pglite);
-  await migratePglite(db, { migrationsFolder });
+  if (dataDir) await backupBeforeMigrate(pglite as unknown as { query(sql: string): Promise<{ rows: Record<string, unknown>[] }> }, "PGlite");
+  if (!dataDir || shouldMigrateOnStart()) await migratePglite(db, { migrationsFolder });
+  else console.warn("[ent-radar] MIGRATE_ON_START=0 — миграции при старте пропущены; выполните `npm run db:migrate`.");
   return db;
 }
 
 async function initDb() {
-  // Если задан DATABASE_URL — используем внешний PostgreSQL (совместимо с drizzle.config.json/drizzle-kit).
+  // Если задан DATABASE_URL — используем внешний PostgreSQL (совместимо с drizzle.config.ts/drizzle-kit).
   if (databaseUrl) {
     const pool = g.__entRadarPgPool ?? new Pool({ connectionString: databaseUrl });
     g.__entRadarPgPool = pool;
     const db = drizzlePg(pool);
-    await migratePg(db, { migrationsFolder });
+    if (shouldMigrateOnStart()) {
+      // Advisory-lock: несколько инстансов (реплики, cron) не применяют миграции одновременно.
+      const client = await pool.connect();
+      try {
+        await client.query("select pg_advisory_lock($1)", [MIGRATION_LOCK_KEY]);
+        await backupBeforeMigrate(client, "PostgreSQL");
+        await migratePg(drizzlePg(client), { migrationsFolder });
+      } finally {
+        await client.query("select pg_advisory_unlock($1)", [MIGRATION_LOCK_KEY]).catch(() => {});
+        client.release();
+      }
+    } else {
+      console.warn("[ent-radar] MIGRATE_ON_START=0 — миграции при старте пропущены; выполните `npm run db:migrate`.");
+    }
     return db;
   }
 

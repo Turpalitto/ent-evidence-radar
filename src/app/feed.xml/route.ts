@@ -61,12 +61,13 @@ export async function GET() {
         .filter(Boolean)
         .join(" ");
       const summary = `${meta}${a.abstract ? ` ${a.abstract}` : ""}`.trim();
-      // Постоянный идентификатор: DOI/PMID, иначе внутренний id.
+      // Постоянный идентификатор (RFC 4287 требует IRI): DOI → https://doi.org/…, PMID → ссылка
+      // на PubMed, иначе tag: URI сайта. `urn:doi:` — незарегистрированная схема (аудит F-27).
       const id = a.doi
-        ? `urn:doi:${a.doi}`
+        ? `https://doi.org/${a.doi}`
         : a.pmid
-          ? `urn:pmid:${a.pmid}`
-          : `tag:ent-evidence-radar:article/${a.id}`;
+          ? `https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`
+          : `${base}/?article=${a.id}`;
 
       return `  <entry>
     <title>${esc(a.title)}</title>
@@ -87,6 +88,7 @@ export async function GET() {
   <link href="${esc(base)}" rel="alternate" type="text/html" />
   <id>${esc(`${base}/`)}</id>
   <updated>${feedUpdated}</updated>
+  <author><name>ENT Evidence Radar</name><uri>${esc(base)}</uri></author>
   <generator uri="${esc(base)}">ENT Evidence Radar</generator>
 ${entries}
 </feed>
