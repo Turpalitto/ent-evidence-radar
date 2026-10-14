@@ -153,7 +153,10 @@ curl https://<ваш-домен>/api/runs/123   # → {"ok":true,"run":{...,"sta
 
 > Если на сервере задан `API_SECRET`, внешний расписатель обязан передавать его в заголовке
 > `Authorization: Bearer …` (или `X-API-Key`) — иначе эндпоинт вернёт 401. В репозиторных
-> GitHub Actions (`refresh.yml`, `digest.yml`) для этого нужны секреты `APP_URL` **и** `API_SECRET`.
+> GitHub Actions (`refresh.yml`, `digest.yml`) для этого нужны секреты `APP_URL` **и** `API_SECRET`
+> в environment `production` (Settings → Environments). Пока `APP_URL` не задан, оба workflow
+> завершаются успешно с уведомлением «внешний cron отключён» — для self-host/Docker они не нужны,
+> обновление и дайджест делает встроенный планировщик.
 
 ## Поиск, экспорт и цитирование
 

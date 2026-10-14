@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Changed
+- CI: обновлены экшены (`actions/checkout@v7`, `actions/setup-node@v7`, `docker/setup-buildx-action@v4`,
+  `docker/build-push-action@v7`) — убраны предупреждения о Node 20.
+- Зависимости: патч-обновления `next` 16.4.1, `eslint-config-next` 16.4.1, `drizzle-orm` 0.45.4,
+  `drizzle-kit` 0.31.11, `vitest`/`@vitest/coverage-v8` 5.0.4, `fast-xml-parser` 5.11.2, `nodemailer` 10.1.1.
+
+### Fixed
+- Workflows `Scheduled refresh` и `Weekly digest` больше не падают, если в окружении `production` не задан
+  секрет `APP_URL` (деплой не на Vercel/без внешнего cron): шаг пропускается с уведомлением в логе.
+  Секреты передаются через `env:` job'а; при пустом `API_SECRET` выводится предупреждение.
+
 ## [0.2.0] — 2026-10-14
 
 Итог аудита (`docs/AUDIT_REPORT.md`, 28 пунктов дорожной карты): безопасность и надёжность продакшена,
