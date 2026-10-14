@@ -255,6 +255,7 @@ export const EN: Record<string, string> = {
   "Страницу прочитано": "Page read",
   "{n} ст.": "{n} items",
   "Везде": "Everywhere",
+  "Заметка: {notes}": "Note: {notes}",
   "📝 Заметка:": "📝 Note:",
   "В заголовке": "In title",
   "В моих заметках": "In my notes",

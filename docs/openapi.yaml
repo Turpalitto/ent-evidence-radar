@@ -752,6 +752,7 @@ paths:
     get:
       tags: [export]
       summary: Экспорт выборки (те же фильтры, что у /api/articles; до 2000 записей)
+      description: "CSV (UTF-8 с BOM, формулы экранированы): `id,title,journal,published,design,evidence_level,trust_score,subspecialties,pmid,doi,nct,sources,url,authors,design_key,bookmarked,notes`; `design` — подпись на языке запроса, `design_key` — машинный ключ. RIS: `N1` с дизайном/уровнем/доверием и второй `N1` с личной заметкой, если есть."
       security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
       parameters:
         - name: format

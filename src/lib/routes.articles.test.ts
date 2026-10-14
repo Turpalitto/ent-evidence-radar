@@ -28,8 +28,8 @@ beforeAll(async () => {
     classifierVersion: 5,
   };
   await db.insert(articles).values([
-    { ...base, dedupKey: "route-a1", pmid: "80010001", doi: "10.1000/route.a1", title: "Chronic rhinosinusitis biologics randomized trial", abstract: "Dupilumab in chronic rhinosinusitis with nasal polyps.", url: "https://e.org/a1", studyDesign: "rct", evidenceLevel: 2, trustScore: 88, publishedAt: new Date("2026-09-10") },
-    { ...base, dedupKey: "route-a2", pmid: "80010002", title: "=SUM(A1) rhinosinusitis cohort of polyps", abstract: "Cohort study of nasal polyps recurrence.", url: "https://e.org/a2", studyDesign: "cohort", evidenceLevel: 3, trustScore: 55, publishedAt: new Date("2026-09-11") },
+    { ...base, dedupKey: "route-a1", pmid: "80010001", doi: "10.1000/route.a1", title: "Chronic rhinosinusitis biologics randomized trial", abstract: "Dupilumab in chronic rhinosinusitis with nasal polyps.", url: "https://e.org/a1", studyDesign: "rct", evidenceLevel: 2, trustScore: 88, publishedAt: new Date("2026-09-10"), isBookmarked: true, notes: "Проверить  дозу" },
+    { ...base, dedupKey: "route-a2", pmid: "80010002", title: "=SUM(A1) rhinosinusitis cohort of polyps", abstract: "Cohort study of nasal polyps recurrence.", url: "https://e.org/a2", studyDesign: "cohort", evidenceLevel: 3, trustScore: 55, publishedAt: new Date("2026-09-11"), notes: '=HYPERLINK("x")' },
     { ...base, dedupKey: "route-a3", pmid: "80010003", title: "Cochlear implant outcomes in adults", abstract: "Otology cohort.", url: "https://e.org/a3", studyDesign: "cohort", evidenceLevel: 3, trustScore: 60, subspecialties: ["otology"], journal: "Otology & Neurotology", publishedAt: new Date("2026-09-12") },
     { ...base, dedupKey: "route-a4", pmid: "80010004", title: "Hidden rhinosinusitis preprint", abstract: "", url: "https://e.org/a4", studyDesign: "preprint", evidenceLevel: 5, trustScore: 20, isPreprint: true, isHidden: true, sourceKey: "medrxiv", sourceKeys: ["medrxiv"], publishedAt: new Date("2026-09-13") },
   ]);
@@ -108,11 +108,18 @@ describe("GET /api/export", () => {
     expect(Array.from(bytes.slice(0, 3))).toEqual([0xef, 0xbb, 0xbf]);
     const text = new TextDecoder().decode(bytes);
     const lines = text.split("\r\n");
-    expect(lines[0]).toBe("id,title,journal,published,design,evidence_level,trust_score,subspecialties,pmid,doi,nct,sources,url,authors");
+    expect(lines[0]).toBe("id,title,journal,published,design,evidence_level,trust_score,subspecialties,pmid,doi,nct,sources,url,authors,design_key,bookmarked,notes");
     expect(lines).toHaveLength(4);
     expect(text).toContain(`"'=SUM(A1) rhinosinusitis cohort of polyps"`);
     expect(text).not.toContain("Hidden rhinosinusitis");
     expect(text).toContain("РКИ");
+    // Закладка и заметка врача уезжают вместе со статьёй; заметка с формулой экранируется как текст.
+    expect(text).toContain(`"rct","1","Проверить  дозу"`);
+    expect(text).toContain(`"cohort","0","'=HYPERLINK(""x"")"`);
+    // Подпись дизайна — на языке запроса.
+    const en = new TextDecoder().decode(await (await exportGet(get("/api/export?format=csv&lang=en"))).arrayBuffer());
+    expect(en).toContain(`"RCT"`);
+    expect(en).not.toContain("РКИ");
   });
 
   it("JSON — массив статей; фильтры применяются", async () => {
@@ -136,12 +143,13 @@ describe("GET /api/export", () => {
     expect(risText).toContain("TY  - JOUR\r\nTI  - Chronic rhinosinusitis biologics randomized trial");
     expect(risText).toContain("AU  - Smith J\r\nAU  - Lee K");
     expect(risText).toContain("DO  - 10.1000/route.a1");
-    expect(risText).toContain("N1  - Дизайн: РКИ; уровень доказательности 2; индекс доверия 88/100");
+    expect(risText).toContain("N1  - Дизайн: РКИ; уровень доказательности 2; индекс доверия 88/100\r\nN1  - Заметка: Проверить дозу\r\nER  - ");
     expect(risText.match(/ER  - /g)).toHaveLength(3);
 
     const risEn = await (await exportGet(get("/api/export?format=ris&lang=en"))).text();
     expect(risEn).toContain("N1  - Design: RCT; evidence level 2; trust index 88/100");
-    expect(risEn).not.toMatch(/N1  - [^\n]*[\u0400-\u04FF]/);
+    expect(risEn).not.toMatch(/N1  - Design:[^\n]*[\u0400-\u04FF]/);
+    expect(risEn).toContain("N1  - Note: Проверить дозу"); // сама заметка — как написал врач
   });
 
   it("с API_SECRET экспорт требует авторизации", async () => {

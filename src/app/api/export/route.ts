@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
         lines.push(`UR  - ${a.url}`);
         for (const k of a.keywords.slice(0, 15)) lines.push(`KW  - ${k}`);
         lines.push(`N1  - ${t("Дизайн: {design}; уровень доказательности {level}; индекс доверия {trust}/100", { design: t(DESIGN_LABELS[a.studyDesign]), level: a.evidenceLevel, trust: a.trustScore })}`);
+        // Личная заметка врача — вторым N1 (менеджеры ссылок объединяют повторяющиеся N1 в «Notes»).
+        if (a.notes) lines.push(`N1  - ${t("Заметка: {notes}", { notes: a.notes.replace(/\s+/g, " ").trim() })}`);
         lines.push("ER  - ");
         return lines.join("\r\n");
       })
@@ -56,11 +58,14 @@ export async function GET(req: NextRequest) {
       headers: { "Content-Type": "application/x-research-info-systems; charset=utf-8", "Content-Disposition": `attachment; filename="ent-radar-${stamp}.ris"` },
     });
   }
-  const header = ["id", "title", "journal", "published", "design", "evidence_level", "trust_score", "subspecialties", "pmid", "doi", "nct", "sources", "url", "authors"];
+  // Подпись дизайна — на языке запроса; машинный ключ (`design_key`), закладка и заметка — в конце,
+  // чтобы существующие колонки не сдвигались.
+  const header = ["id", "title", "journal", "published", "design", "evidence_level", "trust_score", "subspecialties", "pmid", "doi", "nct", "sources", "url", "authors", "design_key", "bookmarked", "notes"];
   const rows = items.map((a) =>
     csvRow([
-      a.id, a.title, a.journal, a.publishedAt ? new Date(a.publishedAt).toISOString().slice(0, 10) : "", DESIGN_LABELS[a.studyDesign], a.evidenceLevel,
+      a.id, a.title, a.journal, a.publishedAt ? new Date(a.publishedAt).toISOString().slice(0, 10) : "", t(DESIGN_LABELS[a.studyDesign] ?? a.studyDesign), a.evidenceLevel,
       a.trustScore, a.subspecialties.join("; "), a.pmid ?? "", a.doi ?? "", a.nctId ?? "", a.sourceKeys.join("; "), a.url, a.authors.join("; "),
+      a.studyDesign, a.isBookmarked ? 1 : 0, a.notes,
     ]),
   );
   const csv = "\uFEFF" + [header.join(","), ...rows].join("\r\n");
