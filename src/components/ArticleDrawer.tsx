@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Article } from "@/db/schema";
-import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTIES, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
+import { DESIGN_CONFIDENCE_LABELS, DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTIES, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
 import { PICO_LABELS, extractPico } from "@/lib/evidence/pico";
 import { DesignBadge, IssuerBadge, LevelBadge, NOTICE_LABELS, NoticeBadge, TierBadge, TrialBadge, TrustScore, formatDate } from "./Badges";
@@ -265,7 +265,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         <TrustScore score={a.trustScore} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-            <DesignBadge design={a.studyDesign} />
+            <DesignBadge design={a.studyDesign} reason={a.designReason} />
             <LevelBadge level={a.evidenceLevel} />
             <TierBadge tier={a.journalTier} />
             <IssuerBadge issuer={a.guidelineIssuer} />
@@ -620,6 +620,20 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
           <p className="mt-2.5 text-[11px] text-[color:var(--ink-subtle)]">
             {DESIGN_LABELS[a.studyDesign]} · {EVIDENCE_LEVEL_LABELS[a.evidenceLevel]}
           </p>
+          {a.designReason && (
+            <p className="mt-1 text-[11px] text-[color:var(--ink-subtle)]" data-testid="design-reason">
+              Почему такой дизайн: {a.designReason}
+              {a.designConfidence && (
+                <>
+                  {" "}· уверенность{" "}
+                  <span className={a.designConfidence === "low" ? "font-semibold text-amber-700 dark:text-amber-300" : "font-semibold"}>
+                    {DESIGN_CONFIDENCE_LABELS[a.designConfidence]}
+                  </span>
+                  {a.designConfidence === "low" && " — стоит проверить и при необходимости поправить вручную"}
+                </>
+              )}
+            </p>
+          )}
         </section>
 
         {/* ── Метаданные ── */}

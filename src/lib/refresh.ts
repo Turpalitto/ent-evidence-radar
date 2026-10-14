@@ -408,6 +408,8 @@ export function planWrites(
       publishedDoi: raw.publishedDoi ?? undefined,
       isRetracted: c.isRetracted,
       guidelineIssuer: c.guidelineIssuer,
+      designConfidence: c.designConfidence,
+      designReason: c.designReason,
       classifierVersion: CLASSIFIER_VERSION,
       topicIds: Array.from(cand.topicIds),
       updatedAt: new Date(),

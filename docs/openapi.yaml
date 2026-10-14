@@ -171,7 +171,11 @@ components:
       required: [error]
     StudyDesign:
       type: string
-      enum: [systematic_review, guideline, rct, cohort, case_control, cross_sectional, case_series, narrative, trial_registry, preprint, other]
+      enum: [systematic_review, guideline, rct, cohort, case_control, cross_sectional, case_series, narrative, trial_registry, preprint, protocol, diagnostic_accuracy, qualitative, economic, mendelian_randomization, secondary_analysis, other]
+    DesignConfidence:
+      type: string
+      description: "Уверенность классификатора в дизайне: high — тип публикации PubMed / реестр / журнал Cochrane / ручная правка, medium — заголовок, low — только аннотация или признаков нет"
+      enum: [high, medium, low]
     Subspecialty:
       type: string
       enum: [otology, cochlear_implant, vestibular, rhinology, laryngology, head_neck_oncology, pediatric, sleep, facial_plastic, infection, general]
@@ -246,6 +250,8 @@ components:
         sourceKeys: { type: array, items: { $ref: "#/components/schemas/SourceKey" } }
         url: { type: string }
         studyDesign: { $ref: "#/components/schemas/StudyDesign" }
+        designConfidence: { oneOf: [{ $ref: "#/components/schemas/DesignConfidence" }, { type: "null" }] }
+        designReason: { type: [string, "null"], description: "Почему выбран дизайн — источник признака и найденный фрагмент (по-русски); null у записей до классификатора v5" }
         evidenceLevel: { type: integer, minimum: 1, maximum: 5 }
         trustScore: { type: integer, minimum: 0, maximum: 100 }
         trustBreakdown: { type: array, items: { $ref: "#/components/schemas/TrustBreakdownItem" } }

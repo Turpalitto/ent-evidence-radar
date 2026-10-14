@@ -1006,7 +1006,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                   <TrustScore score={a.trustScore} />
                   <div className="min-w-0 flex-1">
                     <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                      <DesignBadge design={a.studyDesign} />
+                      <DesignBadge design={a.studyDesign} reason={a.designReason} />
                       <IssuerBadge issuer={a.guidelineIssuer} />
                       <LevelBadge level={a.evidenceLevel} />
                       <TierBadge tier={a.journalTier} />
@@ -1054,7 +1054,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                   <div className="mb-2 flex items-center gap-2">
                     <TrustScore score={a.trustScore} size="sm" />
                     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-                      <DesignBadge design={a.studyDesign} />
+                      <DesignBadge design={a.studyDesign} reason={a.designReason} />
                       <IssuerBadge issuer={a.guidelineIssuer} size="sm" />
                       <LevelBadge level={a.evidenceLevel} />
                       {a.isPreprint && <span className="rounded bg-rose-600 px-1 py-0.5 text-[9px] font-bold text-white">ПРЕПРИНТ</span>}

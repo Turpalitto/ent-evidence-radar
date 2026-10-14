@@ -36,7 +36,8 @@
 | 24 | I-06 Europe PMC по темам: `src/lib/sources/epmc-query.ts` — токенизатор/парсер PubMed-запроса (левоассоциативно, как PubMed; соседство = AND), `translateAtom` (MeSH/tiab/ti/ab/pt/Journal/au/kw/la/sb systematic/filter humans; даты и неизвестные подмножества → `null`), рендер с правилом «перевод только расширяет»: null в AND отбрасывается, в OR делает неизвестной дизъюнкцию, `a NOT null` → `a`; `fetchEuropePmcQuery()` + `EPMC_FALLBACK_QUERY`; `doRefresh` опрашивает Europe PMC по каждой теме с `addCandidate(it, topic.id)`, статус `ok/degraded/error` по числу упавших тем. Тесты: 9 (перевод, все `DEFAULT_TOPICS` переводятся без тегов и с балансом скобок), адаптер +1, интеграционный (запрос на каждую тему, привязка к теме) | ✅ |
 | 25 | A-15 — PWA-офлайн: service worker, страница `/offline`, баннер в ленте; попутно починена продакшен-сборка (граница клиент/сервер) и политика `Cache-Control` для API | ✅ |
 | 26 | I-05 — ISSN в справочнике журналов (315 ISSN, проверка контрольных цифр), `articles.issns` из PubMed/Europe PMC, сопоставление ISSN → название; честное примечание о «хищниках» в README | ✅ |
-| 27+ | I-03 (слоистый классификатор с уверенностью), A-16 (i18n) | ⏳ |
+| 27 | I-03 — слоистый классификатор: 6 новых дизайнов, `designReason`/`designConfidence`, объяснение в карточке; `CLASSIFIER_VERSION = 5`, миграция 0017 | ✅ |
+| 28+ | A-16 (i18n RU/EN) — требует отдельного решения | ⏳ |
 
 Оставшиеся уязвимости `npm audit` (9) — только dev-цепочка (`braces` через `eslint-config-next`, `esbuild` через `drizzle-kit`); исправлений без понижения версий этих пакетов нет, в рантайм не попадают.
 
@@ -286,7 +287,7 @@ GET   /api/backup    -H "Sec-Fetch-Site: same-origin"      → 200  ✗ бэка
 
 **I-02 · Полнотекстовый поиск.** `tsvector` + `websearch_to_tsquery` + `ts_rank`, подсветка совпадений, синонимы как OR-группы, фильтр «искать только в заголовке». Закрывает F-09.
 
-**I-03 · Слоистый классификатор с уверенностью.** Порядок признаков: PT PubMed → журнал/издатель (CDSR, AAO-HNS, NICE, EPOS) → заголовок → аннотация; результат с `confidence` и объяснением «почему»; новые дизайны: `protocol`, `diagnostic_accuracy`, `qualitative`, `economic`, `mendelian_randomization`, `secondary_analysis`. Веса и регексы — в данных (JSON), не в коде.
+**I-03 · Слоистый классификатор с уверенностью.** Порядок признаков: PT PubMed → журнал/издатель (CDSR, AAO-HNS, NICE, EPOS) → заголовок → аннотация; результат с `confidence` и объяснением «почему»; новые дизайны: `protocol`, `diagnostic_accuracy`, `qualitative`, `economic`, `mendelian_randomization`, `secondary_analysis`. Веса и регексы — в данных (JSON), не в коде. — **Сделано:** `detectDesignDetailed` (реестр → PT → Cochrane → заголовок → аннотация), новые дизайны `protocol`, `diagnostic_accuracy`, `qualitative`, `economic`, `mendelian_randomization`, `secondary_analysis`, поля `design_reason`/`design_confidence` (миграция 0017), подсказка в карточке при низкой уверенности. Веса остаются типизированными константами в TS (а не JSON): они проверяются компилятором на полноту по `StudyDesign` и покрыты тестами.
 
 **I-04 · Версионирование формулы доверия и переклассификация.** Хранить `classifierVersion` в статье; команда/эндпоинт «переклассифицировать базу» без повторного скачивания. Сейчас любое исправление F-06…F-13 не затронет уже сохранённые записи (обновляются только те, что снова попали в 30-дневное окно).
 

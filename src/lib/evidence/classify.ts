@@ -1,4 +1,4 @@
-import type { ManualOverrides, StudyDesign, TrustBreakdownItem } from "@/db/schema";
+import type { DesignConfidence, ManualOverrides, StudyDesign, TrustBreakdownItem } from "@/db/schema";
 import { detectGuidelineIssuer } from "./guidelines";
 import { journalTier } from "./journals";
 import { SUBSPECIALTIES } from "./taxonomy";
@@ -20,8 +20,12 @@ import { SUBSPECIALTIES } from "./taxonomy";
  *      ЛОР-журналы MEDLINE/PMC, в т. ч. «Вестник оториноларингологии»; аудиология,
  *      фониатрия, сон). Записи с tier 0 из этих журналов получают честный tier.
  *  4 — орган-издатель руководства (`guidelineIssuer`, A-06).
+ *  5 — новые дизайны (I-03): protocol, diagnostic_accuracy, qualitative, economic,
+ *      mendelian_randomization, secondary_analysis (раньше — «другое»/«когорта»);
+ *      объяснение «почему такой дизайн» и уверенность (`designReason`, `designConfidence`);
+ *      ISSN в белом списке журналов (I-05).
  */
-export const CLASSIFIER_VERSION = 4;
+export const CLASSIFIER_VERSION = 5;
 
 export interface RawArticle {
   pmid?: string | null;
@@ -73,6 +77,16 @@ export interface Classified {
   isRetracted: boolean;
   /** Орган-издатель руководства (A-06), только для design = guideline; иначе null. */
   guidelineIssuer: string | null;
+  /** Почему выбран дизайн и насколько уверенно (I-03). */
+  designConfidence: DesignConfidence;
+  designReason: string;
+}
+
+export interface DesignDetection {
+  design: StudyDesign;
+  confidence: DesignConfidence;
+  /** Короткое объяснение по-русски: источник признака и найденный фрагмент. */
+  reason: string;
 }
 
 const PT = (types: string[], re: RegExp) => types.some((t) => re.test(t));
@@ -100,76 +114,148 @@ const REGISTRATION_RE =
 const MULTICENTER_RE =
   /multi[- ]?cent(er|re|ric)|multi[- ]?national|multi[- ]?site|\b\d+\s+(centers|centres|sites|hospitals|institutions|countries)\b|international multi|international,? (randomi[sz]ed|prospective|retrospective|cohort|registry|collaborative)/i;
 
-export function detectDesign(a: RawArticle): StudyDesign {
-  const types = a.publicationTypes ?? [];
-  const text = `${a.title} ${a.abstract ?? ""}`;
-  const title = a.title;
+const PT_FIND = (types: string[], re: RegExp) => types.find((t) => re.test(t));
+const snippet = (m: RegExpMatchArray | null | undefined) => (m?.[0] ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
 
-  if (a.studyTypeHint) return a.studyTypeHint;
+const PROTOCOL_TITLE_RE = /^protocol\b|study protocol|protocol for\b|trial protocol|\bprotocol of (a|an|the)\b|: (a |an )?(study )?protocol\b/i;
+const ADHERENCE_RE = /adherence to|compliance with|implementation of|evaluation of|awareness of/i;
+const NON_RANDOMIZED_RE = /non[- ]randomi[sz]ed|quasi[- ]randomi[sz]ed|pseudo[- ]randomi[sz]ed|unrandomi[sz]ed/i;
+const MR_RE = /mendelian randomi[sz]ation|two[- ]sample MR\b/i;
+const ECONOMIC_TITLE_RE = /cost[- ]effective|cost[- ]utility|cost[- ]benefit|cost[- ]minimi[sz]ation|cost analysis|economic (evaluation|analysis|burden|impact)|budget impact|\bQALYs?\b|incremental cost|willingness[- ]to[- ]pay|\bICER\b|health(care)? costs? of/i;
+const ECONOMIC_ABSTRACT_RE = /incremental cost[- ]effectiveness ratio|\bICER\b|\bQALYs?\b|cost per (quality|life)|cost[- ]effectiveness (analysis|plane|acceptability)|willingness[- ]to[- ]pay/i;
+const QUALITATIVE_TITLE_RE = /qualitative (study|research|analysis|exploration|interview|evaluation|insights?)|semi[- ]structured interviews?|focus groups?|thematic analysis|grounded theory|phenomenolog|lived experiences?|patients?'? perspectives?/i;
+const QUALITATIVE_ABSTRACT_RE = /thematic analysis|semi[- ]structured interviews|focus groups? (were|was) (conducted|held)|grounded theory|interpretative phenomenological analysis|qualitative (descriptive|content) analysis/i;
+const DIAGNOSTIC_TITLE_RE = /diagnostic (accuracy|performance|value|utility|yield|test accuracy)|sensitivity and specificity|accuracy of\b|validation (study )?of (a |an |the )?.*(score|scale|questionnaire|tool|index|model|classifier|algorithm|test|criteria)|(prediction|predictive|prognostic|risk) (model|score|nomogram|tool)|nomogram|screening (tool|test|instrument|questionnaire)|receiver operating characteristic|\bSTARD\b|\bTRIPOD\b|machine learning (model|algorithm|classifier)|deep learning (model|algorithm)|artificial intelligence.*(detect|diagnos|classif)/i;
+const DIAGNOSTIC_ABSTRACT_RE = /sensitivity (and|,) specificity|area under the (ROC|receiver[- ]operating[- ]characteristic)( curve)?|\bAUROC\b|positive predictive value|negative predictive value|(positive|negative) likelihood ratio|reference standard|index test|diagnostic accuracy|\bC-?statistic\b|calibration (plot|slope)/i;
+
+/**
+ * Дизайн исследования с объяснением (I-03). Порядок признаков — от надёжных к слабым:
+ * подсказка реестра → тип публикации PubMed → журнал Cochrane → заголовок → аннотация.
+ * Уверенность: high — структурированный признак (PT, реестр, журнал, явный протокол);
+ * medium — регулярка по заголовку; low — только по аннотации либо признаков нет.
+ */
+export function detectDesignDetailed(a: RawArticle): DesignDetection {
+  const types = a.publicationTypes ?? [];
+  const title = a.title;
+  const abstract = a.abstract ?? "";
+  const byPT = (design: StudyDesign, pt: string, note = ""): DesignDetection => ({ design, confidence: "high", reason: `тип публикации PubMed: «${pt}»${note}` });
+  const byTitle = (design: StudyDesign, m: RegExpMatchArray | null, confidence: DesignConfidence = "medium", note = ""): DesignDetection => ({ design, confidence, reason: `заголовок: «${snippet(m)}»${note}` });
+  const byAbstract = (design: StudyDesign, m: RegExpMatchArray | null, note = ""): DesignDetection => ({ design, confidence: "low", reason: `аннотация: «${snippet(m)}»${note}` });
+
+  if (a.studyTypeHint) return { design: a.studyTypeHint, confidence: "high", reason: "запись реестра клинических исследований" };
   if (a.isPreprint) {
     // Для препринтов определяем дизайн по тексту; если не удалось — общий тип «препринт».
-    const d = detectDesign({ ...a, isPreprint: false });
-    if (/^protocol\b|study protocol|protocol for/i.test(title)) return "preprint";
-    return d === "other" || d === "narrative" ? "preprint" : d;
+    const inner = detectDesignDetailed({ ...a, isPreprint: false });
+    if (inner.design === "other" || inner.design === "narrative") return { design: "preprint", confidence: "medium", reason: "препринт без распознанного дизайна" };
+    return { ...inner, reason: `препринт; ${inner.reason}` };
   }
 
-  if (PT(types, /retract/i)) return "other";
+  const retracted = PT_FIND(types, /retract/i);
+  if (retracted) return byPT("other", retracted);
 
-  // Исключаем протоколы незавершённых исследований
-  if (/^protocol\b|study protocol|protocol for\b|trial protocol/i.test(title) || PT(types, /protocol/i)) {
-    return "other";
-  }
+  // Протоколы незавершённых исследований — отдельный дизайн без результатов.
+  const protocolPT = PT_FIND(types, /protocol/i);
+  if (protocolPT) return byPT("protocol", protocolPT);
+  const protocolTitle = title.match(PROTOCOL_TITLE_RE);
+  if (protocolTitle) return byTitle("protocol", protocolTitle, "high");
 
   // Cochrane Database of Systematic Reviews публикует только систематические обзоры
   // (и их протоколы — отсечены выше). Тип публикации «Systematic Review» PubMed проставляет
   // при индексации с задержкой, а темы забирают записи по дате появления (edat) — без этого
   // правила свежие кокрейновские обзоры получали «нарративный обзор», уровень 5.
-  if (isCochraneReviewJournal(a.journal) && !/\bwithdrawn\b/i.test(title)) return "systematic_review";
+  if (isCochraneReviewJournal(a.journal) && !/\bwithdrawn\b/i.test(title)) {
+    return { design: "systematic_review", confidence: "high", reason: "журнал Cochrane Database of Systematic Reviews" };
+  }
 
   // Вторичный / post-hoc / подгрупповой анализ РКИ — наблюдательный анализ данных
   // рандомизированного исследования, а не само РКИ (уровень 2 ему не положен).
-  if (SECONDARY_ANALYSIS_RE.test(title) && !PT(types, /randomized controlled trial/i)) return "cohort";
+  const secondary = title.match(SECONDARY_ANALYSIS_RE);
+  if (secondary && !PT(types, /randomized controlled trial/i)) return byTitle("secondary_analysis", secondary);
 
-  if (PT(types, /systematic review|meta-analysis/i)) return "systematic_review";
-  if (PT(types, /guideline|consensus development conference/i)) {
+  const srPT = PT_FIND(types, /systematic review|meta-analysis/i);
+  if (srPT) return byPT("systematic_review", srPT);
+  const guidelinePT = PT_FIND(types, /guideline|consensus development conference/i);
+  if (guidelinePT) {
     // Исследования приверженности/аудиты руководств — когортные/одномоментные, а не сами руководства
-    if (/adherence to|compliance with|implementation of|evaluation of|awareness of/i.test(title)) {
-      return "cohort";
-    }
-    return "guideline";
+    const adherence = title.match(ADHERENCE_RE);
+    if (adherence) return byTitle("cohort", adherence, "medium", " — аудит приверженности руководству, не само руководство");
+    return byPT("guideline", guidelinePT);
   }
-  if (PT(types, /randomized controlled trial/i)) return "rct";
-  if (PT(types, /clinical trial, phase (ii|iii|iv)/i)) return "rct";
-  if (PT(types, /observational study|cohort/i)) return "cohort";
-  if (PT(types, /case reports/i)) return "case_series";
-  if (PT(types, /editorial|comment|letter|news/i)) return "narrative";
+  const rctPT = PT_FIND(types, /randomized controlled trial/i) ?? PT_FIND(types, /clinical trial, phase (ii|iii|iv)/i);
+  if (rctPT) return byPT("rct", rctPT);
+  const cohortPT = PT_FIND(types, /observational study|cohort/i);
+  if (cohortPT) return byPT("cohort", cohortPT);
+  const casePT = PT_FIND(types, /case reports/i);
+  if (casePT) return byPT("case_series", casePT);
+  const opinionPT = PT_FIND(types, /editorial|comment|letter|news/i);
+  if (opinionPT) return byPT("narrative", opinionPT);
+
+  // Менделевская рандомизация — до текстовых правил РКИ: слово «randomization» иначе вводит в заблуждение.
+  const mrTitle = title.match(MR_RE);
+  if (mrTitle) return byTitle("mendelian_randomization", mrTitle);
+  const mrAbstract = abstract.match(MR_RE);
+  if (mrAbstract) return byAbstract("mendelian_randomization", mrAbstract);
 
   // Текстовые эвристики (в первую очередь по заголовку)
-  if (/systematic review|meta-analys[ie]s|metaanalysis|umbrella review|network meta/i.test(title)) {
-    if (/protocol for|study protocol/i.test(title)) return "other";
-    return "systematic_review";
-  }
-  if (/clinical practice guideline|consensus statement|position (paper|statement)|recommendations? (of|from)|EPOS|international consensus/i.test(title)) {
-    if (/adherence to|compliance with|implementation of|evaluation of|awareness of/i.test(title)) {
-      return "cohort";
-    }
-    return "guideline";
+  const srTitle = title.match(/systematic review|meta-analys[ie]s|metaanalysis|umbrella review|network meta|scoping review/i);
+  if (srTitle) return byTitle("systematic_review", srTitle);
+  const guidelineTitle = title.match(/clinical practice guideline|consensus statement|position (paper|statement)|recommendations? (of|from)|EPOS|international consensus/i);
+  if (guidelineTitle) {
+    const adherence = title.match(ADHERENCE_RE);
+    if (adherence) return byTitle("cohort", adherence, "medium", " — аудит приверженности руководству, не само руководство");
+    return byTitle("guideline", guidelineTitle);
   }
 
   // Нерандомизированные исследования не должны ошибочно помечаться как RCT
-  if (/non[- ]randomi[sz]ed|quasi[- ]randomi[sz]ed|pseudo[- ]randomi[sz]ed|unrandomi[sz]ed/i.test(text)) {
-    return "cohort";
-  }
+  const nonRandomTitle = title.match(NON_RANDOMIZED_RE);
+  if (nonRandomTitle) return byTitle("cohort", nonRandomTitle, "medium", " — нерандомизированное");
+  const nonRandomAbstract = abstract.match(NON_RANDOMIZED_RE);
+  if (nonRandomAbstract) return byAbstract("cohort", nonRandomAbstract, " — нерандомизированное");
 
-  if (/randomi[sz]ed|randomised|placebo[- ]controlled|double[- ]blind/i.test(title)) return "rct";
-  if (/randomi[sz]ed controlled trial|were randomi[sz]ed|randomly (assigned|allocated)/i.test(a.abstract ?? "")) return "rct";
-  if (/\bcohort\b|prospective study|retrospective (study|analysis|review|cohort)|population[- ]based|registry|longitudinal/i.test(text)) return "cohort";
-  if (/case[- ]control/i.test(text)) return "case_control";
-  if (/cross[- ]sectional|survey|questionnaire/i.test(text)) return "cross_sectional";
-  if (/case report|case series|a case of|rare case|unusual presentation/i.test(title)) return "case_series";
-  if (/\breview\b|narrative|overview|perspective|state of the art|update on/i.test(title) && !PT(types, /journal article/i)) return "narrative";
-  if (PT(types, /^review$/i)) return "narrative";
-  return "other";
+  const rctTitle = title.match(/randomi[sz]ed|randomised|placebo[- ]controlled|double[- ]blind/i);
+  if (rctTitle) return byTitle("rct", rctTitle);
+  const rctAbstract = abstract.match(/randomi[sz]ed controlled trial|were randomi[sz]ed|randomly (assigned|allocated)/i);
+  if (rctAbstract) return byAbstract("rct", rctAbstract);
+
+  // Экономические оценки, качественные и диагностические исследования — до общих
+  // «когорта/одномоментное», иначе они растворяются в наблюдательных дизайнах.
+  const econTitle = title.match(ECONOMIC_TITLE_RE);
+  if (econTitle) return byTitle("economic", econTitle);
+  const qualTitle = title.match(QUALITATIVE_TITLE_RE);
+  if (qualTitle) return byTitle("qualitative", qualTitle);
+  const diagTitle = title.match(DIAGNOSTIC_TITLE_RE);
+  if (diagTitle) return byTitle("diagnostic_accuracy", diagTitle);
+  const econAbstract = abstract.match(ECONOMIC_ABSTRACT_RE);
+  if (econAbstract) return byAbstract("economic", econAbstract);
+  const qualAbstract = abstract.match(QUALITATIVE_ABSTRACT_RE);
+  if (qualAbstract) return byAbstract("qualitative", qualAbstract);
+  const diagAbstract = abstract.match(DIAGNOSTIC_ABSTRACT_RE);
+  if (diagAbstract) return byAbstract("diagnostic_accuracy", diagAbstract);
+
+  const observational = (re: RegExp, design: StudyDesign): DesignDetection | null => {
+    const t = title.match(re);
+    if (t) return byTitle(design, t);
+    const ab = abstract.match(re);
+    return ab ? byAbstract(design, ab) : null;
+  };
+  return (
+    observational(/\bcohort\b|prospective study|retrospective (study|analysis|review|cohort)|population[- ]based|registry|longitudinal/i, "cohort") ??
+    observational(/case[- ]control/i, "case_control") ??
+    observational(/cross[- ]sectional|survey|questionnaire/i, "cross_sectional") ??
+    (() => {
+      const caseTitle = title.match(/case report|case series|a case of|rare case|unusual presentation/i);
+      if (caseTitle) return byTitle("case_series", caseTitle);
+      const reviewTitle = title.match(/\breview\b|narrative|overview|perspective|state of the art|update on/i);
+      if (reviewTitle && !PT(types, /journal article/i)) return byTitle("narrative", reviewTitle);
+      const reviewPT = PT_FIND(types, /^review$/i);
+      if (reviewPT) return byPT("narrative", reviewPT);
+      return { design: "other", confidence: "low", reason: "признаков дизайна в типе публикации, заголовке и аннотации не найдено" } as DesignDetection;
+    })()
+  );
+}
+
+export function detectDesign(a: RawArticle): StudyDesign {
+  return detectDesignDetailed(a).design;
 }
 
 export function evidenceLevel(design: StudyDesign, sampleSize: number | null): number {
@@ -190,6 +276,17 @@ export function evidenceLevel(design: StudyDesign, sampleSize: number | null): n
       return 4;
     case "trial_registry":
       return 4;
+    // Диагностическая точность: OCEBM 2011 — уровень 2 для одномоментных исследований
+    // с единым референсным стандартом; размер выборки — доступный суррогат качества.
+    case "diagnostic_accuracy":
+      return sampleSize !== null && sampleSize >= 200 ? 2 : 3;
+    case "secondary_analysis":
+      return sampleSize !== null && sampleSize >= 1000 ? 2 : 3;
+    case "economic":
+    case "mendelian_randomization":
+      return 3;
+    case "protocol":
+    case "qualitative":
     case "narrative":
     case "preprint":
     case "other":
@@ -288,7 +385,8 @@ export function detectSubspecialties(a: RawArticle): string[] {
 }
 
 const DESIGN_KEYS = new Set<string>([
-  "systematic_review", "guideline", "rct", "cohort", "case_control", "cross_sectional", "case_series", "narrative", "trial_registry", "preprint", "other",
+  "systematic_review", "guideline", "rct", "cohort", "case_control", "cross_sectional", "case_series", "narrative", "trial_registry", "preprint",
+  "protocol", "diagnostic_accuracy", "qualitative", "economic", "mendelian_randomization", "secondary_analysis", "other",
 ]);
 const SUBSPECIALTY_KEYS = new Set<string>(SUBSPECIALTIES.map((s) => s.key));
 
@@ -311,7 +409,10 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
   // Аудит A-11: ручная правка дизайна имеет приоритет над эвристиками и переживает
   // refresh/переклассификацию; уровень доказательности и индекс доверия считаются от неё.
   const manualDesign = overrides?.studyDesign && DESIGN_KEYS.has(overrides.studyDesign) ? overrides.studyDesign : null;
-  const design = manualDesign ?? detectDesign(a);
+  const detected = detectDesignDetailed(a);
+  const design = manualDesign ?? detected.design;
+  const designConfidence: DesignConfidence = manualDesign ? "high" : detected.confidence;
+  const designReason = manualDesign ? `задан вручную (автоматически: ${detected.design} — ${detected.reason})` : detected.reason;
   const sampleSize = a.enrollment ?? extractSampleSize(text);
   const tier = journalTier(a.journal, a.issns);
   const isPreprint = !!a.isPreprint || design === "preprint";
@@ -335,6 +436,12 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
     narrative: 6,
     trial_registry: 12,
     preprint: 4,
+    protocol: 4,
+    diagnostic_accuracy: 20,
+    qualitative: 6,
+    economic: 14,
+    mendelian_randomization: 18,
+    secondary_analysis: 16,
     other: 5,
   };
   b.push({ label: manualDesign ? "Дизайн исследования (задан вручную)" : "Дизайн исследования", points: designPts[design] });
@@ -384,9 +491,6 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
   if (!a.abstract || a.abstract.length < 200) b.push({ label: "Нет / короткая аннотация", points: -4 });
   if (a.sourceKey === "clinicaltrials" && a.hasResults) b.push({ label: "Опубликованы результаты в реестре", points: 8 });
   if (/pilot|preliminary|feasibility/i.test(a.title)) b.push({ label: "Пилотное / предварительное", points: -5 });
-  if (design === "cohort" && SECONDARY_ANALYSIS_RE.test(a.title)) {
-    b.push({ label: "Вторичный / post-hoc анализ данных РКИ", points: 0 });
-  }
   if (/in vitro|animal model|\brats?\b|\bmice\b|murine|guinea pig/i.test(text) && !/patients|participants/i.test(text)) {
     b.push({ label: "Доклиническое (животные / in vitro)", points: -10 });
   }
@@ -405,6 +509,8 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
     isPreprint,
     isRetracted,
     guidelineIssuer: design === "guideline" ? detectGuidelineIssuer(a) : null,
+    designConfidence,
+    designReason,
   };
 }
 

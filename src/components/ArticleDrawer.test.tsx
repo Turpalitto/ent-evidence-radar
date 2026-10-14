@@ -37,6 +37,19 @@ describe("<ArticleDrawer />", () => {
     expect(await screen.findAllByText("Related trial on ear tubes")).not.toHaveLength(0);
   });
 
+  it("объяснение дизайна (I-03): показывает причину и уверенность, при низкой — подсказку проверить", () => {
+    setup(makeArticle({ id: 6, designReason: "аннотация: «randomly assigned»", designConfidence: "low" }));
+    const reason = screen.getAllByTestId("design-reason").at(-1)!;
+    expect(reason).toHaveTextContent("Почему такой дизайн: аннотация: «randomly assigned»");
+    expect(reason).toHaveTextContent("уверенность низкая");
+    expect(reason).toHaveTextContent(/поправить вручную/);
+  });
+
+  it("объяснение дизайна скрыто у записей без него (до переклассификации)", () => {
+    setup(makeArticle({ id: 7, designReason: null, designConfidence: null }));
+    expect(screen.queryAllByTestId("design-reason")).toHaveLength(0);
+  });
+
   it("закладка, Escape и кнопка «Закрыть»", async () => {
     const user = userEvent.setup();
     const { calls, onClose } = setup(makeArticle({ id: 6, isRead: true }));

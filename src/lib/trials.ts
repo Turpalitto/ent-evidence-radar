@@ -131,6 +131,8 @@ export async function recheckTrials(opts: { limit?: number; fetch?: NonNullable<
           trustScore: c.trustScore,
           trustBreakdown: c.trustBreakdown,
           sampleSize: c.sampleSize,
+          designConfidence: c.designConfidence,
+          designReason: c.designReason,
           classifierVersion: CLASSIFIER_VERSION,
           trialInfo: info,
           // Изменение статуса/результатов — новость: запись всплывает в ленте «по сбору» и в RSS.

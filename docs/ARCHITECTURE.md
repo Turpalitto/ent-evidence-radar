@@ -78,25 +78,32 @@
 `CLASSIFIER_VERSION` увеличивается при любом изменении эвристик — тогда старые записи
 переразмечаются автоматически.
 
-**Дизайн исследования** определяется по типам публикации PubMed, заголовку и аннотации
-(регулярные выражения в `detectDesign`), затем **уровень доказательности** (1 — лучший):
+**Дизайн исследования** определяет `detectDesignDetailed` — слоями от надёжных признаков к слабым
+(I-03): подсказка реестра КИ → тип публикации PubMed → журнал Cochrane → заголовок → аннотация.
+Вместе с дизайном сохраняются **объяснение** (`design_reason`: источник признака и найденный
+фрагмент, например «заголовок: «randomised»») и **уверенность** (`design_confidence`: `high` —
+структурированный признак или ручная правка, `medium` — заголовок, `low` — только аннотация или
+признаков нет; карточка подсказывает проверить такие записи вручную). Затем — **уровень
+доказательности** (1 — лучший):
 
 | Дизайн | Уровень |
 | --- | --- |
 | systematic_review, guideline | 1 |
 | rct | 2 (3, если n < 50) |
 | cohort | 3 (2, если n ≥ 1000) |
-| case_control | 3 |
+| secondary_analysis (вторичный / post-hoc анализ РКИ) | 3 (2, если n ≥ 1000) |
+| diagnostic_accuracy (диагностическая точность, прогностические модели) | 3 (2, если n ≥ 200) |
+| case_control, economic, mendelian_randomization | 3 |
 | cross_sectional | 4 (3, если n ≥ 1000) |
 | case_series, trial_registry | 4 |
-| narrative, preprint, other | 5 |
+| protocol, qualitative, narrative, preprint, other | 5 |
 
 **Индекс доверия** — сумма слагаемых, обрезанная в `[0, 100]`; каждое слагаемое сохраняется в
 `trust_breakdown`, и карточка показывает его пользователю:
 
 | Слагаемое | Баллы |
 | --- | --- |
-| Дизайн | SR 40 · guideline 38 · RCT 34 · cohort 22 · case-control 18 · cross-sectional 14 · registry 12 · case series 8 · narrative 6 · other 5 · preprint 4 |
+| Дизайн | SR 40 · guideline 38 · RCT 34 · cohort 22 · diagnostic 20 · case-control 18 · Mendelian 18 · secondary analysis 16 · cross-sectional 14 · economic 14 · registry 12 · case series 8 · narrative 6 · qualitative 6 · other 5 · preprint 4 · protocol 4 |
 | Журнал (`journals.ts`) | Tier 1 +30 · Tier 2 +26 · Tier 3 +16 · вне списка +4 · сомнительное издательство −35. Сопоставление: паттерны «хищников» по названию → ISSN записи (`articles.issns`, из PubMed `<ISSN>`/`<ISSNLinking>` и Europe PMC `issn`/`essn`) → нормализованное название/ISO-аббревиатура |
 | Источник | PubMed +10 · Europe PMC +8 · CT.gov +6 · medRxiv 0 |
 | Регистрация протокола (PROSPERO/NCT/ISRCTN) | +6 |

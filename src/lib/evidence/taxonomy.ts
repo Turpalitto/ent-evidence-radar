@@ -1,4 +1,4 @@
-import type { StudyDesign } from "@/db/schema";
+import type { DesignConfidence, StudyDesign } from "@/db/schema";
 
 export const SUBSPECIALTIES: { key: string; label: string; short: string; patterns: RegExp[] }[] = [
   {
@@ -110,6 +110,12 @@ export const DESIGN_LABELS: Record<StudyDesign, string> = {
   narrative: "Нарративный обзор / мнение",
   trial_registry: "Регистрация клинического исследования",
   preprint: "Препринт (без рецензии)",
+  protocol: "Протокол исследования (без результатов)",
+  diagnostic_accuracy: "Диагностическая точность / прогностическая модель",
+  qualitative: "Качественное исследование",
+  economic: "Экономическая оценка",
+  mendelian_randomization: "Менделевская рандомизация",
+  secondary_analysis: "Вторичный / post-hoc анализ РКИ",
   other: "Другое",
 };
 
@@ -124,7 +130,20 @@ export const DESIGN_SHORT: Record<StudyDesign, string> = {
   narrative: "Обзор",
   trial_registry: "Регистр КИ",
   preprint: "Препринт",
+  protocol: "Протокол",
+  diagnostic_accuracy: "Диагностика",
+  qualitative: "Качественное",
+  economic: "Экономика",
+  mendelian_randomization: "Мендел. ранд.",
+  secondary_analysis: "Вторичный анализ",
   other: "Другое",
+};
+
+/** Подписи уверенности классификатора (I-03). */
+export const DESIGN_CONFIDENCE_LABELS: Record<DesignConfidence, string> = {
+  high: "высокая",
+  medium: "средняя",
+  low: "низкая",
 };
 
 export const DESIGN_COLORS: Record<StudyDesign, string> = {
@@ -138,15 +157,21 @@ export const DESIGN_COLORS: Record<StudyDesign, string> = {
   narrative: "bg-slate-100 text-slate-700 border-slate-200",
   trial_registry: "bg-cyan-100 text-cyan-800 border-cyan-200",
   preprint: "bg-rose-100 text-rose-800 border-rose-200",
+  protocol: "bg-slate-100 text-slate-700 border-slate-200",
+  diagnostic_accuracy: "bg-indigo-100 text-indigo-800 border-indigo-200",
+  qualitative: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200",
+  economic: "bg-lime-100 text-lime-800 border-lime-200",
+  mendelian_randomization: "bg-teal-100 text-teal-800 border-teal-200",
+  secondary_analysis: "bg-amber-100 text-amber-800 border-amber-200",
   other: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
 export const EVIDENCE_LEVEL_LABELS: Record<number, string> = {
   1: "Уровень 1 — СО/МА РКИ, руководства на их основе",
   2: "Уровень 2 — РКИ / крупные когорты",
-  3: "Уровень 3 — когортные, случай-контроль",
+  3: "Уровень 3 — когортные, случай-контроль, диагностические, вторичные анализы",
   4: "Уровень 4 — серии случаев, низкое качество",
-  5: "Уровень 5 — мнение экспертов, препринты, прочее",
+  5: "Уровень 5 — мнение экспертов, препринты, протоколы, качественные, прочее",
 };
 
 export const SOURCE_LABELS: Record<string, string> = {

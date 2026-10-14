@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   detectDesign,
+  detectDesignDetailed,
   evidenceLevel,
   extractSampleSize,
   detectSubspecialties,
@@ -38,13 +39,16 @@ describe("detectDesign", () => {
 
   it("respects studyTypeHint and preprint", () => {
     expect(detectDesign(base({ studyTypeHint: "rct" }))).toBe("rct");
-    expect(detectDesign(base({ isPreprint: true, title: "Protocol for a systematic review" }))).toBe("preprint");
+    expect(detectDesign(base({ isPreprint: true, title: "Protocol for a systematic review" }))).toBe("protocol");
+    expect(detectDesign(base({ isPreprint: true, title: "Observations on hearing" }))).toBe("preprint");
     expect(detectDesign(base({ isPreprint: true, title: "Randomized trial interim results" }))).toBe("rct");
   });
 
   it("excludes protocols and non-randomized trials from RCT/SR", () => {
-    expect(detectDesign(base({ title: "Study protocol for a randomized controlled trial of dupilumab" }))).toBe("other");
-    expect(detectDesign(base({ title: "Protocol for a systematic review of tonsillectomy outcomes" }))).toBe("other");
+    expect(detectDesign(base({ title: "Study protocol for a randomized controlled trial of dupilumab" }))).toBe("protocol");
+    expect(detectDesign(base({ title: "Protocol for a systematic review of tonsillectomy outcomes" }))).toBe("protocol");
+    expect(detectDesign(base({ title: "Balloon dilation versus FESS: a study protocol" }))).toBe("protocol");
+    expect(detectDesign(base({ title: "Tonsillectomy outcomes", publicationTypes: ["Clinical Trial Protocol"] }))).toBe("protocol");
     expect(detectDesign(base({ title: "A quasi-randomized trial of endoscopic sinus surgery" }))).toBe("cohort");
     expect(detectDesign(base({ title: "Non-randomized clinical trial of voice therapy" }))).toBe("cohort");
   });
@@ -64,14 +68,14 @@ describe("detectDesign", () => {
     expect(detectDesign({ ...cochrane, journal: "Cochrane Database Syst Rev" })).toBe("systematic_review");
     expect(classify(cochrane).evidenceLevel).toBe(1);
     // Протоколы и отозванные (withdrawn) обзоры Cochrane — не систематические обзоры
-    expect(detectDesign({ ...cochrane, title: "Protocol for antibiotics for acute otitis media" })).toBe("other");
+    expect(detectDesign({ ...cochrane, title: "Protocol for antibiotics for acute otitis media" })).toBe("protocol");
     expect(detectDesign({ ...cochrane, title: "WITHDRAWN: Antibiotics for acute otitis media in children" })).not.toBe("systematic_review");
   });
 
   it("secondary / post-hoc analyses of RCTs are not RCTs (audit F-13)", () => {
-    expect(detectDesign(base({ title: "Secondary analysis of the XYZ randomized trial: hearing outcomes" }))).toBe("cohort");
-    expect(detectDesign(base({ title: "Post hoc analysis of a randomised controlled trial of dupilumab in CRSwNP" }))).toBe("cohort");
-    expect(detectDesign(base({ title: "Long-term follow-up of the TONSIL randomised trial" }))).toBe("cohort");
+    expect(detectDesign(base({ title: "Secondary analysis of the XYZ randomized trial: hearing outcomes" }))).toBe("secondary_analysis");
+    expect(detectDesign(base({ title: "Post hoc analysis of a randomised controlled trial of dupilumab in CRSwNP" }))).toBe("secondary_analysis");
+    expect(detectDesign(base({ title: "Long-term follow-up of the TONSIL randomised trial" }))).toBe("secondary_analysis");
     // Настоящее РКИ с явным типом публикации не понижается
     expect(detectDesign(base({ title: "Subgroup analyses from a randomized trial", publicationTypes: ["Randomized Controlled Trial"] }))).toBe("rct");
     expect(detectDesign(base({ title: "Intratympanic steroids: a randomized controlled trial" }))).toBe("rct");
@@ -93,6 +97,15 @@ describe("evidenceLevel", () => {
     expect(evidenceLevel("case_series", null)).toBe(4);
     expect(evidenceLevel("narrative", null)).toBe(5);
     expect(evidenceLevel("other", null)).toBe(5);
+    // I-03
+    expect(evidenceLevel("protocol", 500)).toBe(5);
+    expect(evidenceLevel("qualitative", null)).toBe(5);
+    expect(evidenceLevel("diagnostic_accuracy", 300)).toBe(2);
+    expect(evidenceLevel("diagnostic_accuracy", 40)).toBe(3);
+    expect(evidenceLevel("secondary_analysis", 2000)).toBe(2);
+    expect(evidenceLevel("secondary_analysis", 100)).toBe(3);
+    expect(evidenceLevel("economic", null)).toBe(3);
+    expect(evidenceLevel("mendelian_randomization", null)).toBe(3);
   });
 });
 
@@ -255,5 +268,64 @@ describe("normalizeTitle / dedupKeyFor", () => {
     expect(dedupKeyFor({ pmid: "12345", title: "x" })).toBe("pmid:12345");
     expect(dedupKeyFor({ nctId: "nct01234567", title: "x" })).toBe("nct:NCT01234567");
     expect(dedupKeyFor({ title: "The  Study!!" })).toBe("title:the study");
+  });
+});
+
+describe("I-03: новые дизайны и объяснение «почему»", () => {
+  it("экономическая оценка, качественное, диагностическая точность, менделевская рандомизация", () => {
+    expect(detectDesign(base({ title: "Cost-effectiveness of cochlear implantation in older adults" }))).toBe("economic");
+    expect(detectDesign(base({ title: "Tonsillectomy in children", abstract: "The incremental cost-effectiveness ratio was £12 000 per QALY gained." }))).toBe("economic");
+    expect(detectDesign(base({ title: "Living with tinnitus: a qualitative study of patients' experiences" }))).toBe("qualitative");
+    expect(detectDesign(base({ title: "Parents' views on grommets", abstract: "We conducted semi-structured interviews; data were analysed by thematic analysis." }))).toBe("qualitative");
+    expect(detectDesign(base({ title: "Diagnostic accuracy of ultrasound for thyroid nodules" }))).toBe("diagnostic_accuracy");
+    expect(detectDesign(base({ title: "A nomogram predicting occult nodal metastasis in oral cancer" }))).toBe("diagnostic_accuracy");
+    expect(detectDesign(base({ title: "Olfactory testing in CRS", abstract: "Sensitivity and specificity were 0.91 and 0.84; the area under the ROC curve was 0.93." }))).toBe("diagnostic_accuracy");
+    expect(detectDesign(base({ title: "Smoking and chronic rhinosinusitis: a Mendelian randomization study" }))).toBe("mendelian_randomization");
+    expect(detectDesign(base({ title: "Smoking and chronic rhinosinusitis", abstract: "Two-sample Mendelian randomisation using GWAS summary statistics; alleles are randomly allocated at conception." }))).toBe("mendelian_randomization");
+  });
+
+  it("структурированные признаки сильнее текстовых: тип публикации РКИ побеждает экономический заголовок, диагностический — не РКИ по аннотации", () => {
+    expect(detectDesign(base({ title: "Cost-effectiveness of balloon sinuplasty", publicationTypes: ["Randomized Controlled Trial"] }))).toBe("rct");
+    expect(detectDesign(base({ title: "Diagnostic accuracy of a new tuning fork test", abstract: "Patients were randomly assigned to examiner order." }))).toBe("rct");
+    // Пилотный РКИ в заголовке — всё ещё РКИ, не экономика
+    expect(detectDesign(base({ title: "Randomised trial of CPAP versus surgery: clinical and cost outcomes" }))).toBe("rct");
+  });
+
+  it("объяснение и уверенность: PT → high, заголовок → medium, аннотация → low, нет признаков → low", () => {
+    const pt = detectDesignDetailed(base({ title: "Steroids for SSNHL", publicationTypes: ["Randomized Controlled Trial"] }));
+    expect(pt).toEqual({ design: "rct", confidence: "high", reason: "тип публикации PubMed: «Randomized Controlled Trial»" });
+    const title = detectDesignDetailed(base({ title: "Intratympanic steroids: a randomised, double-blind trial" }));
+    expect(title.confidence).toBe("medium");
+    expect(title.reason).toBe("заголовок: «randomised»");
+    const abstract = detectDesignDetailed(base({ title: "Intratympanic steroids for SSNHL", abstract: "Sixty patients were randomly assigned to two arms." }));
+    expect(abstract).toMatchObject({ design: "rct", confidence: "low", reason: "аннотация: «randomly assigned»" });
+    const none = detectDesignDetailed(base({ title: "Some study" }));
+    expect(none.design).toBe("other");
+    expect(none.confidence).toBe("low");
+    expect(detectDesignDetailed(base({ studyTypeHint: "trial_registry" })).confidence).toBe("high");
+    expect(detectDesignDetailed(base({ isPreprint: true, title: "Randomized trial interim results" })).reason).toMatch(/^препринт; заголовок/);
+    expect(detectDesignDetailed(base({ title: "Antibiotics for AOM", journal: "Cochrane Database Syst Rev" })).reason).toMatch(/Cochrane/);
+  });
+
+  it("classify переносит объяснение в результат; ручная правка помечается и сохраняет автоматический вывод", () => {
+    const c = classify(base({ title: "Cost-effectiveness of cochlear implantation" }));
+    expect(c.studyDesign).toBe("economic");
+    expect(c.designConfidence).toBe("medium");
+    expect(c.designReason).toBe("заголовок: «Cost-effective»");
+    expect(c.evidenceLevel).toBe(3);
+    const manual = classify(base({ title: "Cost-effectiveness of cochlear implantation" }), { studyDesign: "rct", at: "2026-01-01T00:00:00Z" });
+    expect(manual.studyDesign).toBe("rct");
+    expect(manual.designConfidence).toBe("high");
+    expect(manual.designReason).toMatch(/^задан вручную \(автоматически: economic — заголовок/);
+  });
+
+  it("баллы дизайна: протокол и качественное — низкие, диагностика и МР — между когортой и срезом", () => {
+    const pts = (title: string) => classify(base({ title })).trustBreakdown[0]!.points;
+    expect(pts("Study protocol for a randomised trial of X")).toBe(4);
+    expect(pts("A qualitative study of X")).toBe(6);
+    expect(pts("Diagnostic accuracy of X")).toBe(20);
+    expect(pts("X: a Mendelian randomization study")).toBe(18);
+    expect(pts("Secondary analysis of the X randomized trial")).toBe(16);
+    expect(pts("A prospective cohort of X")).toBe(22);
   });
 });

@@ -16,6 +16,12 @@ const DESIGN_STYLES: Record<StudyDesign, string> = {
   narrative: "border-slate-300/70 bg-slate-50 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
   trial_registry: "border-cyan-300/70 bg-cyan-50 text-cyan-800 dark:border-cyan-400/25 dark:bg-cyan-400/10 dark:text-cyan-300",
   preprint: "border-rose-300/70 bg-rose-50 text-rose-800 dark:border-rose-400/25 dark:bg-rose-400/10 dark:text-rose-300",
+  protocol: "border-slate-300/70 bg-slate-50 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
+  diagnostic_accuracy: "border-indigo-300/70 bg-indigo-50 text-indigo-800 dark:border-indigo-400/25 dark:bg-indigo-400/10 dark:text-indigo-300",
+  qualitative: "border-fuchsia-300/70 bg-fuchsia-50 text-fuchsia-800 dark:border-fuchsia-400/25 dark:bg-fuchsia-400/10 dark:text-fuchsia-300",
+  economic: "border-lime-300/70 bg-lime-50 text-lime-800 dark:border-lime-400/25 dark:bg-lime-400/10 dark:text-lime-300",
+  mendelian_randomization: "border-teal-300/70 bg-teal-50 text-teal-800 dark:border-teal-400/25 dark:bg-teal-400/10 dark:text-teal-300",
+  secondary_analysis: "border-amber-300/70 bg-amber-50 text-amber-800 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300",
   other: "border-slate-300/70 bg-slate-50 text-slate-600 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-400",
 };
 
@@ -27,10 +33,10 @@ const LEVEL_STYLES: Record<number, string> = {
   5: "bg-gradient-to-br from-slate-500 to-slate-600 shadow-slate-600/25",
 };
 
-export function DesignBadge({ design }: { design: StudyDesign }) {
+export function DesignBadge({ design, reason }: { design: StudyDesign; reason?: string | null }) {
   return (
     <span
-      title={DESIGN_LABELS[design]}
+      title={reason ? `${DESIGN_LABELS[design]} — ${reason}` : DESIGN_LABELS[design]}
       className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${DESIGN_STYLES[design]}`}
     >
       {DESIGN_SHORT[design]}

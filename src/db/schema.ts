@@ -33,7 +33,17 @@ export type StudyDesign =
   | "narrative"
   | "trial_registry"
   | "preprint"
+  // I-03: отдельные дизайны вместо «когорта/другое»
+  | "protocol"
+  | "diagnostic_accuracy"
+  | "qualitative"
+  | "economic"
+  | "mendelian_randomization"
+  | "secondary_analysis"
   | "other";
+
+/** Уверенность классификатора в дизайне (I-03): high — тип публикации PubMed/реестр/журнал Cochrane/ручная правка; medium — заголовок; low — аннотация или отсутствие признаков. */
+export type DesignConfidence = "high" | "medium" | "low";
 
 export interface TrustBreakdownItem {
   label: string;
@@ -133,6 +143,9 @@ export const articles = pgTable(
     sourceKeys: jsonb("source_keys").$type<string[]>().notNull().default([]),
     url: text("url").notNull(),
     studyDesign: text("study_design").$type<StudyDesign>().notNull().default("other"),
+    /** Почему выбран такой дизайн и насколько уверенно (I-03); null у записей до версии классификатора 5. */
+    designConfidence: text("design_confidence").$type<DesignConfidence>(),
+    designReason: text("design_reason"),
     evidenceLevel: integer("evidence_level").notNull().default(5),
     trustScore: integer("trust_score").notNull().default(0),
     trustBreakdown: jsonb("trust_breakdown").$type<TrustBreakdownItem[]>().notNull().default([]),
