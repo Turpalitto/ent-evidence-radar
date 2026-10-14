@@ -1,7 +1,7 @@
 import { asc, eq, gt, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { invalidateArticleAggregates } from "@/lib/cache";
-import { articles, type Article } from "@/db/schema";
+import { articles, type Article, type ManualOverrides } from "@/db/schema";
 import { CLASSIFIER_VERSION, classify, type RawArticle } from "@/lib/evidence/classify";
 import { invalidateStatsCache } from "@/lib/stats";
 
@@ -71,7 +71,31 @@ type Row = Pick<
   | "isRetracted"
   | "evidenceLevel"
   | "trustScore"
+  | "overrides"
 >;
+
+/**
+ * Пересчитать классификацию одной строки с учётом ручных правок (аудит A-11).
+ * Возвращает поля для UPDATE; вызывается из PATCH /api/articles/:id при изменении overrides.
+ */
+export function reclassifyRow(row: Row, overrides: ManualOverrides) {
+  const c = classify(rowToRaw(row), overrides);
+  return {
+    overrides,
+    studyDesign: c.studyDesign,
+    evidenceLevel: c.evidenceLevel,
+    trustScore: c.trustScore,
+    trustBreakdown: c.trustBreakdown,
+    journalTier: c.journalTier,
+    subspecialties: c.subspecialties,
+    sampleSize: c.sampleSize,
+    isPreprint: c.isPreprint,
+    isRetracted: c.isRetracted,
+    classifierVersion: CLASSIFIER_VERSION,
+    updatedAt: new Date(),
+  };
+}
+
 
 const ROW_COLUMNS = {
   id: articles.id,
@@ -99,7 +123,11 @@ const ROW_COLUMNS = {
   isRetracted: articles.isRetracted,
   evidenceLevel: articles.evidenceLevel,
   trustScore: articles.trustScore,
+  overrides: articles.overrides,
 };
+
+/** Колонки, нужные `reclassifyRow` (для выборки в API). */
+export const RECLASSIFY_ROW_COLUMNS = ROW_COLUMNS;
 
 const SOURCE_KEYS = new Set<RawArticle["sourceKey"]>(["pubmed", "europepmc", "clinicaltrials", "medrxiv"]);
 
@@ -186,7 +214,7 @@ export async function reclassifyArticles(opts: ReclassifyOptions = {}): Promise<
 
       await db.transaction(async (tx) => {
         for (const row of rows) {
-          const c = classify(rowToRaw(row));
+          const c = classify(rowToRaw(row), row.overrides);
           if (c.studyDesign !== row.studyDesign) result.changed.studyDesign++;
           if (c.evidenceLevel !== row.evidenceLevel) result.changed.evidenceLevel++;
           if (c.trustScore !== row.trustScore) result.changed.trustScore++;

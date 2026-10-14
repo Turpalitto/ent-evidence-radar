@@ -1,6 +1,6 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail } from "@/db/schema";
+import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail, type ManualOverrides } from "@/db/schema";
 import { CLASSIFIER_VERSION, classify, dedupKeyFor, normalizeIds, type RawArticle } from "@/lib/evidence/classify";
 import { DEFAULT_SETTINGS, DEFAULT_SOURCES, DEFAULT_TOPICS, type AppSettings } from "@/lib/defaults";
 import { fetchPubmed } from "@/lib/sources/pubmed";
@@ -230,7 +230,7 @@ export interface WritePlan {
   toInsert: PlannedInsert[];
   toUpdate: PlannedUpdate[];
 }
-type ExistingRef = { id: number; topicIds?: number[] | null; sourceKeys?: string[] | null };
+type ExistingRef = { id: number; topicIds?: number[] | null; sourceKeys?: string[] | null; overrides?: ManualOverrides | null };
 
 /**
  * Чистая функция планирования записи: по кандидатам и уже существующим записям решает,
@@ -254,8 +254,14 @@ export function planWrites(
 
   for (const [key, cand] of candidates) {
     const raw = cand.raw;
-    const c = classify(raw);
-    if (c.trustScore < minTrustToStore) continue;
+    const existing = existingByKey.get(key);
+    const doiMatch = raw.doi ? byDoi.get(raw.doi.toLowerCase()) : undefined;
+    const pmidMatch = raw.pmid ? byPmid.get(raw.pmid) : undefined;
+    // Ручные правки врача у существующей строки (аудит A-11) применяются поверх эвристик.
+    const overrides = existing?.overrides ?? doiMatch?.overrides ?? pmidMatch?.overrides ?? null;
+    const c = classify(raw, overrides);
+    // Порог доверия — только для НОВЫХ записей: уже сохранённую статью обновляем всегда.
+    if (c.trustScore < minTrustToStore && !existing && !doiMatch && !pmidMatch) continue;
     const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
     const values: NewArticle = {
       dedupKey: key,
@@ -289,9 +295,6 @@ export function planWrites(
       updatedAt: new Date(),
     };
 
-    const existing = existingByKey.get(key);
-    const doiMatch = raw.doi ? byDoi.get(raw.doi.toLowerCase()) : undefined;
-    const pmidMatch = raw.pmid ? byPmid.get(raw.pmid) : undefined;
     const existingId = existing?.id ?? doiMatch?.id ?? pmidMatch?.id;
 
     if (existingId) {
@@ -501,7 +504,7 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
   const keys = Array.from(candidates.keys());
   const existingRows = keys.length
     ? await db
-        .select({ id: articles.id, dedupKey: articles.dedupKey, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, pmid: articles.pmid, doi: articles.doi })
+        .select({ id: articles.id, dedupKey: articles.dedupKey, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, pmid: articles.pmid, doi: articles.doi, overrides: articles.overrides })
         .from(articles)
         .where(inArray(articles.dedupKey, keys))
     : [];
@@ -510,15 +513,16 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
   // вторичная дедупликация: та же DOI/PMID под другим ключом
   const allDois = keys.length ? Array.from(candidates.values()).map((c) => c.raw.doi?.toLowerCase()).filter((x): x is string => !!x) : [];
   const allPmids = Array.from(candidates.values()).map((c) => c.raw.pmid).filter((x): x is string => !!x);
-  const byDoi = new Map<string, { id: number; topicIds: number[]; sourceKeys: string[] }>();
-  const byPmid = new Map<string, { id: number; topicIds: number[]; sourceKeys: string[] }>();
+  const byDoi = new Map<string, ExistingRef>();
+  const byPmid = new Map<string, ExistingRef>();
+  const refCols = { id: articles.id, doi: articles.doi, pmid: articles.pmid, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, overrides: articles.overrides };
   if (allDois.length) {
-    const rows = await db.select({ id: articles.id, doi: articles.doi, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys }).from(articles).where(inArray(sql`lower(${articles.doi})`, allDois));
-    for (const r of rows) if (r.doi) byDoi.set(r.doi.toLowerCase(), { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [] });
+    const rows = await db.select(refCols).from(articles).where(inArray(sql`lower(${articles.doi})`, allDois));
+    for (const r of rows) if (r.doi) byDoi.set(r.doi.toLowerCase(), { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [], overrides: r.overrides });
   }
   if (allPmids.length) {
-    const rows = await db.select({ id: articles.id, pmid: articles.pmid, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys }).from(articles).where(inArray(articles.pmid, allPmids));
-    for (const r of rows) if (r.pmid) byPmid.set(r.pmid, { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [] });
+    const rows = await db.select(refCols).from(articles).where(inArray(articles.pmid, allPmids));
+    for (const r of rows) if (r.pmid) byPmid.set(r.pmid, { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [], overrides: r.overrides });
   }
 
   // Сначала считаем решения (insert/update) чистой функцией, затем пишем пакетно в одной

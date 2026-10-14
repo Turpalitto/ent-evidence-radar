@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { z } from "zod";
 import { db } from "@/db";
 import { invalidateArticleAggregates } from "@/lib/cache";
-import { articles, topics } from "@/db/schema";
+import { articles, topics, type ManualOverrides } from "@/db/schema";
+import { sanitizeOverrides } from "@/lib/evidence/classify";
+import { RECLASSIFY_ROW_COLUMNS, reclassifyRow } from "@/lib/reclassify";
 import { getSettings, saveSettings } from "@/lib/refresh";
 import { isSubspecialtyKey } from "@/lib/api";
 import type { AppSettings } from "@/lib/defaults";
@@ -17,6 +19,10 @@ export interface BookmarkedArticleBackup {
   notes: string;
   isBookmarked: boolean;
   isRead: boolean;
+  /** Скрыта врачом («не ЛОР») — аудит A-11. */
+  isHidden?: boolean;
+  /** Ручные правки классификации — аудит A-11. */
+  overrides?: ManualOverrides;
   bookmarkedAt?: string;
 }
 
@@ -48,9 +54,11 @@ export async function exportUserData(): Promise<UserBackupData> {
         notes: articles.notes,
         isBookmarked: articles.isBookmarked,
         isRead: articles.isRead,
+        isHidden: articles.isHidden,
+        overrides: articles.overrides,
       })
       .from(articles)
-      .where(or(eq(articles.isBookmarked, true), ne(articles.notes, ""))),
+      .where(or(eq(articles.isBookmarked, true), ne(articles.notes, ""), eq(articles.isHidden, true), sql`${articles.overrides} <> '{}'::jsonb`)),
     db.select().from(topics),
     getSettings(),
   ]);
@@ -138,6 +146,8 @@ export const BackupSchema = z.object({
         notes: z.string().default(""),
         isBookmarked: z.boolean().default(false),
         isRead: z.boolean().default(false),
+        isHidden: z.boolean().optional(),
+        overrides: z.record(z.string(), z.unknown()).optional(),
       }),
     )
     .max(50_000)
@@ -160,7 +170,7 @@ export const BackupSchema = z.object({
 export type BackupInput = z.infer<typeof BackupSchema>;
 
 export interface RestoreResult {
-  articles: { matched: number; bookmarked: number; notesMerged: number; unmatched: { title: string; pmid: string | null; doi: string | null }[] };
+  articles: { matched: number; bookmarked: number; notesMerged: number; overridesApplied: number; unmatched: { title: string; pmid: string | null; doi: string | null }[] };
   topics: { created: number; updated: number };
   settings: { applied: string[] };
 }
@@ -196,7 +206,7 @@ export function mergeNotes(current: string, incoming: string, exportedAt?: strin
  */
 export async function restoreUserData(input: BackupInput): Promise<RestoreResult> {
   const result: RestoreResult = {
-    articles: { matched: 0, bookmarked: 0, notesMerged: 0, unmatched: [] },
+    articles: { matched: 0, bookmarked: 0, notesMerged: 0, overridesApplied: 0, unmatched: [] },
     topics: { created: 0, updated: 0 },
     settings: { applied: [] },
   };
@@ -205,7 +215,7 @@ export async function restoreUserData(input: BackupInput): Promise<RestoreResult
   const pmids = input.bookmarksAndNotes.map((b) => b.pmid).filter((x): x is string => !!x);
   const dois = input.bookmarksAndNotes.map((b) => b.doi?.toLowerCase()).filter((x): x is string => !!x);
   const ncts = input.bookmarksAndNotes.map((b) => b.nctId?.toUpperCase()).filter((x): x is string => !!x);
-  const cols = { id: articles.id, pmid: articles.pmid, doi: articles.doi, nctId: articles.nctId, notes: articles.notes, isBookmarked: articles.isBookmarked, isRead: articles.isRead };
+  const cols = { ...RECLASSIFY_ROW_COLUMNS, notes: articles.notes, isBookmarked: articles.isBookmarked, isRead: articles.isRead, isHidden: articles.isHidden };
   const rows = [
     ...(pmids.length ? await db.select(cols).from(articles).where(inArray(articles.pmid, pmids)) : []),
     ...(dois.length ? await db.select(cols).from(articles).where(inArray(sql`lower(${articles.doi})`, dois)) : []),
@@ -234,10 +244,18 @@ export async function restoreUserData(input: BackupInput): Promise<RestoreResult
       const notes = mergeNotes(row.notes, b.notes, input.exportedAt);
       const isBookmarked = row.isBookmarked || b.isBookmarked;
       const isRead = row.isRead || b.isRead;
-      if (notes === row.notes && isBookmarked === row.isBookmarked && isRead === row.isRead) continue;
+      const isHidden = row.isHidden || !!b.isHidden;
+      // Ручные правки из бэкапа применяются, если в базе их ещё нет (локальные правки не перетираем).
+      const incoming = sanitizeOverrides(b.overrides);
+      const applyOverrides = Object.keys(incoming).length > 0 && Object.keys(row.overrides ?? {}).length === 0;
+      if (notes === row.notes && isBookmarked === row.isBookmarked && isRead === row.isRead && isHidden === row.isHidden && !applyOverrides) continue;
       if (isBookmarked && !row.isBookmarked) result.articles.bookmarked++;
       if (notes !== row.notes) result.articles.notesMerged++;
-      await tx.update(articles).set({ notes, isBookmarked, isRead }).where(eq(articles.id, row.id));
+      if (applyOverrides) result.articles.overridesApplied++;
+      await tx
+        .update(articles)
+        .set({ notes, isBookmarked, isRead, isHidden, ...(applyOverrides ? reclassifyRow(row, incoming) : {}) })
+        .where(eq(articles.id, row.id));
     }
 
     // --- Темы

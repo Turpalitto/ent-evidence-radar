@@ -1,4 +1,4 @@
-import { gte } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
 import { articles, articleColumns } from "@/db/schema";
 import { DESIGN_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
@@ -36,7 +36,7 @@ export interface DigestData {
 
 export async function fetchDigestArticles(days: number): Promise<DigestArticle[]> {
   const cutoff = new Date(Date.now() - days * 86400_000);
-  const rows = await db.select(articleColumns).from(articles).where(gte(articles.fetchedAt, cutoff));
+  const rows = await db.select(articleColumns).from(articles).where(and(gte(articles.fetchedAt, cutoff), eq(articles.isHidden, false)));
   return rows.map((r) => ({
     title: r.title,
     journal: r.journal ?? null,

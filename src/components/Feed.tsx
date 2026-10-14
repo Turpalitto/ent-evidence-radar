@@ -44,6 +44,8 @@ interface Filters {
   unread: boolean;
   topicId: string;
   excludePreprints: boolean;
+  /** Режим «Скрытые»: показать записи, которые врач скрыл («не ЛОР»), чтобы вернуть при необходимости. */
+  hidden: boolean;
   sort: "date" | "trust" | "fetched" | "relevance";
   /** Область поиска: везде или только заголовок. */
   scope: "all" | "title";
@@ -63,6 +65,7 @@ const initial: Filters = {
   unread: false,
   topicId: "",
   excludePreprints: false,
+  hidden: false,
   sort: "date",
   scope: "all",
 };
@@ -95,6 +98,7 @@ function toParams(f: Filters, page: number, pageSize: number) {
   if (f.unread) p.set("unread", "1");
   if (f.topicId) p.set("topicId", f.topicId);
   if (f.excludePreprints) p.set("excludePreprints", "1");
+  if (f.hidden) p.set("hidden", "1");
   // Без явного выбора сортировки поиск идёт по релевантности, лента — по дате (решает сервер).
   if (!(f.sort === "date" && f.q)) p.set("sort", f.sort);
   if (f.scope === "title" && f.q) p.set("scope", "title");
@@ -135,6 +139,7 @@ function parseUrlSearch(): { f: Filters; page: number; q: string } {
     unread: p.get("unread") === "1",
     topicId: p.get("topicId") ?? "",
     excludePreprints: p.get("excludePreprints") === "1",
+    hidden: p.get("hidden") === "1",
     sort: sort === "trust" || sort === "date" || sort === "fetched" || sort === "relevance" ? sort : initial.sort,
     scope: p.get("scope") === "title" ? "title" : "all",
   };
@@ -555,6 +560,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
         <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.unread} onChange={(e) => set({ unread: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Только непрочитанные</label>
         <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.bookmarked} onChange={(e) => set({ bookmarked: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Только избранное</label>
         <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.excludePreprints} onChange={(e) => set({ excludePreprints: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Скрыть препринты</label>
+        <label className="flex items-center gap-2.5" title="Записи, которые вы скрыли как «не ЛОР / не по теме». Их можно вернуть из карточки."><input type="checkbox" checked={f.hidden} onChange={(e) => set({ hidden: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Показать скрытые мной</label>
       </div>
 
       <div className="border-t border-[color:var(--hairline)] pt-4">

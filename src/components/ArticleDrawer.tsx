@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Article } from "@/db/schema";
-import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
+import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTIES, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
 import { DesignBadge, LevelBadge, TierBadge, TrustScore, formatDate } from "./Badges";
 import { citeBibtex, citeGost, citeVancouver } from "@/lib/citation";
@@ -34,6 +34,7 @@ function buildConsiliumSummary(a: Article): string {
 export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: Props) {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editOverrides, setEditOverrides] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [related, setRelated] = useState<Article[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
@@ -207,6 +208,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
 
   if (!article) return null;
   const a = article;
+  const hasOverrides = !!(a.overrides?.studyDesign || a.overrides?.subspecialties?.length);
   const positives = a.trustBreakdown.filter((b) => b.points > 0);
   const negatives = a.trustBreakdown.filter((b) => b.points <= 0);
 
@@ -234,6 +236,8 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             <TierBadge tier={a.journalTier} />
             {a.isPreprint && <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">ПРЕПРИНТ</span>}
             {a.isRetracted && <span className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">ОТОЗВАНА</span>}
+            {hasOverrides && <span className="rounded border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300" title="Классификация исправлена вручную и не будет перетёрта при обновлении">✎ ВРУЧНУЮ</span>}
+            {a.isHidden && <span className="rounded bg-slate-600 px-1.5 py-0.5 text-[10px] font-bold text-white">СКРЫТА</span>}
           </div>
           <h2 className="text-sm font-semibold leading-snug text-[color:var(--ink)] md:text-base">{a.title}</h2>
           <p className="mt-1 text-xs text-[color:var(--ink-muted)]">
@@ -301,6 +305,73 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             </button>
           ))}
         </div>
+
+        {/* ── Ручная правка классификации и скрытие (A-11) ── */}
+        <details className="rounded-xl border border-[color:var(--hairline)] px-3 py-2 text-xs" open={hasOverrides || editOverrides}>
+          <summary className="cursor-pointer select-none font-semibold text-[color:var(--ink-soft)]" onClick={() => setEditOverrides(true)}>
+            Исправить классификацию{hasOverrides ? " · есть ручные правки" : ""}
+          </summary>
+          <div className="mt-2 space-y-2.5">
+            <p className="text-[11px] text-[color:var(--ink-subtle)]">
+              Правки сохраняются и переживают обновление и переклассификацию. Уровень доказательности и индекс доверия пересчитываются от выбранного дизайна.
+            </p>
+            <label className="flex flex-wrap items-center gap-2">
+              <span className="w-28 text-[color:var(--ink-muted)]">Дизайн</span>
+              <select
+                value={a.overrides?.studyDesign ?? ""}
+                disabled={saving}
+                onChange={(e) => void patch(a.id, { overrides: { ...a.overrides, studyDesign: e.target.value || undefined } })}
+                className="input-base rounded-lg px-2 py-1 text-xs"
+              >
+                <option value="">Автоматически ({DESIGN_LABELS[a.studyDesign]})</option>
+                {(Object.keys(DESIGN_LABELS) as Array<keyof typeof DESIGN_LABELS>).map((k) => (
+                  <option key={k} value={k}>{DESIGN_LABELS[k]}</option>
+                ))}
+              </select>
+            </label>
+            <div className="flex flex-wrap items-start gap-2">
+              <span className="w-28 pt-1 text-[color:var(--ink-muted)]">Субспециальности</span>
+              <div className="flex flex-1 flex-wrap gap-1.5">
+                {SUBSPECIALTIES.map((s) => {
+                  const manual = a.overrides?.subspecialties;
+                  const active = (manual ?? a.subspecialties).includes(s.key);
+                  return (
+                    <button
+                      key={s.key}
+                      type="button"
+                      disabled={saving}
+                      onClick={() => {
+                        const base = manual ?? a.subspecialties;
+                        const next = active ? base.filter((k) => k !== s.key) : [...base, s.key];
+                        void patch(a.id, { overrides: { ...a.overrides, subspecialties: next.length ? next : undefined } });
+                      }}
+                      className={`rounded-full border px-2 py-0.5 text-[11px] transition ${active ? "border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200" : "border-[color:var(--hairline)] text-[color:var(--ink-subtle)] hover:border-teal-400"}`}
+                      aria-pressed={active}
+                    >
+                      {s.short}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              {hasOverrides && (
+                <button type="button" disabled={saving} onClick={() => void patch(a.id, { overrides: null })} className="btn-ghost rounded-lg px-2.5 py-1 text-xs font-semibold">
+                  Сбросить к автоматике
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void patch(a.id, { isHidden: !a.isHidden })}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${a.isHidden ? "border-teal-300 text-teal-700 dark:text-teal-300" : "border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-950/30"}`}
+                title={a.isHidden ? "Вернуть запись в ленту" : "Скрыть из ленты и статистики; при следующем обновлении запись не вернётся"}
+              >
+                {a.isHidden ? "Вернуть в ленту" : "Скрыть: не ЛОР / не по теме"}
+              </button>
+            </div>
+          </div>
+        </details>
 
         {/* ── Идентификаторы (компактно) ── */}
         {(a.doi || a.pmid || a.pmcid || a.nctId) && (

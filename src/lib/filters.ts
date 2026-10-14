@@ -14,6 +14,8 @@ export interface ArticleFilters {
   unread?: boolean;
   topicId?: number;
   excludePreprints?: boolean;
+  /** Показать только скрытые записи («не ЛОР / скрыть»); по умолчанию скрытые исключаются. */
+  hidden?: boolean;
   /** `relevance` — по ts_rank (имеет смысл только с `q`; без запроса равносилен `date`). */
   sort?: "date" | "trust" | "fetched" | "relevance";
   /** Область поиска: везде (по умолчанию) или только по заголовку. */
@@ -54,6 +56,7 @@ export function parseFilters(sp: URLSearchParams): ArticleFilters {
     unread: sp.get("unread") === "1",
     topicId: num("topicId"),
     excludePreprints: sp.get("excludePreprints") === "1",
+    hidden: sp.get("hidden") === "1",
     // Без явной сортировки поисковая выдача идёт по релевантности, лента — по дате.
     sort: SORTS.has(sp.get("sort") ?? "") ? (sp.get("sort") as ArticleFilters["sort"]) : sp.get("q")?.trim() ? "relevance" : "date",
     scope: sp.get("scope") === "title" ? "title" : "all",

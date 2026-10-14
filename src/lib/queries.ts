@@ -61,7 +61,9 @@ export function buildWhere(f: ArticleFilters): SQL | undefined {
   if (f.unread) conds.push(eq(articles.isRead, false));
   if (f.topicId) conds.push(sql`${articles.topicIds} @> ${JSON.stringify([f.topicId])}::jsonb`);
   if (f.excludePreprints) conds.push(eq(articles.isPreprint, false));
-  return conds.length ? and(...conds) : undefined;
+  // Скрытые врачом записи (аудит A-11) видны только в специальном режиме «Скрытые».
+  conds.push(eq(articles.isHidden, !!f.hidden));
+  return and(...conds);
 }
 
 export async function listArticles(f: ArticleFilters) {
@@ -107,6 +109,7 @@ export async function findRelatedArticles(id: number, limit = 5): Promise<Articl
     conds.push(eq(articles.studyDesign, target.studyDesign));
   }
 
+  conds.push(eq(articles.isHidden, false));
   const related = await db
     .select(articleColumns)
     .from(articles)

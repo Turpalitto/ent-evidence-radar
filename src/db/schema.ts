@@ -40,6 +40,14 @@ export interface TrustBreakdownItem {
   points: number;
 }
 
+/** Ручные правки классификации (аудит A-11). Пустой объект — правок нет. */
+export interface ManualOverrides {
+  studyDesign?: StudyDesign;
+  subspecialties?: string[];
+  /** Когда правка сделана (ISO). */
+  at?: string;
+}
+
 export const sources = pgTable("sources", {
   id: serial("id").primaryKey(),
   key: text("key").notNull().unique(),
@@ -95,6 +103,13 @@ export const articles = pgTable(
     /** Версия эвристик классификатора, которой размечена запись (0 — до версионирования). */
     classifierVersion: integer("classifier_version").notNull().default(0),
     topicIds: jsonb("topic_ids").$type<number[]>().notNull().default([]),
+    /**
+     * Ручные правки врача (аудит A-11): дизайн/субспециальности, заданные вручную, переживают
+     * refresh и переклассификацию — классификатор применяет их поверх эвристик.
+     */
+    overrides: jsonb("overrides").$type<ManualOverrides>().notNull().default({}),
+    /** «Не ЛОР / скрыть»: запись не показывается и не возвращается при следующем обновлении (аудит A-11). */
+    isHidden: boolean("is_hidden").notNull().default(false),
     isRead: boolean("is_read").notNull().default(false),
     isBookmarked: boolean("is_bookmarked").notNull().default(false),
     notes: text("notes").notNull().default(""),
@@ -124,6 +139,7 @@ export const articles = pgTable(
     index("articles_pmid_idx").on(t.pmid),
     index("articles_doi_idx").on(t.doi),
     index("articles_classifier_version_idx").on(t.classifierVersion),
+    index("articles_hidden_idx").on(t.isHidden).where(sql`${t.isHidden}`),
   ],
 );
 

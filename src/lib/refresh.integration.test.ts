@@ -124,4 +124,25 @@ describe("startRefresh — фоновое выполнение (F-05)", () => {
     expect(run.updated).toBe(2);
     expect((await db.select().from(articles)).length).toBe(2);
   });
+
+  it("ручные правки и скрытие (A-11) переживают повторное обновление", async () => {
+    const [row] = await db.select().from(articles).where(eq(articles.pmid, "40000001"));
+    expect(row.studyDesign).toBe("rct");
+    // Врач исправил дизайн на «когорта» и указал субспециальность; вторую статью скрыл.
+    await db.update(articles).set({ overrides: { studyDesign: "cohort", subspecialties: ["otology"], at: new Date().toISOString() } }).where(eq(articles.id, row.id));
+    await db.update(articles).set({ isHidden: true }).where(eq(articles.pmid, "40000002"));
+
+    const s = await startRefresh("manual");
+    await s.done;
+
+    const [after] = await db.select().from(articles).where(eq(articles.id, row.id));
+    expect(after.studyDesign).toBe("cohort");
+    expect(after.evidenceLevel).toBeGreaterThan(row.evidenceLevel); // когорта — ниже РКИ
+    expect(after.subspecialties).toEqual(["otology"]);
+    expect(after.trustBreakdown.some((b) => /задан вручную/.test(b.label))).toBe(true);
+    expect(after.overrides.studyDesign).toBe("cohort");
+    const [hidden] = await db.select().from(articles).where(eq(articles.pmid, "40000002"));
+    expect(hidden.isHidden).toBe(true);
+    expect((await db.select().from(articles)).length).toBe(2);
+  });
 });

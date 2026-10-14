@@ -1,4 +1,4 @@
-import type { StudyDesign, TrustBreakdownItem } from "@/db/schema";
+import type { ManualOverrides, StudyDesign, TrustBreakdownItem } from "@/db/schema";
 import { journalTier } from "./journals";
 import { SUBSPECIALTIES } from "./taxonomy";
 
@@ -265,9 +265,31 @@ export function detectSubspecialties(a: RawArticle): string[] {
   return top.length ? top : scores.slice(0, 1).map((s) => s.key);
 }
 
-export function classify(a: RawArticle): Classified {
+const DESIGN_KEYS = new Set<string>([
+  "systematic_review", "guideline", "rct", "cohort", "case_control", "cross_sectional", "case_series", "narrative", "trial_registry", "preprint", "other",
+]);
+const SUBSPECIALTY_KEYS = new Set<string>(SUBSPECIALTIES.map((s) => s.key));
+
+/** Проверка ручных правок из API/бэкапа: неизвестные дизайны/субспециальности отбрасываются. */
+export function sanitizeOverrides(input: unknown): ManualOverrides {
+  if (!input || typeof input !== "object") return {};
+  const o = input as Record<string, unknown>;
+  const out: ManualOverrides = {};
+  if (typeof o.studyDesign === "string" && DESIGN_KEYS.has(o.studyDesign)) out.studyDesign = o.studyDesign as StudyDesign;
+  if (Array.isArray(o.subspecialties)) {
+    const keys = Array.from(new Set(o.subspecialties.filter((k): k is string => typeof k === "string" && SUBSPECIALTY_KEYS.has(k))));
+    if (keys.length) out.subspecialties = keys.slice(0, 6);
+  }
+  if (Object.keys(out).length) out.at = typeof o.at === "string" && !Number.isNaN(Date.parse(o.at)) ? o.at : new Date().toISOString();
+  return out;
+}
+
+export function classify(a: RawArticle, overrides?: ManualOverrides | null): Classified {
   const text = `${a.title} ${a.abstract ?? ""}`;
-  const design = detectDesign(a);
+  // Аудит A-11: ручная правка дизайна имеет приоритет над эвристиками и переживает
+  // refresh/переклассификацию; уровень доказательности и индекс доверия считаются от неё.
+  const manualDesign = overrides?.studyDesign && DESIGN_KEYS.has(overrides.studyDesign) ? overrides.studyDesign : null;
+  const design = manualDesign ?? detectDesign(a);
   const sampleSize = a.enrollment ?? extractSampleSize(text);
   const tier = journalTier(a.journal);
   const isPreprint = !!a.isPreprint || design === "preprint";
@@ -288,7 +310,7 @@ export function classify(a: RawArticle): Classified {
     preprint: 4,
     other: 5,
   };
-  b.push({ label: `Дизайн исследования`, points: designPts[design] });
+  b.push({ label: manualDesign ? "Дизайн исследования (задан вручную)" : "Дизайн исследования", points: designPts[design] });
 
   const tierPts = tier === 1 ? 30 : tier === 2 ? 26 : tier === 3 ? 16 : tier === -1 ? -35 : 4;
   b.push({
@@ -349,7 +371,7 @@ export function classify(a: RawArticle): Classified {
     trustScore,
     trustBreakdown: b,
     journalTier: tier,
-    subspecialties: detectSubspecialties(a),
+    subspecialties: overrides?.subspecialties?.length ? overrides.subspecialties.filter((k) => SUBSPECIALTY_KEYS.has(k)) : detectSubspecialties(a),
     sampleSize,
     isPreprint,
     isRetracted,

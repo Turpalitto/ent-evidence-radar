@@ -24,6 +24,7 @@ describe("parseFilters", () => {
       excludePreprints: false,
       sort: "date",
       scope: "all",
+      hidden: false,
       page: 1,
       pageSize: 30,
     });

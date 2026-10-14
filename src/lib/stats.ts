@@ -1,4 +1,4 @@
-import { desc, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { articles, fetchRuns, type FetchRun, type StudyDesign } from "@/db/schema";
 
@@ -46,6 +46,9 @@ export function invalidateStatsCache() {
   g.__entRadarStatsCache = undefined;
 }
 
+/** Скрытые врачом записи (A-11) в статистику не попадают. */
+const visible = eq(articles.isHidden, false);
+
 async function computeStats(): Promise<StatsData> {
   const [totals] = await db
     .select({
@@ -60,20 +63,23 @@ async function computeStats(): Promise<StatsData> {
       retracted: sql<number>`count(*) filter (where ${articles.isRetracted})::int`,
       multi: sql<number>`count(*) filter (where jsonb_array_length(${articles.sourceKeys}) > 1)::int`,
     })
-    .from(articles);
+    .from(articles)
+    .where(visible);
 
   const byDesign = await db
     .select({ key: articles.studyDesign, count: sql<number>`count(*)::int` })
     .from(articles)
+    .where(visible)
     .groupBy(articles.studyDesign)
     .orderBy(desc(sql`count(*)`));
   const byLevel = await db
     .select({ key: articles.evidenceLevel, count: sql<number>`count(*)::int` })
     .from(articles)
+    .where(visible)
     .groupBy(articles.evidenceLevel)
     .orderBy(articles.evidenceLevel);
   const bySub = await db.execute<{ key: string; count: number }>(
-    sql`select s as key, count(*)::int as count from ${articles}, jsonb_array_elements_text(${articles.subspecialties}) s group by s order by count desc`,
+    sql`select s as key, count(*)::int as count from ${articles}, jsonb_array_elements_text(${articles.subspecialties}) s where not ${articles.isHidden} group by s order by count desc`,
   );
   const bySource = await db.execute<{ key: string; count: number }>(
     sql`select s as key, count(*)::int as count from ${articles}, jsonb_array_elements_text(${articles.sourceKeys}) s group by s order by count desc`,
@@ -98,7 +104,7 @@ async function computeStats(): Promise<StatsData> {
       avg: sql<number>`round(avg(${articles.trustScore}))::int`,
     })
     .from(articles)
-    .where(sql`${articles.journal} <> ''`)
+    .where(and(visible, sql`${articles.journal} <> ''`))
     .groupBy(articles.journal)
     .orderBy(desc(sql`count(*)`))
     .limit(15);

@@ -1,4 +1,4 @@
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { articles } from "@/db/schema";
 import { ensureSeeded } from "@/lib/refresh";
@@ -44,6 +44,7 @@ export async function GET() {
       sourceKey: articles.sourceKey,
     })
     .from(articles)
+    .where(eq(articles.isHidden, false))
     .orderBy(desc(articles.fetchedAt))
     .limit(FEED_LIMIT);
 

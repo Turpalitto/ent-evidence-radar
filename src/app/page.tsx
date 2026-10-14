@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
-import { asc, desc, sql } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import Link from "next/link";
 import { db } from "@/db";
 import { articles, fetchRuns, topics } from "@/db/schema";
@@ -62,7 +62,8 @@ export default async function HomePage() {
           last7: sql<number>`count(*) filter (where ${articles.fetchedAt} >= now() - interval '7 days')::int`,
           guidelines: sql<number>`count(*) filter (where ${articles.studyDesign} = 'guideline')::int`,
         })
-        .from(articles);
+        .from(articles)
+        .where(eq(articles.isHidden, false));
       return [t];
     }),
     db.select().from(fetchRuns).orderBy(desc(fetchRuns.startedAt)).limit(1),
