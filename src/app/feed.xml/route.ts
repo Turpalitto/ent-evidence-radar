@@ -1,9 +1,12 @@
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { articles } from "@/db/schema";
+import { topics } from "@/db/schema";
 import { ensureSeeded } from "@/lib/refresh";
 import { siteBaseUrl } from "@/lib/site";
 import { DESIGN_LABELS, SOURCE_LABELS } from "@/lib/evidence/taxonomy";
+import { listArticles } from "@/lib/queries";
+import { FEED_PARAMS, describeFeedFilters, feedFilters } from "@/lib/feed";
 
 export const dynamic = "force-dynamic";
 
@@ -17,36 +20,29 @@ function esc(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-const FEED_LIMIT = 60;
-
 /**
- * Atom-лента последних публикаций: позволяет подписаться на радар из любой
- * RSS/Atom-читалки. Отдаётся как `/feed.xml`, ссылка объявлена в <head> всех страниц.
+ * Atom-лента последних публикаций: позволяет подписаться на радар из любой RSS/Atom-читалки.
+ * Без параметров — 60 последних собранных записей; с параметрами фильтров
+ * (`?subspecialty=rhinology&design=rct&minTrust=70`, `?topicId=3`, `?q=…`) — подписка
+ * на сохранённый поиск: ссылку «RSS для этого фильтра» даёт боковая панель ленты.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   await ensureSeeded();
   const base = siteBaseUrl();
 
-  const rows = await db
-    .select({
-      id: articles.id,
-      title: articles.title,
-      abstract: articles.abstract,
-      journal: articles.journal,
-      url: articles.url,
-      doi: articles.doi,
-      pmid: articles.pmid,
-      publishedAt: articles.publishedAt,
-      fetchedAt: articles.fetchedAt,
-      trustScore: articles.trustScore,
-      evidenceLevel: articles.evidenceLevel,
-      studyDesign: articles.studyDesign,
-      sourceKey: articles.sourceKey,
-    })
-    .from(articles)
-    .where(eq(articles.isHidden, false))
-    .orderBy(desc(articles.fetchedAt))
-    .limit(FEED_LIMIT);
+  const sp = new URLSearchParams();
+  for (const k of FEED_PARAMS) {
+    const v = req.nextUrl.searchParams.get(k);
+    if (v) sp.set(k, v);
+  }
+  const f = feedFilters(sp);
+  const topicName = f.topicId ? (await db.select({ name: topics.name }).from(topics).where(eq(topics.id, f.topicId)))[0]?.name ?? null : null;
+  const { items: rows } = await listArticles(f);
+  const filterParts = describeFeedFilters(f, topicName);
+  const selfQuery = sp.toString();
+  const selfUrl = `${base}/feed.xml${selfQuery ? `?${selfQuery}` : ""}`;
+  const htmlUrl = `${base}/${selfQuery ? `?${selfQuery}` : ""}`;
+  const title = filterParts.length ? `ENT Evidence Radar — ${filterParts.join(" · ")}` : "ENT Evidence Radar — лента доказательных публикаций";
 
   const feedUpdated = (rows[0]?.fetchedAt ?? new Date()).toISOString();
 
@@ -83,11 +79,11 @@ export async function GET() {
 
   const xml = `<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <title>ENT Evidence Radar — лента доказательных публикаций</title>
+  <title>${esc(title)}</title>
   <subtitle>Систематические обзоры, РКИ и клинические руководства по оториноларингологии из первоисточников.</subtitle>
-  <link href="${esc(`${base}/feed.xml`)}" rel="self" type="application/atom+xml" />
-  <link href="${esc(base)}" rel="alternate" type="text/html" />
-  <id>${esc(`${base}/`)}</id>
+  <link href="${esc(selfUrl)}" rel="self" type="application/atom+xml" />
+  <link href="${esc(htmlUrl)}" rel="alternate" type="text/html" />
+  <id>${esc(selfUrl)}</id>
   <updated>${feedUpdated}</updated>
   <author><name>ENT Evidence Radar</name><uri>${esc(base)}</uri></author>
   <generator uri="${esc(base)}">ENT Evidence Radar</generator>

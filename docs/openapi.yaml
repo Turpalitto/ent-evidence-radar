@@ -1012,6 +1012,20 @@ paths:
   /feed.xml:
     get:
       tags: [public]
-      summary: Atom-лента 60 последних публикаций
+      summary: "Atom-лента 60 последних публикаций; с фильтрами — подписка на сохранённый поиск"
+      description: "Принимает публичные фильтры /api/articles (персональные bookmarked/unread/hidden игнорируются). Без `q` сортировка по времени сбора, с `q` — по релевантности. Заголовок ленты описывает фильтры."
+      parameters:
+        - $ref: "#/components/parameters/ArticleFilters_q"
+        - $ref: "#/components/parameters/ArticleFilters_scope"
+        - $ref: "#/components/parameters/ArticleFilters_subspecialty"
+        - $ref: "#/components/parameters/ArticleFilters_design"
+        - $ref: "#/components/parameters/ArticleFilters_level"
+        - $ref: "#/components/parameters/ArticleFilters_minTrust"
+        - $ref: "#/components/parameters/ArticleFilters_source"
+        - $ref: "#/components/parameters/ArticleFilters_days"
+        - $ref: "#/components/parameters/ArticleFilters_fromYear"
+        - $ref: "#/components/parameters/ArticleFilters_toYear"
+        - $ref: "#/components/parameters/ArticleFilters_topicId"
+        - $ref: "#/components/parameters/ArticleFilters_excludePreprints"
       responses:
         "200": { description: OK, content: { application/atom+xml: { schema: { type: string } } } }

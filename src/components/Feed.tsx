@@ -393,6 +393,13 @@ export function Feed({ topics }: { topics: Topic[] }) {
   };
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
   const exportParams = useMemo(() => toParams(f, 1, 2000), [f]);
+  // Atom-подписка на текущий фильтр: только публичные параметры (без закладок/прочитано/скрытых/страниц).
+  const feedHref = useMemo(() => {
+    const p = toParams(f, 1, 60);
+    for (const k of ["page", "pageSize", "bookmarked", "unread", "hidden", "sort"]) p.delete(k);
+    const qs = p.toString();
+    return `/feed.xml${qs ? `?${qs}` : ""}`;
+  }, [f]);
 
   // Годы для селектов: из реальных дат публикаций в текущей выборке + текущий год
   // + выбранные значения (чтобы не «терялись» при смене страницы).
@@ -655,6 +662,14 @@ export function Feed({ topics }: { topics: Topic[] }) {
           ))}
         </div>
         <p className="mt-1.5 text-[11px] text-[color:var(--ink-subtle)]">RIS — для Zotero / EndNote / Mendeley; BibTeX — для LaTeX</p>
+        <a
+          href={feedHref}
+          className="link-brand mt-2 inline-flex items-center gap-1.5 text-xs font-semibold hover:underline"
+          title={feedHref === "/feed.xml" ? "Atom-лента всех новых публикаций" : "Atom-лента только по текущим фильтрам — добавьте ссылку в RSS-читалку"}
+        >
+          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6.18 15.64a2.18 2.18 0 1 1 0 4.36 2.18 2.18 0 0 1 0-4.36M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27zm0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93z" /></svg>
+          {feedHref === "/feed.xml" ? "RSS-лента радара" : "RSS для этого фильтра"}
+        </a>
       </div>
     </div>
   );
