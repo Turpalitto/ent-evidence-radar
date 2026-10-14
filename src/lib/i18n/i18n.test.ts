@@ -14,7 +14,7 @@ import {
 } from "@/lib/i18n";
 import { EN } from "@/lib/i18n/en";
 import { NOTICE_LABELS } from "@/components/Badges";
-import { PRESETS } from "@/components/Feed";
+import { PRESETS } from "@/components/feed/filters";
 import {
   DESIGN_CONFIDENCE_LABELS,
   DESIGN_LABELS,

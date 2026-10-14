@@ -28,7 +28,7 @@
 | Каталог | Назначение |
 | --- | --- |
 | `src/app/` | страницы (`/`, `/settings`, `/login`, `/stats`, `/runs`, `/topics`), REST API `src/app/api/**/route.ts`, Atom `feed.xml`, `sitemap`, `og.png` |
-| `src/components/` | клиентские компоненты: `Feed` (лента, фильтры, пресеты, горячие клавиши), `ArticleDrawer` (карточка, ИИ, правки, цитаты), `SettingsPanel`, `RefreshButton`, `ServiceWorkerRegistrar` (офлайн-режим, см. § 6a) |
+| `src/components/` | клиентские компоненты: `Feed` (лента: загрузка, URL-состояние, горячие клавиши, pull-to-refresh) с подпапкой `feed/` — `filters.ts` (чистая логика фильтров: сериализация в URL, пресеты, ссылка Atom), `FilterSidebar`, `ArticleCard`, `ShortcutsModal`, `hooks.ts`; `ArticleDrawer` (карточка, ИИ, правки, цитаты), `SettingsPanel`, `RefreshButton`, `ServiceWorkerRegistrar` (офлайн-режим, см. § 6a) |
 | `src/db/` | `index.ts` — выбор движка и миграции при старте; `schema.ts` — единственный источник правды о таблицах |
 | `src/lib/evidence/` | чистое ядро без I/O: `classify.ts` (дизайн, уровень, доверие, нормализация идентификаторов, ключ дедупликации), `journals.ts` (белый список журналов по tier + список сомнительных издательств), `guidelines.ts` (органы-издатели руководств), `taxonomy.ts` (метки) |
 | `src/lib/sources/` | адаптеры источников: `pubmed`, `europepmc`, `clinicaltrials`, `medrxiv`; `crossref` (редакционные уведомления по DOI); общий `http.ts` (таймауты, повторы, `Retry-After`, метрики) |

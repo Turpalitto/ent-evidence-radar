@@ -1,208 +1,49 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-
-function subscribeNotification(callback: () => void) {
-  if (typeof window === "undefined" || !("navigator" in window) || !("permissions" in navigator)) return () => {};
-  let cleanup = () => {};
-  navigator.permissions.query({ name: "notifications" as PermissionName }).then((status) => {
-    status.addEventListener("change", callback);
-    cleanup = () => status.removeEventListener("change", callback);
-  }).catch(() => {});
-  return () => cleanup();
-}
-
-function getNotificationSnapshot(): string {
-  if (typeof window !== "undefined" && "Notification" in window) {
-    return Notification.permission;
-  }
-  return "default";
-}
-
-function getServerNotificationSnapshot(): string {
-  return "default";
-}
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Article, Topic } from "@/db/schema";
-import { DESIGN_LABELS, DESIGN_SHORT, SOURCE_LABELS, SUBSPECIALTIES, EVIDENCE_LEVEL_LABELS } from "@/lib/evidence/taxonomy";
-import { extractConclusion } from "@/lib/evidence/abstract";
-import { INTL_LOCALE, msg, type Params } from "@/lib/i18n";
+import { INTL_LOCALE } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
-import { DesignBadge, IssuerBadge, LevelBadge, NoticeBadge, SourceBadge, SubBadge, TierBadge, TrialBadge, TrustScore } from "./Badges";
-import { guidelineIssuerLabel } from "@/lib/evidence/guidelines";
 import { ArticleDrawer } from "./ArticleDrawer";
-import { Highlight } from "./Highlight";
 import { useFocusTrap } from "./useFocusTrap";
+import { ArticleCard } from "./feed/ArticleCard";
+import { FilterSidebar } from "./feed/FilterSidebar";
+import { ShortcutsModal } from "./feed/ShortcutsModal";
+import { useNotificationPermission, useOnlineStatus } from "./feed/hooks";
+import {
+  INITIAL_FILTERS,
+  PAGE_SIZE,
+  USER_PRESETS_MAX,
+  USER_PRESET_NAME_MAX,
+  countActiveFilters,
+  feedLink,
+  loadUserPresets,
+  parseUrlSearch,
+  persistUserPresets,
+  sameFilters,
+  toParams,
+  type Filters,
+  type UserPreset,
+} from "./feed/filters";
 
-interface Filters {
-  q: string;
-  subspecialty: string;
-  design: string;
-  /** Орган-издатель руководства (A-06); подразумевает design = guideline. */
-  issuer: string;
-  level: string;
-  minTrust: number;
-  source: string;
-  days: string;
-  fromYear: string;
-  toYear: string;
-  bookmarked: boolean;
-  unread: boolean;
-  topicId: string;
-  excludePreprints: boolean;
-  /** Режим «Скрытые»: показать записи, которые врач скрыл («не ЛОР»), чтобы вернуть при необходимости. */
-  hidden: boolean;
-  sort: "date" | "trust" | "fetched" | "relevance";
-  /** Область поиска: везде или только заголовок. */
-  scope: "all" | "title";
-}
-
-const initial: Filters = {
-  q: "",
-  subspecialty: "",
-  design: "",
-  issuer: "",
-  level: "",
-  minTrust: 0,
-  source: "",
-  days: "",
-  fromYear: "",
-  toYear: "",
-  bookmarked: false,
-  unread: false,
-  topicId: "",
-  excludePreprints: false,
-  hidden: false,
-  sort: "date",
-  scope: "all",
-};
-
-const THIS_YEAR = new Date().getFullYear();
-
-/** Сохранённые пользователем фильтры (I-14). Только клиент: localStorage. */
-interface UserPreset {
-  name: string;
-  f: Filters;
-}
-const USER_PRESETS_KEY = "ent-radar:filter-presets:v1";
-function loadUserPresets(): UserPreset[] {
-  try {
-    const raw = typeof window !== "undefined" ? window.localStorage.getItem(USER_PRESETS_KEY) : null;
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((p): p is UserPreset => !!p && typeof p === "object" && typeof (p as UserPreset).name === "string" && !!(p as UserPreset).f)
-      .map((p) => ({ name: p.name.slice(0, 40), f: { ...initial, ...p.f } }))
-      .slice(0, 12);
-  } catch {
-    return [];
-  }
-}
-function persistUserPresets(list: UserPreset[]) {
-  try {
-    window.localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(list));
-  } catch {
-    /* приватный режим / квота — пресеты просто не сохранятся */
-  }
-}
-
-/** Подписи и подсказки — ключи словаря (msg), переводятся через t() при рендере. */
-export const PRESETS: { label: string; f: Partial<Filters>; hint: string; params?: Params }[] = [
-  { label: msg("⚡ Изменит практику"), f: { level: "2", minTrust: 70, sort: "trust" }, hint: msg("СО/МА, руководства и РКИ с высоким доверием (≥70)") },
-  { label: msg("Только высший уровень"), f: { level: "1", minTrust: 60 }, hint: msg("СО/МА и руководства, доверие ≥60") },
-  { label: msg("Свежие РКИ"), f: { design: "rct", days: "30" }, hint: msg("РКИ за 30 дней") },
-  { label: msg("Руководства"), f: { design: "guideline" }, hint: msg("Клинические руководства и консенсусы") },
-  { label: "Cochrane", f: { q: "Cochrane" }, hint: "Cochrane Database of Systematic Reviews" },
-  { label: msg("Непрочитанное ≥70"), f: { unread: true, minTrust: 70, sort: "trust" }, hint: msg("Что стоит прочитать в первую очередь") },
-  { label: msg("Этот год"), f: { fromYear: String(THIS_YEAR) }, hint: msg("Исследования, опубликованные с 1 января {year} года"), params: { year: THIS_YEAR } },
-  { label: msg("Прошлый год"), f: { fromYear: String(THIS_YEAR - 1), toYear: String(THIS_YEAR - 1) }, hint: msg("Только публикации {year} года"), params: { year: THIS_YEAR - 1 } },
-];
-
-function toParams(f: Filters, page: number, pageSize: number) {
-  const p = new URLSearchParams();
-  if (f.q) p.set("q", f.q);
-  if (f.subspecialty) p.set("subspecialty", f.subspecialty);
-  if (f.design) p.set("design", f.design);
-  if (f.issuer) p.set("issuer", f.issuer);
-  if (f.level) p.set("level", f.level);
-  if (f.minTrust) p.set("minTrust", String(f.minTrust));
-  if (f.source) p.set("source", f.source);
-  if (f.days) p.set("days", f.days);
-  if (f.fromYear) p.set("fromYear", f.fromYear);
-  if (f.toYear) p.set("toYear", f.toYear);
-  if (f.bookmarked) p.set("bookmarked", "1");
-  if (f.unread) p.set("unread", "1");
-  if (f.topicId) p.set("topicId", f.topicId);
-  if (f.excludePreprints) p.set("excludePreprints", "1");
-  if (f.hidden) p.set("hidden", "1");
-  // Без явного выбора сортировки поиск идёт по релевантности, лента — по дате (решает сервер).
-  if (!(f.sort === "date" && f.q)) p.set("sort", f.sort);
-  if (f.scope === "title" && f.q) p.set("scope", "title");
-  p.set("page", String(page));
-  p.set("pageSize", String(pageSize));
-  return p;
-}
-
-/** Поверхностное сравнение фильтров: все поля — примитивы. Нужно, чтобы не создавать
- *  новый объект (и не перезапрашивать ленту), когда значения фактически не изменились. */
-function sameFilters(a: Filters, b: Filters): boolean {
-  for (const k of Object.keys(initial) as (keyof Filters)[]) {
-    if (a[k] !== b[k]) return false;
-  }
-  return true;
-}
-
-/** Восстанавливает фильтры, поиск и страницу из query-строки (для shareable-ссылок). */
-function parseUrlSearch(): { f: Filters; page: number; q: string } {
-  if (typeof window === "undefined") return { f: initial, page: 1, q: "" };
-  const p = new URLSearchParams(window.location.search);
-  const num = (k: string) => {
-    const v = p.get(k);
-    return v ? Number(v) : 0;
-  };
-  const sort = p.get("sort");
-  const f: Filters = {
-    q: p.get("q") ?? "",
-    subspecialty: p.get("subspecialty") ?? "",
-    design: p.get("design") ?? "",
-    issuer: p.get("issuer") ?? "",
-    level: p.get("level") ?? "",
-    minTrust: num("minTrust") || 0,
-    source: p.get("source") ?? "",
-    days: p.get("days") ?? "",
-    fromYear: p.get("fromYear") ?? "",
-    toYear: p.get("toYear") ?? "",
-    bookmarked: p.get("bookmarked") === "1",
-    unread: p.get("unread") === "1",
-    topicId: p.get("topicId") ?? "",
-    excludePreprints: p.get("excludePreprints") === "1",
-    hidden: p.get("hidden") === "1",
-    sort: sort === "trust" || sort === "date" || sort === "fetched" || sort === "relevance" ? sort : initial.sort,
-    scope: p.get("scope") === "title" ? "title" : "all",
-  };
-  const page = Math.max(1, Math.round(num("page")) || 1);
-  return { f, page, q: f.q };
-}
-
-/* ── Общие классы полей и кнопок (единый премиальный язык) ── */
-const SELECT_CLS = "field w-full rounded-xl px-2.5 py-1.5 text-sm text-[color:var(--ink-soft)]";
 const GHOST_BTN = "btn-ghost rounded-xl px-3 py-2.5 text-sm font-medium";
 
-
-/** navigator.onLine + события online/offline: баннер офлайн-режима без опроса сервера (SSR — «в сети»). */
-function subscribeOnline(cb: () => void) {
-  window.addEventListener("online", cb);
-  window.addEventListener("offline", cb);
-  return () => {
-    window.removeEventListener("online", cb);
-    window.removeEventListener("offline", cb);
-  };
+interface FeedData {
+  items: Article[];
+  total: number;
+  searchTerms: string[];
+  issuers: { key: string; count: number }[];
 }
-function useOnlineStatus(): boolean {
-  return useSyncExternalStore(subscribeOnline, () => navigator.onLine !== false, () => true);
-}
+const EMPTY: FeedData = { items: [], total: 0, searchTerms: [], issuers: [] };
 
+/**
+ * Лента публикаций: фильтры (десктоп — колонка, мобила — нижний лист), поиск с дебаунсом,
+ * синхронизация состояния с URL, клавиатурная навигация, pull-to-refresh, офлайн-баннер (A-15),
+ * уведомления о статьях 1-го уровня. Разметка карточки — `feed/ArticleCard`, панель — `feed/FilterSidebar`,
+ * чистая логика фильтров — `feed/filters`.
+ */
 export function Feed({ topics }: { topics: Topic[] }) {
-  const { t, locale, date, number } = useI18n();
+  const { t, locale, number } = useI18n();
   const formatCachedAt = (iso: string): string => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return t("ранее");
@@ -216,11 +57,10 @@ export function Feed({ topics }: { topics: Topic[] }) {
     if (!names.length) return "";
     return names.length > 2 ? `${names.slice(0, 2).join(", ")} +${names.length - 2}` : names.join(", ");
   };
-  const [f, setF] = useState<Filters>(initial);
+  const [f, setF] = useState<Filters>(INITIAL_FILTERS);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 30;
-  const [data, setData] = useState<{ items: Article[]; total: number; searchTerms: string[]; issuers: { key: string; count: number }[] }>({ items: [], total: 0, searchTerms: [], issuers: [] });
+  const [data, setData] = useState<FeedData>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Article | null>(null);
@@ -234,13 +74,11 @@ export function Feed({ topics }: { topics: Topic[] }) {
   const ptrTriggered = useRef(false);
 
   const listRef = useRef<HTMLUListElement>(null);
-  const shortcutsRef = useRef<HTMLDivElement>(null);
   const filtersRef = useRef<HTMLDivElement>(null);
   const aiConfiguredRef = useRef<boolean | null>(null);
-  const notifyPerm = useSyncExternalStore(subscribeNotification, getNotificationSnapshot, getServerNotificationSnapshot);
+  const notifyPerm = useNotificationPermission();
 
-  // Удержание фокуса в открытых модалках/листах + возврат фокуса при закрытии.
-  useFocusTrap(shortcutsRef, showShortcutsModal);
+  // Удержание фокуса в открытом мобильном листе фильтров + возврат фокуса при закрытии.
   useFocusTrap(filtersRef, showFilters);
 
   useEffect(() => {
@@ -315,9 +153,9 @@ export function Feed({ topics }: { topics: Topic[] }) {
     setError(null);
     try {
       // no-cache (а не no-store): браузер шлёт If-None-Match и получает 304 без тела, если лента не изменилась.
-      const r = await fetch(`/api/articles?${toParams(f, page, pageSize)}`, { cache: "no-cache", signal: ctrl.signal });
+      const r = await fetch(`/api/articles?${toParams(f, page, PAGE_SIZE)}`, { cache: "no-cache", signal: ctrl.signal });
       if (!r.ok) throw new Error(t("Ошибка сервера {status}", { status: r.status }));
-      const parsed = (await r.json()) as { items?: Article[]; total?: number; searchTerms?: string[]; issuers?: { key: string; count: number }[] };
+      const parsed = (await r.json()) as Partial<FeedData>;
       if (ctrl.signal.aborted) return;
       setCachedAt(r.headers.get("x-sw-cache") === "hit" ? (r.headers.get("x-sw-cached-at") ?? "") : null);
       const items = parsed.items ?? [];
@@ -366,7 +204,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
   useEffect(() => {
     // Не затираем глубокую ссылку, пока восстановление из URL ещё не выполнено.
     if (!restored) return;
-    const url = `${window.location.pathname}?${toParams(f, page, pageSize).toString()}`;
+    const url = `${window.location.pathname}?${toParams(f, page, PAGE_SIZE).toString()}`;
     window.history.replaceState(null, "", url);
   }, [f, page, restored]);
 
@@ -404,10 +242,16 @@ export function Feed({ topics }: { topics: Topic[] }) {
     setFocusedIdx(-1);
   };
   const reset = () => {
-    setF(initial);
+    setF(INITIAL_FILTERS);
     setQ("");
     setPage(1);
     setFocusedIdx(-1);
+  };
+  /** Пресет (встроенный или пользовательский): сброс, затем его условия; строка поиска — из пресета. */
+  const applyPreset = (pf: Partial<Filters>) => {
+    reset();
+    set(pf);
+    setQ(pf.q ?? "");
   };
 
   // ── Пользовательские пресеты фильтров (I-14), localStorage
@@ -417,9 +261,9 @@ export function Feed({ topics }: { topics: Topic[] }) {
     return () => clearTimeout(timer);
   }, []);
   const saveUserPreset = () => {
-    const name = window.prompt(t("Название пресета (например, «Ринология: СО/МА за год»)"))?.trim().slice(0, 40);
+    const name = window.prompt(t("Название пресета (например, «Ринология: СО/МА за год»)"))?.trim().slice(0, USER_PRESET_NAME_MAX);
     if (!name) return;
-    const next = [...userPresets.filter((p) => p.name !== name), { name, f }].slice(-12);
+    const next = [...userPresets.filter((p) => p.name !== name), { name, f }].slice(-USER_PRESETS_MAX);
     setUserPresets(next);
     persistUserPresets(next);
   };
@@ -428,17 +272,9 @@ export function Feed({ topics }: { topics: Topic[] }) {
     setUserPresets(next);
     persistUserPresets(next);
   };
-  const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
+  const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
   const exportParams = useMemo(() => toParams(f, 1, 2000), [f]);
-  // Atom-подписка на текущий фильтр: только публичные параметры (без закладок/прочитано/скрытых/страниц).
-  // Язык подписей ленты передаётся явно (`lang=`): читалки не присылают cookie переключателя.
-  const { feedHref, feedHasFilters } = useMemo(() => {
-    const p = toParams(f, 1, 60);
-    for (const k of ["page", "pageSize", "bookmarked", "unread", "hidden", "sort"]) p.delete(k);
-    const hasFilters = Array.from(p.keys()).length > 0;
-    p.set("lang", locale);
-    return { feedHref: `/feed.xml?${p.toString()}`, feedHasFilters: hasFilters };
-  }, [f, locale]);
+  const feed = useMemo(() => feedLink(f, locale), [f, locale]);
 
   // Годы для селектов: из реальных дат публикаций в текущей выборке + текущий год
   // + выбранные значения (чтобы не «терялись» при смене страницы).
@@ -451,16 +287,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
     }
     return [...years].sort((a, b) => b - a);
   }, [data.items, f.fromYear, f.toYear]);
-  const activeCount = useMemo(
-    () => Object.entries(f).filter(([k, v]) => {
-      if (k === "sort") return false;
-      return v !== initial[k as keyof Filters];
-    }).length,
-    [f],
-  );
-
-  // Пресет считается активным, когда все его условия включены в текущие фильтры.
-  const presetActive = (pf: Partial<Filters>) => Object.entries(pf).every(([k, v]) => f[k as keyof Filters] === v);
+  const activeCount = useMemo(() => countActiveFilters(f), [f]);
 
   const onUpdate = (a: Article) => {
     setSelected(a);
@@ -556,191 +383,23 @@ export function Feed({ topics }: { topics: Topic[] }) {
     }
   }, [focusedIdx]);
 
-  const Sidebar = (
-    <div className="space-y-5 text-sm">
-      <div>
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="eyebrow">{t("Быстрые фильтры")}</h3>
-          <button
-            onClick={reset}
-            className={`link-brand text-xs font-semibold hover:underline ${activeCount > 0 ? "" : "invisible"}`}
-          >
-            {t("Сбросить")}{activeCount > 0 ? ` (${activeCount})` : ""}
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {PRESETS.map((p) => (
-            <button
-              key={p.label}
-              title={t(p.hint, p.params)}
-              onClick={() => { reset(); set(p.f); if (p.f.q) setQ(p.f.q); }}
-              className={`chip transition ${
-                presetActive(p.f)
-                  ? "chip-brand font-semibold shadow-[var(--shadow-glow)]"
-                  : "hover:border-[color:var(--brand-ring)] hover:text-[color:var(--brand-ink)]"
-              }`}
-            >
-              {t(p.label)}
-            </button>
-          ))}
-        </div>
-        {/* Пользовательские пресеты (I-14): хранятся в localStorage этого браузера */}
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {userPresets.map((p) => (
-            <span key={p.name} className="inline-flex items-center overflow-hidden rounded-full border border-[color:var(--hairline)]">
-              <button
-                type="button"
-                title={t("Применить сохранённый фильтр «{name}»", { name: p.name })}
-                onClick={() => { reset(); set(p.f); setQ(p.f.q ?? ""); }}
-                className={`px-2.5 py-1 text-xs transition ${presetActive(p.f) ? "bg-[color:var(--brand-soft)] font-semibold text-[color:var(--brand-ink)]" : "hover:text-[color:var(--brand-ink)]"}`}
-              >
-                ★ {p.name}
-              </button>
-              <button type="button" aria-label={t("Удалить пресет {name}", { name: p.name })} title={t("Удалить пресет")} onClick={() => removeUserPreset(p.name)} className="px-1.5 py-1 text-xs text-[color:var(--ink-subtle)] hover:text-rose-600">×</button>
-            </span>
-          ))}
-          {activeCount > 0 && (
-            <button type="button" onClick={saveUserPreset} className="chip text-xs hover:border-[color:var(--brand-ring)] hover:text-[color:var(--brand-ink)]" title={t("Сохранить текущие фильтры как свой пресет (в этом браузере)")}>
-              {t("+ Сохранить фильтр")}
-            </button>
-          )}
-        </div>
-      </div>
-
-      <label className="block">
-        <span className="eyebrow mb-1.5 block">{t("Субспециальность")}</span>
-        <select value={f.subspecialty} onChange={(e) => set({ subspecialty: e.target.value })} className={SELECT_CLS}>
-          <option value="">{t("Все")}</option>
-          {SUBSPECIALTIES.map((s) => <option key={s.key} value={s.key}>{t(s.label)}</option>)}
-        </select>
-      </label>
-
-      <label className="block">
-        <span className="eyebrow mb-1.5 block">{t("Дизайн исследования")}</span>
-        <select value={f.design} onChange={(e) => set({ design: e.target.value, ...(e.target.value !== "guideline" ? { issuer: "" } : {}) })} className={SELECT_CLS}>
-          <option value="">{t("Все")}</option>
-          {Object.entries(DESIGN_SHORT).map(([k, v]) => <option key={k} value={k} title={t(DESIGN_LABELS[k as keyof typeof DESIGN_LABELS])}>{t(v)}</option>)}
-        </select>
-      </label>
-
-      {(f.design === "guideline" || f.issuer) && (
-        <div className="block" data-testid="issuer-facet">
-          <span className="eyebrow mb-1.5 block">{t("Издатель руководства")}</span>
-          {data.issuers.length === 0 ? (
-            <p className="text-xs text-[color:var(--ink-subtle)]">{t("Нет руководств под текущие фильтры.")}</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {data.issuers.map(({ key, count }) => {
-                const raw = key === "other" ? { label: msg("Без издателя"), name: msg("Руководства, у которых орган-издатель не распознан") } : guidelineIssuerLabel(key) ?? { label: key, name: key };
-                const l = { label: t(raw.label), name: t(raw.name) };
-                const active = f.issuer === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => set({ issuer: active ? "" : key, design: "guideline" })}
-                    aria-pressed={active}
-                    title={l.name}
-                    className={`rounded-lg border px-2 py-1 text-xs transition ${active ? "border-violet-400 bg-violet-100 font-semibold text-violet-900 dark:border-violet-500/50 dark:bg-violet-950/50 dark:text-violet-200" : "border-[color:var(--hairline)] text-[color:var(--ink-soft)] hover:border-violet-300 hover:text-violet-800 dark:hover:text-violet-300"}`}
-                  >
-                    {l.label} <span className="tabular-nums opacity-70">{count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      <label className="block">
-        <span className="eyebrow mb-1.5 block">{t("Уровень доказательности (не ниже)")}</span>
-        <select value={f.level} onChange={(e) => set({ level: e.target.value })} className={SELECT_CLS}>
-          <option value="">{t("Любой")}</option>
-          {[1, 2, 3, 4].map((l) => <option key={l} value={l} title={t(EVIDENCE_LEVEL_LABELS[l] ?? "")}>{t("Уровень {level}", { level: l })}</option>)}
-        </select>
-      </label>
-
-      <label className="block">
-        <span className="eyebrow mb-1.5 flex justify-between">
-          <span>{t("Мин. индекс доверия")}</span>
-          <span className="tabular-nums text-[color:var(--brand-ink)]">{f.minTrust}</span>
-        </span>
-        <input type="range" min={0} max={100} step={5} value={f.minTrust} onChange={(e) => set({ minTrust: Number(e.target.value) })} className="w-full accent-teal-600" />
-      </label>
-
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="eyebrow mb-1.5 block">{t("Источник")}</span>
-          <select value={f.source} onChange={(e) => set({ source: e.target.value })} className={SELECT_CLS}>
-            <option value="">{t("Все")}</option>
-            {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{t(v)}</option>)}
-          </select>
-        </label>
-        <label className="block">
-          <span className="eyebrow mb-1.5 block">{t("Период")}</span>
-          <select value={f.days} onChange={(e) => set({ days: e.target.value })} className={SELECT_CLS}>
-            <option value="">{t("Всё")}</option>
-            <option value="7">{t("7 дней")}</option>
-            <option value="14">{t("14 дней")}</option>
-            <option value="30">{t("30 дней")}</option>
-            <option value="90">{t("90 дней")}</option>
-            <option value="365">{t("Год")}</option>
-          </select>
-        </label>
-      </div>
-
-      <label className="block">
-        <span className="eyebrow mb-1.5 block">{t("Тема (поисковый запрос)")}</span>
-        <select value={f.topicId} onChange={(e) => set({ topicId: e.target.value })} className={SELECT_CLS}>
-          <option value="">{t("Все темы")}</option>
-          {topics.map((tp) => <option key={tp.id} value={tp.id}>{t(tp.name)}</option>)}
-        </select>
-      </label>
-
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="eyebrow mb-1.5 block">{t("Год от")}</span>
-          <select value={f.fromYear} onChange={(e) => set({ fromYear: e.target.value, toYear: f.toYear && e.target.value && Number(e.target.value) > Number(f.toYear) ? e.target.value : f.toYear })} className={SELECT_CLS}>
-            <option value="">{t("Все")}</option>
-            {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </label>
-        <label className="block">
-          <span className="eyebrow mb-1.5 block">{t("Год до")}</span>
-          <select value={f.toYear} onChange={(e) => set({ toYear: e.target.value, fromYear: f.fromYear && e.target.value && Number(e.target.value) < Number(f.fromYear) ? e.target.value : f.fromYear })} className={SELECT_CLS}>
-            <option value="">{t("Все")}</option>
-            {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </label>
-      </div>
-
-      <div className="space-y-2 text-[color:var(--ink-soft)]">
-        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.unread} onChange={(e) => set({ unread: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Только непрочитанные")}</label>
-        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.bookmarked} onChange={(e) => set({ bookmarked: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Только избранное")}</label>
-        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.excludePreprints} onChange={(e) => set({ excludePreprints: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Скрыть препринты")}</label>
-        <label className="flex items-center gap-2.5" title={t("Записи, которые вы скрыли как «не ЛОР / не по теме». Их можно вернуть из карточки.")}><input type="checkbox" checked={f.hidden} onChange={(e) => set({ hidden: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Показать скрытые мной")}</label>
-      </div>
-
-      <div className="border-t border-[color:var(--hairline)] pt-4">
-        <span className="eyebrow mb-2 block">{t("Экспорт выборки")}</span>
-        <div className="flex gap-1.5">
-          {(["csv", "ris", "bibtex", "json"] as const).map((fmt) => (
-            <a key={fmt} href={`/api/export?format=${fmt}&${exportParams}`} className="btn-ghost flex-1 rounded-xl py-1.5 text-center text-xs font-semibold uppercase">
-              {fmt}
-            </a>
-          ))}
-        </div>
-        <p className="mt-1.5 text-[11px] text-[color:var(--ink-subtle)]">{t("RIS — для Zotero / EndNote / Mendeley; BibTeX — для LaTeX")}</p>
-        <a
-          href={feedHref}
-          className="link-brand mt-2 inline-flex items-center gap-1.5 text-xs font-semibold hover:underline"
-          title={!feedHasFilters ? t("Atom-лента всех новых публикаций") : t("Atom-лента только по текущим фильтрам — добавьте ссылку в RSS-читалку")}
-        >
-          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6.18 15.64a2.18 2.18 0 1 1 0 4.36 2.18 2.18 0 0 1 0-4.36M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27zm0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93z" /></svg>
-          {!feedHasFilters ? t("RSS-лента радара") : t("RSS для этого фильтра")}
-        </a>
-      </div>
-    </div>
+  const sidebar = (
+    <FilterSidebar
+      f={f}
+      topics={topics}
+      issuers={data.issuers}
+      yearOptions={yearOptions}
+      activeCount={activeCount}
+      userPresets={userPresets}
+      exportParams={exportParams}
+      feedHref={feed.href}
+      feedHasFilters={feed.hasFilters}
+      onChange={set}
+      onApplyPreset={applyPreset}
+      onReset={reset}
+      onSavePreset={saveUserPreset}
+      onRemovePreset={removeUserPreset}
+    />
   );
 
   return (
@@ -752,7 +411,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
     >
       {/* Desktop sidebar */}
       <aside className="hidden lg:block">
-        <div className="card sticky top-[76px] rounded-2xl p-4">{Sidebar}</div>
+        <div className="card sticky top-[76px] rounded-2xl p-4">{sidebar}</div>
       </aside>
 
       {/* Mobile filter bottom sheet */}
@@ -780,7 +439,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
             </div>
-            {Sidebar}
+            {sidebar}
             <button
               onClick={() => setShowFilters(false)}
               className="btn-brand mt-5 w-full rounded-xl py-3 text-sm font-semibold text-white"
@@ -974,130 +633,20 @@ export function Feed({ topics }: { topics: Topic[] }) {
         )}
 
         <ul ref={listRef} className="stagger space-y-2.5">
-          {data.items.map((a, idx) => {
-            const isFocused = idx === focusedIdx;
-            const conclusion = extractConclusion(a.abstract);
-            return (
-              <li
-                key={a.id}
-                tabIndex={0}
-                aria-label={a.title}
-                className={`card card-lift card-sheen group relative cursor-pointer overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand-ring)] ${
-                  isFocused ? "ring-2 ring-[color:var(--brand-ring)]" : ""
-                }`}
-                onClick={() => {
-                  setFocusedIdx(idx);
-                  setSelected(a);
-                }}
-                onKeyDown={(e) => {
-                  // Enter/Space открывают статью прямо из сфокусированного элемента списка.
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setFocusedIdx(idx);
-                    setSelected(a);
-                  }
-                }}
-              >
-                {/* Градиентный акцент для непрочитанных */}
-                {!a.isRead && (
-                  <span
-                    aria-hidden
-                    className="absolute inset-y-0 left-0 w-1"
-                    style={{ background: "linear-gradient(180deg, var(--brand-a), var(--brand-b))" }}
-                  />
-                )}
-
-                {/* Desktop layout */}
-                <div className="hidden gap-3.5 p-4 sm:flex">
-                  <TrustScore score={a.trustScore} />
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                      <DesignBadge design={a.studyDesign} reason={a.designReason} />
-                      <IssuerBadge issuer={a.guidelineIssuer} />
-                      <LevelBadge level={a.evidenceLevel} />
-                      <TierBadge tier={a.journalTier} />
-                      {a.subspecialties.map((s) => <SubBadge key={s} k={s} />)}
-                      {a.isPreprint && <span title={t("Препринт")} className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">{t("ПРЕПРИНТ")}</span>}
-                      {a.isPreprint && a.publishedDoi && <span title={t("Есть рецензированная журнальная версия: doi:{doi}", { doi: a.publishedDoi })} className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{t("ОПУБЛИКОВАН")}</span>}
-                      {a.isRetracted && <span title={t("Статья отозвана")} className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">{t("ОТОЗВАНА")}</span>}
-                      <NoticeBadge notice={a.editorialNotice} />
-                      <TrialBadge info={a.trialInfo} />
-                      <span className="ml-auto flex items-center gap-1">{a.sourceKeys.map((s) => <SourceBadge key={s} k={s} />)}</span>
-                    </div>
-                    <h3 className={`text-[15px] leading-snug transition-colors ${a.isRead ? "font-medium text-[color:var(--ink-soft)]" : "font-semibold text-[color:var(--ink)]"} group-hover:text-[color:var(--brand-ink)]`}>
-                      <Highlight text={a.title} terms={data.searchTerms} />
-                    </h3>
-                    {conclusion ? (
-                      <div className="mt-2 rounded-xl border border-teal-100 bg-teal-50/70 p-2.5 dark:border-teal-900/50 dark:bg-teal-950/30">
-                        <p className="line-clamp-2 text-[12.5px] leading-relaxed text-teal-950 dark:text-teal-100">
-                          <span className="font-semibold text-teal-700 dark:text-teal-400">{t("💡 Вывод:")} </span>
-                          <Highlight text={conclusion} terms={data.searchTerms} />
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-[color:var(--ink-muted)]">{a.abstract || t("Аннотация недоступна")}</p>
-                    )}
-                    <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--ink-muted)]">
-                      <span className="font-medium text-[color:var(--ink-soft)]">{a.journal || "—"}</span>
-                      <span>{date(a.publishedAt)}</span>
-                      {a.authors.length > 0 && <span className="truncate">{a.authors.slice(0, 3).join(", ")}{a.authors.length > 3 ? ` ${t("и др.")}` : ""}</span>}
-                      {a.sampleSize && <span>n≈{a.sampleSize}</span>}
-                      {topicNames(a) && (
-                        <span className="truncate text-[color:var(--ink-subtle)]" title={t("Почему в ленте: темы — {topics}; источники — {sources}", { topics: topicNames(a), sources: a.sourceKeys.join(", ") })}>
-                          · {topicNames(a)}
-                        </span>
-                      )}
-                      <span className="ml-auto flex gap-1">
-                        <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isBookmarked: !a.isBookmarked }); }} className={`rounded-md px-1.5 py-0.5 transition ${a.isBookmarked ? "text-amber-600 dark:text-amber-400" : "text-[color:var(--ink-subtle)] hover:text-amber-600 dark:hover:text-amber-400"}`} title={t("Избранное (b)")}>{a.isBookmarked ? "★" : "☆"}</button>
-                        <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isRead: !a.isRead }); }} className="rounded-md px-1.5 py-0.5 text-[color:var(--ink-subtle)] transition hover:text-[color:var(--brand-ink)]" title={a.isRead ? t("Непрочитанным (r)") : t("Прочитано (r)")}>{a.isRead ? "↺" : "✓"}</button>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Mobile compact layout */}
-                <div className="p-3 sm:hidden">
-                  <div className="mb-2 flex items-center gap-2">
-                    <TrustScore score={a.trustScore} size="sm" />
-                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-                      <DesignBadge design={a.studyDesign} reason={a.designReason} />
-                      <IssuerBadge issuer={a.guidelineIssuer} size="sm" />
-                      <LevelBadge level={a.evidenceLevel} />
-                      {a.isPreprint && <span className="rounded bg-rose-600 px-1 py-0.5 text-[9px] font-bold text-white">{t("ПРЕПРИНТ")}</span>}
-                      {a.isRetracted && <span className="rounded bg-red-700 px-1 py-0.5 text-[9px] font-bold text-white">{t("ОТОЗВАНА")}</span>}
-                      <NoticeBadge notice={a.editorialNotice} size="sm" />
-                      <TrialBadge info={a.trialInfo} size="sm" />
-                    </div>
-                    {/* Large tap targets for mobile quick actions */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isBookmarked: !a.isBookmarked }); }}
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg transition ${a.isBookmarked ? "text-amber-500" : "text-[color:var(--ink-subtle)]"}`}
-                      aria-label={t("Избранное")}
-                    >
-                      {a.isBookmarked ? "★" : "☆"}
-                    </button>
-                  </div>
-                  <h3 className={`text-sm leading-snug ${a.isRead ? "font-medium text-[color:var(--ink-soft)]" : "font-semibold text-[color:var(--ink)]"}`}>
-                    <Highlight text={a.title} terms={data.searchTerms} />
-                  </h3>
-                  {conclusion && (
-                    <div className="mt-1.5 rounded-lg border border-teal-100 bg-teal-50/60 p-2 dark:border-teal-900/40 dark:bg-teal-950/20">
-                      <p className="line-clamp-2 text-[11px] leading-relaxed text-teal-900 dark:text-teal-200">
-                        <span className="font-semibold text-teal-700 dark:text-teal-400">{t("💡 Вывод:")} </span>
-                        <Highlight text={conclusion} terms={data.searchTerms} />
-                      </p>
-                    </div>
-                  )}
-                  <div className="mt-1.5 flex items-center gap-2 text-[12px] text-[color:var(--ink-muted)]">
-                    <span className="min-w-0 truncate font-medium text-[color:var(--ink-soft)]">{a.journal || "—"}</span>
-                    <span className="shrink-0">{date(a.publishedAt)}</span>
-                    {a.isRead && <span className="ml-auto shrink-0 text-[color:var(--brand-ink)]">✓</span>}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
+          {data.items.map((a, idx) => (
+            <ArticleCard
+              key={a.id}
+              article={a}
+              focused={idx === focusedIdx}
+              searchTerms={data.searchTerms}
+              topicNames={topicNames(a)}
+              onOpen={() => {
+                setFocusedIdx(idx);
+                setSelected(a);
+              }}
+              onToggle={(patch) => void quickToggle(a, patch)}
+            />
+          ))}
         </ul>
 
         {totalPages > 1 && (
@@ -1121,47 +670,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
         )}
       </section>
 
-      {/* Модальное окно горячих клавиш */}
-      {showShortcutsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]" onClick={() => setShowShortcutsModal(false)}>
-          <div ref={shortcutsRef} role="dialog" aria-modal="true" aria-label={t("Горячие клавиши")} tabIndex={-1} className="card overlay-enter w-full max-w-sm rounded-2xl p-5 shadow-[var(--shadow-modal)] outline-none" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-[color:var(--ink)]">{t("Горячие клавиши")}</h3>
-              <button onClick={() => setShowShortcutsModal(false)} aria-label={t("Закрыть")} className="rounded-lg p-1.5 text-[color:var(--ink-subtle)] hover:bg-[color:var(--surface-3)] hover:text-[color:var(--ink)]">✕</button>
-            </div>
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">{t("Следующая статья")}</span>
-                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">j / ↓</kbd>
-              </li>
-              <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">{t("Предыдущая статья")}</span>
-                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">k / ↑</kbd>
-              </li>
-              <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">{t("Открыть подробности")}</span>
-                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">Enter</kbd>
-              </li>
-              <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">{t("В избранное / из избранного")}</span>
-                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">b</kbd>
-              </li>
-              <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">{t("Прочитано / непрочитано")}</span>
-                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">r</kbd>
-              </li>
-              <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">{t("Закрыть / сбросить фокус")}</span>
-                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">Esc</kbd>
-              </li>
-              <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">{t("Справка по клавишам")}</span>
-                <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">?</kbd>
-              </li>
-            </ul>
-          </div>
-        </div>
-      )}
+      <ShortcutsModal open={showShortcutsModal} onClose={() => setShowShortcutsModal(false)} />
 
       <ArticleDrawer
         article={selected}
