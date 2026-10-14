@@ -179,6 +179,25 @@ components:
         label: { type: string }
         points: { type: integer }
       required: [label, points]
+    TrialEvent:
+      type: object
+      required: [at, kind]
+      properties:
+        at: { type: string, format: date-time, description: "Когда радар заметил изменение" }
+        kind: { type: string, enum: [status, results] }
+        from: { type: [string, "null"], description: "Прежний статус (для kind=status)" }
+        to: { type: [string, "null"], description: "Новый статус или дата публикации результатов" }
+    TrialInfo:
+      type: object
+      required: [status, hasResults, checkedAt, events]
+      properties:
+        status: { type: [string, "null"], description: "OverallStatus реестра: RECRUITING, COMPLETED, TERMINATED, …" }
+        hasResults: { type: boolean }
+        lastUpdatePosted: { type: [string, "null"], description: "yyyy-mm-dd" }
+        resultsFirstPosted: { type: [string, "null"], description: "yyyy-mm-dd" }
+        enrollment: { type: [integer, "null"] }
+        checkedAt: { type: string, format: date-time }
+        events: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/TrialEvent" } }
     EditorialNotice:
       type: object
       description: "Уведомление Crossref (`works?filter=updates:DOI`): отзыв, withdrawal, expression of concern или исправление. Хранится самое серьёзное."
@@ -231,6 +250,9 @@ components:
         publishedDoi: { type: [string, "null"], description: "DOI рецензированной версии препринта (medRxiv)" }
         isRetracted: { type: boolean }
         guidelineIssuer: { type: [string, "null"], description: "Орган-издатель руководства (A-06), только для studyDesign=guideline" }
+        trialInfo:
+          oneOf: [{ $ref: "#/components/schemas/TrialInfo" }, { type: "null" }]
+          description: "Отслеживание КИ (A-08): состояние записи ClinicalTrials.gov и история изменений; null — не запись реестра / ещё не проверялась"
         editorialNotice:
           oneOf: [{ $ref: "#/components/schemas/EditorialNotice" }, { type: "null" }]
           description: "Редакционное уведомление Crossref по DOI (A-04); null — уведомлений нет"

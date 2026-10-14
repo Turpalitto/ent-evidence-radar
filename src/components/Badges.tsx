@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import type { EditorialNotice, StudyDesign } from "@/db/schema";
+import type { EditorialNotice, StudyDesign, TrialInfo } from "@/db/schema";
+import { NEGATIVE_STATUSES, trialStatusLabel } from "@/lib/trials";
 import { DESIGN_LABELS, DESIGN_SHORT, SUBSPECIALTY_LABELS, SUBSPECIALTY_SHORT, SOURCE_LABELS, EVIDENCE_LEVEL_LABELS } from "@/lib/evidence/taxonomy";
 import { guidelineIssuerLabel } from "@/lib/evidence/guidelines";
 
@@ -86,6 +87,7 @@ const SOURCE_STYLES: Record<string, string> = {
   medrxiv: "bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-300",
   "retraction-recheck": "bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300",
   "crossref-notices": "bg-orange-50 text-orange-700 dark:bg-orange-400/10 dark:text-orange-300",
+  "trial-tracking": "bg-cyan-50 text-cyan-700 dark:bg-cyan-400/10 dark:text-cyan-300",
   reclassify: "bg-violet-50 text-violet-700 dark:bg-violet-400/10 dark:text-violet-300",
 };
 
@@ -133,6 +135,37 @@ export function IssuerBadge({ issuer, size = "md" }: { issuer: string | null | u
       {l.label}
     </span>
   );
+}
+
+/** Сколько дней событие КИ считается «свежим» и показывается бейджем в ленте. */
+export const TRIAL_EVENT_FRESH_DAYS = 60;
+
+/**
+ * Бейдж отслеживания КИ (A-08): свежее событие (результаты появились / статус сменился) или
+ * негативный статус (прекращено/отозвано/приостановлено).
+ */
+export function TrialBadge({ info, size = "md" }: { info: TrialInfo | null | undefined; size?: "sm" | "md" }) {
+  if (!info) return null;
+  const last = info.events[info.events.length - 1];
+  // «Свежесть» считаем от последней проверки реестра (checkedAt обновляется каждым запуском),
+  // а не от Date.now(): рендер остаётся чистым и детерминированным.
+  const fresh = last && new Date(info.checkedAt).getTime() - new Date(last.at).getTime() < TRIAL_EVENT_FRESH_DAYS * 86400_000 ? last : null;
+  const cls = size === "sm" ? "px-1 py-0.5 text-[9px]" : "px-1.5 py-0.5 text-[10px]";
+  if (fresh?.kind === "results") {
+    return <span title={`В реестре появились результаты${fresh.to ? ` (${fresh.to})` : ""}`} className={`rounded border border-emerald-300 bg-emerald-50 font-bold text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 ${cls}`}>РЕЗУЛЬТАТЫ ОПУБЛИКОВАНЫ</span>;
+  }
+  if (fresh?.kind === "status") {
+    const bad = NEGATIVE_STATUSES.has(fresh.to ?? "");
+    return (
+      <span title={`Статус КИ изменился: ${trialStatusLabel(fresh.from)} → ${trialStatusLabel(fresh.to)}`} className={`rounded border font-bold uppercase ${bad ? "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-300" : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-600 dark:bg-amber-950/40 dark:text-amber-300"} ${cls}`}>
+        статус: {trialStatusLabel(fresh.to)}
+      </span>
+    );
+  }
+  if (info.status && NEGATIVE_STATUSES.has(info.status)) {
+    return <span title={`Статус КИ в реестре: ${trialStatusLabel(info.status)}`} className={`rounded border border-rose-200 bg-rose-50 font-semibold uppercase text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300 ${cls}`}>{trialStatusLabel(info.status)}</span>;
+  }
+  return null;
 }
 
 /** Подписи редакционных уведомлений Crossref (A-04). */

@@ -6,7 +6,7 @@ vi.mock("./http", async (importOriginal) => {
   return { ...actual, fetchJson: (...a: unknown[]) => fetchJson(...a) };
 });
 
-import { fetchClinicalTrials } from "./clinicaltrials";
+import { CT_IDS_PER_REQUEST, fetchClinicalTrials, fetchClinicalTrialsByIds, studyToRaw } from "./clinicaltrials";
 import { classify } from "@/lib/evidence/classify";
 
 /** Сокращённый ответ ClinicalTrials.gov API v2 (`/api/v2/studies?format=json&fields=…`). */
@@ -140,5 +140,34 @@ describe("fetchClinicalTrials — разбор ответа API v2", () => {
   it("ответ без studies — пустой список", async () => {
     fetchJson.mockResolvedValue({});
     await expect(fetchClinicalTrials(30, 100)).resolves.toEqual([]);
+  });
+
+  it("studyToRaw отдаёт статус и даты реестра для отслеживания (A-08)", () => {
+    const r = studyToRaw(FIXTURE.studies[0])!;
+    expect(r.trialStatus).toBe("COMPLETED");
+    expect(r.trialLastUpdate).toBe("2026-10-02");
+    expect(r.trialResultsPosted).toBe("2026-09-30");
+    expect(r.hasResults).toBe(true);
+  });
+
+  it("fetchClinicalTrialsByIds: filter.ids пачками, нормализация/дедупликация NCT, мусор отбрасывается", async () => {
+    fetchJson.mockResolvedValue(FIXTURE);
+    const ids = [" nct05512345 ", "NCT05512345", ...Array.from({ length: CT_IDS_PER_REQUEST }, (_, i) => `NCT${String(10000000 + i)}`), "not-an-id", ""];
+    const out = await fetchClinicalTrialsByIds(ids);
+    expect(fetchJson).toHaveBeenCalledTimes(2);
+    const u0 = new URL(String(fetchJson.mock.calls[0][0]));
+    expect(u0.searchParams.get("filter.ids")!.split(",")).toHaveLength(CT_IDS_PER_REQUEST);
+    expect(u0.searchParams.get("filter.ids")).toMatch(/^NCT05512345,NCT10000000,/);
+    expect(u0.searchParams.get("pageSize")).toBe(String(CT_IDS_PER_REQUEST));
+    expect(u0.searchParams.get("fields")).toContain("OverallStatus");
+    const u1 = new URL(String(fetchJson.mock.calls[1][0]));
+    expect(u1.searchParams.get("filter.ids")!.split(",")).toHaveLength(1);
+    expect(out.length).toBe(4); // 2 валидные записи фикстуры × 2 запроса (третья — без названия)
+    expect(fetchJson.mock.calls[0][1]).toMatchObject({ throttleKey: "ctgov" });
+  });
+
+  it("fetchClinicalTrialsByIds без валидных NCT не ходит в сеть", async () => {
+    await expect(fetchClinicalTrialsByIds(["nope"])).resolves.toEqual([]);
+    expect(fetchJson).not.toHaveBeenCalled();
   });
 });

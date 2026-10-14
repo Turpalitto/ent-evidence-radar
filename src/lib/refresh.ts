@@ -2,13 +2,14 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { isShuttingDown } from "@/lib/shutdown";
 import { db } from "@/db";
 import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail, type ManualOverrides, type EditorialNotice } from "@/db/schema";
-import { CLASSIFIER_VERSION, classify, dedupKeyFor, normalizeIds, type RawArticle } from "@/lib/evidence/classify";
+import { CLASSIFIER_VERSION, classify, dedupKeyFor, normalizeIds, normalizeNct, type RawArticle } from "@/lib/evidence/classify";
 import { DEFAULT_SETTINGS, DEFAULT_SOURCES, DEFAULT_TOPICS, type AppSettings } from "@/lib/defaults";
 import { fetchPubmed } from "@/lib/sources/pubmed";
 import { fetchEuropePmc } from "@/lib/sources/europepmc";
 import { fetchClinicalTrials } from "@/lib/sources/clinicaltrials";
 import { fetchMedrxiv } from "@/lib/sources/medrxiv";
 import { recheckEditorialNotices, recheckRetractions } from "@/lib/retraction";
+import { recheckTrials } from "@/lib/trials";
 import { isReclassifyRunning, reclassifyArticles } from "@/lib/reclassify";
 import { pruneAiCache } from "@/lib/ai";
 import { invalidateStatsCache } from "@/lib/stats";
@@ -166,6 +167,14 @@ export function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
     isPreprint: !!(primary.isPreprint && secondary.isPreprint),
     // Слитая журнальная версия не «опубликована» сама в себе.
     publishedDoi: publishedDoi && publishedDoi !== doi ? publishedDoi : null,
+    // Подсказки реестра (trial_registry, hasResults, статус) относятся к записи ClinicalTrials.gov;
+    // слитая с публикацией запись — статья, и классифицироваться должна как статья (A-08).
+    studyTypeHint: primary.studyTypeHint,
+    hasResults: primary.hasResults,
+    enrollment: primary.enrollment ?? secondary.enrollment ?? null,
+    trialStatus: primary.trialStatus ?? null,
+    trialLastUpdate: primary.trialLastUpdate ?? null,
+    trialResultsPosted: primary.trialResultsPosted ?? null,
   };
 }
 
@@ -273,6 +282,9 @@ type ExistingRef = {
   /** Флаг отзыва и уведомление Crossref у существующей строки (A-04): обновление из источника их не сбрасывает. */
   isRetracted?: boolean | null;
   editorialNotice?: EditorialNotice | null;
+  /** Строка — «чистая» запись реестра КИ (sourceKey = clinicaltrials, без PMID/DOI); публикация по тому же NCT может её «занять» (A-08). */
+  registryOnly?: boolean;
+  nctId?: string | null;
 };
 
 /**
@@ -289,6 +301,8 @@ export function planWrites(
   minTrustToStore: number,
   /** Строки-препринты по их `publishedDoi` (A-05). */
   byPublishedDoi: Map<string, ExistingRef> = new Map(),
+  /** Существующие строки по нормализованному NCT (A-08). */
+  byNct: Map<string, ExistingRef> = new Map(),
 ): WritePlan {
   const toInsert: PlannedInsert[] = [];
   const toUpdate: PlannedUpdate[] = [];
@@ -322,8 +336,30 @@ export function planWrites(
     // A-05 (обратный случай): в базе лежит препринт с publishedDoi = DOI пришедшей журнальной версии →
     // обновляем ту же строку рецензированными данными (заметки/закладки врача остаются при статье).
     const preprintMatch = !existing && !doiMatch && !pmidMatch && raw.doi ? byPublishedDoi.get(raw.doi.toLowerCase()) : undefined;
+    // A-08: связь по NCT. Запись реестра, пришедшая повторно, когда строка уже «доросла» до публикации
+    // (dedupKey сменился на doi:/pmid:), — только связываем, дубль реестра не вставляем.
+    const nctKey = raw.nctId ? normalizeNct(raw.nctId) : null;
+    const nctRow = !existing && !doiMatch && !pmidMatch && !preprintMatch && nctKey ? byNct.get(nctKey) : undefined;
+    if (nctRow && raw.sourceKey === "clinicaltrials" && !nctRow.registryOnly) {
+      const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
+      pushUpdate(toUpdate, updateIdx, {
+        id: nctRow.id,
+        source: raw.sourceKey,
+        values: {
+          topicIds: Array.from(new Set([...(nctRow.topicIds ?? []), ...cand.topicIds])),
+          sourceKeys: Array.from(new Set([...(nctRow.sourceKeys ?? []), ...srcKeys])),
+          updatedAt: new Date(),
+        },
+        linkOnly: true,
+      });
+      continue;
+    }
+    // Публикация (PubMed/Europe PMC/medRxiv) по NCT, под которым в базе лежит «чистая» запись реестра →
+    // та же строка становится статьёй: заметки/закладки врача и история КИ остаются при ней.
+    // (Запись реестра с «чистой» строкой под другим dedupKey — редкий случай старой нормализации — тоже обновляет её.)
+    const trialMatch = nctRow && nctRow.registryOnly ? nctRow : undefined;
     // Ручные правки врача у существующей строки (аудит A-11) применяются поверх эвристик.
-    const prevRef = existing ?? doiMatch ?? pmidMatch ?? preprintMatch;
+    const prevRef = existing ?? doiMatch ?? pmidMatch ?? preprintMatch ?? trialMatch;
     const overrides = prevRef?.overrides ?? null;
     // Отзыв, найденный перепроверкой (PubMed/Crossref), и уведомление Crossref переживают обновление
     // из источника: medRxiv/Europe PMC об отзыве не знают и иначе «реабилитировали» бы статью (A-04).
@@ -334,7 +370,7 @@ export function planWrites(
       overrides,
     );
     // Порог доверия — только для НОВЫХ записей: уже сохранённую статью обновляем всегда.
-    if (c.trustScore < minTrustToStore && !existing && !doiMatch && !pmidMatch && !preprintMatch) continue;
+    if (c.trustScore < minTrustToStore && !existing && !doiMatch && !pmidMatch && !preprintMatch && !trialMatch) continue;
     const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
     const values: NewArticle = {
       dedupKey: key,
@@ -371,10 +407,10 @@ export function planWrites(
       updatedAt: new Date(),
     };
 
-    const existingId = existing?.id ?? doiMatch?.id ?? pmidMatch?.id ?? preprintMatch?.id;
+    const existingId = existing?.id ?? doiMatch?.id ?? pmidMatch?.id ?? preprintMatch?.id ?? trialMatch?.id;
 
     if (existingId) {
-      const prev = existing ?? doiMatch ?? pmidMatch ?? preprintMatch ?? { topicIds: [] as number[], sourceKeys: [] as string[] };
+      const prev = existing ?? doiMatch ?? pmidMatch ?? preprintMatch ?? trialMatch ?? { topicIds: [] as number[], sourceKeys: [] as string[] };
       const mergedTopics = Array.from(new Set([...(prev.topicIds ?? []), ...values.topicIds!]));
       const mergedSources = Array.from(new Set([...(prev.sourceKeys ?? []), ...srcKeys]));
       // не перетираем пользовательские поля (isRead, isBookmarked, notes) и dedupKey
@@ -384,7 +420,9 @@ export function planWrites(
         id: existingId,
         // Препринт «дорос» до журнальной статьи: строка получает идентичность журнальной версии
         // (dedupKey/DOI), иначе следующий заход medRxiv вернул бы ей данные препринта.
-        values: { ...upd, topicIds: mergedTopics, sourceKeys: mergedSources, ...(preprintMatch ? { publishedDoi: null, dedupKey: key } : {}) },
+        // Аналогично запись реестра, «занятая» публикацией, получает идентичность статьи (dedupKey doi:/pmid:),
+        // иначе следующий заход CT.gov вернул бы ей данные реестра; NCT сохраняется для связи.
+        values: { ...upd, topicIds: mergedTopics, sourceKeys: mergedSources, ...(preprintMatch ? { publishedDoi: null, dedupKey: key } : {}), ...(trialMatch ? { dedupKey: key, nctId: raw.nctId ?? trialMatch.nctId ?? null } : {}) },
         source: raw.sourceKey,
       };
       pushUpdate(toUpdate, updateIdx, planned);
@@ -621,11 +659,25 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
     const rows = await db.select(refCols).from(articles).where(inArray(articles.pmid, allPmids));
     for (const r of rows) if (r.pmid) byPmid.set(r.pmid, toRef(r));
   }
+  // A-08: строки по NCT — чтобы публикация «заняла» запись реестра, а повторная запись реестра не стала дублем.
+  const byNct = new Map<string, ExistingRef>();
+  const allNcts = Array.from(new Set(Array.from(candidates.values()).map((c) => normalizeNct(c.raw.nctId)).filter((x): x is string => !!x)));
+  if (allNcts.length) {
+    const rows = await db.select({ ...refCols, nctId: articles.nctId, sourceKey: articles.sourceKey }).from(articles).where(inArray(sql`upper(${articles.nctId})`, allNcts));
+    for (const r of rows) {
+      const k = normalizeNct(r.nctId);
+      if (!k) continue;
+      const ref: ExistingRef = { ...toRef(r), nctId: r.nctId, registryOnly: r.sourceKey === "clinicaltrials" && !r.pmid && !r.doi };
+      // Если под одним NCT несколько строк, «чистая» запись реестра приоритетнее для занятия публикацией.
+      const prev = byNct.get(k);
+      if (!prev || (ref.registryOnly && !prev.registryOnly)) byNct.set(k, ref);
+    }
+  }
 
   // Сначала считаем решения (insert/update) чистой функцией, затем пишем пакетно в одной
   // транзакции: вставки — пачками по 100, обновления — в той же транзакции. Это убирает
   // N отдельных коммитов (fsync) на PGlite и N round-trip'ов на внешнем PostgreSQL.
-  const { toInsert, toUpdate } = planWrites(candidates, sourceKeysByDedup, existingByKey, byDoi, byPmid, cfg.minTrustToStore, byPublishedDoi);
+  const { toInsert, toUpdate } = planWrites(candidates, sourceKeysByDedup, existingByKey, byDoi, byPmid, cfg.minTrustToStore, byPublishedDoi, byNct);
 
   const INSERT_CHUNK = 100;
   await db.transaction(async (tx) => {
@@ -676,6 +728,16 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
       durationMs: Date.now() - tNotices,
       error: notices.error,
     });
+  }
+
+  // ---- Отслеживание сохранённых КИ (A-08): смена статуса и появление результатов у записей реестра.
+  if (enabledSources.has("clinicaltrials")) {
+    const tTrials = Date.now();
+    const trials = await recheckTrials();
+    if (trials.checked > 0 || trials.error) {
+      // found = проверено записей, added = появились результаты, updated = сменился статус.
+      details.push({ source: "trial-tracking", found: trials.checked, added: trials.resultsAppeared, updated: trials.statusChanged, durationMs: Date.now() - tTrials, error: trials.error });
+    }
   }
 
   // ---- Догоняющая переклассификация: записи, размеченные старой версией эвристик

@@ -11,7 +11,7 @@ const findTitle = (text: string) => screen.findAllByText(text);
 
 const ARTICLES = [
   makeArticle({ id: 1, title: "Tympanostomy tubes versus watchful waiting", isRead: false, topicIds: [1] }),
-  makeArticle({ id: 2, title: "Dupilumab for nasal polyps", isRead: false, subspecialties: ["rhinology"], topicIds: [2] }),
+  makeArticle({ id: 2, title: "Dupilumab for nasal polyps", isRead: false, subspecialties: ["rhinology"], topicIds: [2], trialInfo: { status: "COMPLETED", hasResults: true, resultsFirstPosted: "2026-09-30", checkedAt: "2026-10-14T00:00:00Z", events: [{ at: "2026-10-10T00:00:00Z", kind: "results", from: null, to: "2026-09-30" }] } }),
   makeArticle({ id: 4, title: "Clinical Practice Guideline: Tinnitus", isRead: true, studyDesign: "guideline", evidenceLevel: 1, trustScore: 80, guidelineIssuer: "aao-hns" }),
   makeArticle({ id: 5, title: "Consensus without issuer", isRead: true, studyDesign: "guideline", evidenceLevel: 1, trustScore: 60, guidelineIssuer: null }),
   makeArticle({ id: 3, title: "Already read cohort", isRead: true, studyDesign: "cohort", evidenceLevel: 3, trustScore: 40, editorialNotice: { type: "expression_of_concern", noticeDoi: "10.1/eoc", date: "2025-01-02", source: "crossref", checkedAt: "2026-10-14T00:00:00Z" } }),
@@ -68,6 +68,8 @@ describe("<Feed />", () => {
     expect(seen("Dupilumab for nasal polyps")).toBe(true);
     expect(screen.getByText("5 ст.")).toBeInTheDocument();
     // Бейдж редакционного уведомления Crossref (A-04) с датой в подсказке
+    // Бейдж отслеживания КИ (A-08): свежее событие «появились результаты»
+    expect(screen.getAllByText("РЕЗУЛЬТАТЫ ОПУБЛИКОВАНЫ").length).toBeGreaterThan(0);
     const eoc = screen.getAllByText("EXPRESSION OF CONCERN");
     expect(eoc.length).toBeGreaterThan(0);
     expect(eoc[0]).toHaveAttribute("title", expect.stringContaining("2025-01-02"));

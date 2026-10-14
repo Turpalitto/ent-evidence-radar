@@ -23,6 +23,20 @@ function candidatesOf(list: RawArticle[]): Map<string, Candidate> {
 }
 
 describe("mergeRaw", () => {
+  it("публикация + запись реестра в одной пачке: подсказки реестра не превращают статью в trial_registry (A-08)", () => {
+    const registry = raw({ sourceKey: "clinicaltrials", pmid: null, doi: null, nctId: "NCT01234567", studyTypeHint: "trial_registry", hasResults: false, enrollment: 200, trialStatus: "RECRUITING", publicationTypes: ["Randomized Controlled Trial (registry)"] });
+    const paper = raw({ sourceKey: "pubmed", pmid: "1", doi: "10.1/p", nctId: "NCT01234567" });
+    const m = mergeRaw(registry, paper);
+    expect(m.sourceKey).toBe("pubmed");
+    expect(m.studyTypeHint).toBeUndefined();
+    expect(m.hasResults).toBeUndefined();
+    expect(m.trialStatus).toBeNull();
+    expect(m.enrollment).toBe(200); // размер выборки из реестра полезен и статье
+    expect(classify(m).studyDesign).toBe("rct");
+    // Обратный порядок аргументов — тот же результат
+    expect(classify(mergeRaw(paper, registry)).studyDesign).toBe("rct");
+  });
+
   it("prefers the PubMed record and unions keywords", () => {
     const epmc = raw({ sourceKey: "europepmc", title: "EPMC title", pmid: "1", keywords: ["a"] });
     const pubmed = raw({ sourceKey: "pubmed", title: "PubMed title", pmid: "2", keywords: ["b"], meshTerms: ["M"] });
@@ -79,6 +93,41 @@ describe("planWrites", () => {
     expect(plan2.toUpdate[0].values.trustBreakdown!.some((b) => /expression of concern/i.test(b.label))).toBe(true);
     const plain = planWrites(cands, new Map(), new Map([[key, { id: 7, topicIds: [1], sourceKeys: ["medrxiv"] }]]), new Map(), new Map(), 0);
     expect(plan2.toUpdate[0].values.trustScore).toBe(plain.toUpdate[0].values.trustScore! - 25);
+  });
+
+  it("A-08: публикация по NCT «занимает» чистую запись реестра — та же строка, новая идентичность (dedupKey), NCT сохранён", () => {
+    const paper = raw({ sourceKey: "pubmed", pmid: "777", doi: "10.1/paper", nctId: "NCT01234567", title: "Results of the tubes trial" });
+    const key = dedupKeyFor(paper);
+    const cands = candidatesOf([paper]);
+    const byNct = new Map([["NCT01234567", { id: 9, topicIds: [2], sourceKeys: ["clinicaltrials"], registryOnly: true, nctId: "NCT01234567" }]]);
+    const plan = planWrites(cands, new Map(), new Map(), new Map(), new Map(), 0, new Map(), byNct);
+    expect(plan.toInsert).toHaveLength(0);
+    expect(plan.toUpdate).toHaveLength(1);
+    const upd = plan.toUpdate[0];
+    expect(upd.id).toBe(9);
+    expect(upd.values.dedupKey).toBe(key);
+    expect(upd.values.nctId).toBe("NCT01234567");
+    expect(upd.values.pmid).toBe("777");
+    expect(upd.values.sourceKeys).toEqual(["clinicaltrials", "pubmed"]);
+    expect(upd.values.topicIds).toEqual([2]);
+    expect(upd.values.studyDesign).toBe("rct");
+  });
+
+  it("A-08: вторая публикация по тому же NCT не сливается с уже «занятой» строкой; повторная запись реестра лишь связывается", () => {
+    const second = raw({ sourceKey: "pubmed", pmid: "888", doi: "10.1/secondary", nctId: "NCT01234567", title: "Secondary analysis of the tubes trial" });
+    const taken = new Map([["NCT01234567", { id: 9, topicIds: [2], sourceKeys: ["clinicaltrials", "pubmed"], registryOnly: false, nctId: "NCT01234567" }]]);
+    const plan = planWrites(candidatesOf([second]), new Map(), new Map(), new Map(), new Map(), 0, new Map(), taken);
+    expect(plan.toInsert).toHaveLength(1);
+    expect(plan.toUpdate).toHaveLength(0);
+
+    const registry = raw({ sourceKey: "clinicaltrials", pmid: null, doi: null, nctId: "NCT01234567", title: "Tubes trial (registry)", publicationTypes: ["Randomized Controlled Trial (registry)"] });
+    const cands = new Map([[dedupKeyFor(registry), candidate(registry, [5])]]);
+    const plan2 = planWrites(cands, new Map(), new Map(), new Map(), new Map(), 0, new Map(), taken);
+    expect(plan2.toInsert).toHaveLength(0);
+    expect(plan2.toUpdate).toHaveLength(1);
+    expect(plan2.toUpdate[0].linkOnly).toBe(true);
+    expect(plan2.toUpdate[0].values.topicIds).toEqual([2, 5]);
+    expect("title" in plan2.toUpdate[0].values).toBe(false); // данные статьи не перетёрты реестром
   });
 
   it("deduplicates by PMID when dedupKey differs (secondary dedup)", () => {

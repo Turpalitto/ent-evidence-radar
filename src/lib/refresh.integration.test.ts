@@ -43,7 +43,11 @@ vi.mock("@/lib/sources/pubmed", () => ({
   pubmedRetractionMap: vi.fn(async () => new Map<string, boolean>()),
 }));
 vi.mock("@/lib/sources/europepmc", () => ({ fetchEuropePmc: vi.fn(async () => epmcFixtures) }));
-vi.mock("@/lib/sources/clinicaltrials", () => ({ fetchClinicalTrials: vi.fn(async () => []) }));
+const ctFixtures: RawArticle[] = [];
+vi.mock("@/lib/sources/clinicaltrials", () => ({
+  fetchClinicalTrials: vi.fn(async () => ctFixtures),
+  fetchClinicalTrialsByIds: vi.fn(async () => []),
+}));
 vi.mock("@/lib/sources/medrxiv", () => ({
   fetchMedrxiv: vi.fn(async () => {
     throw new Error("medRxiv недоступен (тест)");
@@ -145,4 +149,61 @@ describe("startRefresh — фоновое выполнение (F-05)", () => {
     expect(hidden.isHidden).toBe(true);
     expect((await db.select().from(articles)).length).toBe(2);
   });
+
+  it("A-08: запись реестра КИ, а затем публикация по тому же NCT — одна строка; повторная запись реестра не дублируется", async () => {
+    // Запуск 1: из реестра приходит РКИ без результатов.
+    ctFixtures.push({
+      sourceKey: "clinicaltrials",
+      nctId: "NCT09876543",
+      title: "Tympanostomy tubes versus watchful waiting (registry)",
+      abstract: "Статус: RECRUITING. Рандомизированное интервенционное исследование, планируемая/фактическая выборка n=200.\n\nРезультаты в реестре пока не опубликованы.\n\n" + "x".repeat(200),
+      journal: "ClinicalTrials.gov (реестр)",
+      publicationTypes: ["Randomized Controlled Trial (registry)"],
+      url: "https://clinicaltrials.gov/study/NCT09876543",
+      hasResults: false,
+      enrollment: 200,
+      studyTypeHint: "trial_registry",
+      trialStatus: "RECRUITING",
+    });
+    let s = await startRefresh("manual");
+    await s.done;
+    const [reg] = await db.select().from(articles).where(eq(articles.nctId, "NCT09876543"));
+    expect(reg.sourceKey).toBe("clinicaltrials");
+    expect(reg.studyDesign).toBe("trial_registry");
+    await db.update(articles).set({ isBookmarked: true, notes: "следить за результатами" }).where(eq(articles.id, reg.id));
+
+    // Запуск 2: PubMed публикует результаты того же NCT (PMID/DOI новые, NCT в аннотации).
+    pubmedFixtures.push({
+      sourceKey: "pubmed",
+      pmid: "40000003",
+      doi: "10.1000/ent.3",
+      nctId: "NCT09876543",
+      title: "Tympanostomy tubes versus watchful waiting: results of a randomized trial",
+      abstract: "Trial registration NCT09876543. ".padEnd(300, "y"),
+      journal: "The Laryngoscope",
+      publicationTypes: ["Randomized Controlled Trial"],
+      url: "https://pubmed.ncbi.nlm.nih.gov/40000003/",
+    });
+    s = await startRefresh("manual");
+    await s.done;
+    const rows = await db.select().from(articles).where(eq(articles.nctId, "NCT09876543"));
+    expect(rows).toHaveLength(1);
+    const [grown] = rows;
+    expect(grown.id).toBe(reg.id); // та же строка
+    expect(grown.pmid).toBe("40000003");
+    expect(grown.dedupKey).toBe("doi:10.1000/ent.3");
+    expect(grown.sourceKey).toBe("pubmed");
+    expect(grown.sourceKeys.sort()).toEqual(["clinicaltrials", "pubmed"]);
+    expect(grown.studyDesign).toBe("rct");
+    expect(grown.isBookmarked).toBe(true); // закладка и заметка врача остались при исследовании
+    expect(grown.notes).toBe("следить за результатами");
+
+    // Запуск 3: реестр снова отдаёт ту же запись — дубля нет, строка остаётся статьёй.
+    s = await startRefresh("manual");
+    await s.done;
+    const again = await db.select().from(articles).where(eq(articles.nctId, "NCT09876543"));
+    expect(again).toHaveLength(1);
+    expect(again[0].title).toMatch(/results of a randomized trial/);
+    expect(again[0].sourceKey).toBe("pubmed");
+  }, 20_000); // три полных запуска на PGlite — ~2 с каждый
 });

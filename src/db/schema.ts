@@ -58,6 +58,27 @@ export interface EditorialNotice {
   checkedAt: string;
 }
 
+/** Событие отслеживания КИ (аудит A-08). */
+export interface TrialEvent {
+  /** Когда радар заметил изменение (ISO). */
+  at: string;
+  kind: "status" | "results";
+  from?: string | null;
+  to?: string | null;
+}
+/** Состояние записи реестра ClinicalTrials.gov на момент последней проверки (A-08). */
+export interface TrialInfo {
+  status: string | null;
+  hasResults: boolean;
+  /** Даты реестра yyyy-mm-dd. */
+  lastUpdatePosted?: string | null;
+  resultsFirstPosted?: string | null;
+  enrollment?: number | null;
+  checkedAt: string;
+  /** Последние события (не больше 10), новые в конце. */
+  events: TrialEvent[];
+}
+
 /** Ручные правки классификации (аудит A-11). Пустой объект — правок нет. */
 export interface ManualOverrides {
   studyDesign?: StudyDesign;
@@ -124,6 +145,8 @@ export const articles = pgTable(
     editorialNotice: jsonb("editorial_notice").$type<EditorialNotice | null>(),
     /** Орган-издатель руководства (A-06), ключ из GUIDELINE_ISSUERS; только для studyDesign = guideline. */
     guidelineIssuer: text("guideline_issuer"),
+    /** Отслеживание КИ (A-08): статус/результаты в реестре и история изменений. */
+    trialInfo: jsonb("trial_info").$type<TrialInfo | null>(),
     /** Версия эвристик классификатора, которой размечена запись (0 — до версионирования). */
     classifierVersion: integer("classifier_version").notNull().default(0),
     topicIds: jsonb("topic_ids").$type<number[]>().notNull().default([]),

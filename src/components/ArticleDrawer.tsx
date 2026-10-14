@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Article } from "@/db/schema";
 import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTIES, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
-import { DesignBadge, IssuerBadge, LevelBadge, NOTICE_LABELS, NoticeBadge, TierBadge, TrustScore, formatDate } from "./Badges";
+import { DesignBadge, IssuerBadge, LevelBadge, NOTICE_LABELS, NoticeBadge, TierBadge, TrialBadge, TrustScore, formatDate } from "./Badges";
+import { trialStatusLabel } from "@/lib/trials";
 import { citeBibtex, citeGost, citeVancouver } from "@/lib/citation";
 import { useFocusTrap } from "./useFocusTrap";
 
@@ -239,6 +240,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             {a.isPreprint && a.publishedDoi && <span className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" title="Есть рецензированная журнальная версия">ОПУБЛИКОВАН В ЖУРНАЛЕ</span>}
             {a.isRetracted && <span className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">ОТОЗВАНА</span>}
             <NoticeBadge notice={a.editorialNotice} />
+            <TrialBadge info={a.trialInfo} />
             {hasOverrides && <span className="rounded border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300" title="Классификация исправлена вручную и не будет перетёрта при обновлении">✎ ВРУЧНУЮ</span>}
             {a.isHidden && <span className="rounded bg-slate-600 px-1.5 py-0.5 text-[10px] font-bold text-white">СКРЫТА</span>}
           </div>
@@ -396,6 +398,29 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             {a.doi && <a href={`https://doi.org/${a.doi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">Первоисточник (DOI) ↗</a>}
             {a.nctId && <a href={`https://clinicaltrials.gov/study/${a.nctId}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">Реестр КИ ({a.nctId}) ↗</a>}
           </div>
+        )}
+
+        {/* ── Отслеживание КИ (A-08) ── */}
+        {a.trialInfo && (
+          <section className="panel rounded-xl p-3 text-xs" data-testid="trial-info">
+            <h3 className="eyebrow mb-1.5">Реестр ClinicalTrials.gov</h3>
+            <p className="text-[color:var(--ink-soft)]">
+              Статус: <strong>{trialStatusLabel(a.trialInfo.status)}</strong>
+              {a.trialInfo.hasResults ? " · результаты опубликованы" : " · результатов пока нет"}
+              {a.trialInfo.enrollment ? ` · n=${a.trialInfo.enrollment}` : ""}
+              {a.trialInfo.lastUpdatePosted ? ` · запись обновлена ${a.trialInfo.lastUpdatePosted}` : ""}
+              {" · проверено "}{formatDate(a.trialInfo.checkedAt)}
+            </p>
+            {a.trialInfo.events.length > 0 && (
+              <ul className="mt-1.5 space-y-0.5 text-[color:var(--ink-muted)]">
+                {[...a.trialInfo.events].reverse().map((e, i) => (
+                  <li key={i}>
+                    {formatDate(e.at)}: {e.kind === "results" ? `появились результаты${e.to ? ` (${e.to})` : ""}` : `статус ${trialStatusLabel(e.from)} → ${trialStatusLabel(e.to)}`}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         )}
 
         {/* ── Аннотация ── */}

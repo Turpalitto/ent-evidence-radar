@@ -25,7 +25,7 @@ function getServerNotificationSnapshot(): string {
 import type { Article, Topic } from "@/db/schema";
 import { DESIGN_LABELS, DESIGN_SHORT, SOURCE_LABELS, SUBSPECIALTIES, EVIDENCE_LEVEL_LABELS } from "@/lib/evidence/taxonomy";
 import { extractConclusion } from "@/lib/evidence/abstract";
-import { DesignBadge, IssuerBadge, LevelBadge, NoticeBadge, SourceBadge, SubBadge, TierBadge, TrustScore, formatDate } from "./Badges";
+import { DesignBadge, IssuerBadge, LevelBadge, NoticeBadge, SourceBadge, SubBadge, TierBadge, TrialBadge, TrustScore, formatDate } from "./Badges";
 import { guidelineIssuerLabel } from "@/lib/evidence/guidelines";
 import { ArticleDrawer } from "./ArticleDrawer";
 import { Highlight } from "./Highlight";
@@ -975,6 +975,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                       {a.isPreprint && a.publishedDoi && <span title={`Есть рецензированная журнальная версия: doi:${a.publishedDoi}`} className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">ОПУБЛИКОВАН</span>}
                       {a.isRetracted && <span title="Статья отозвана" className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">ОТОЗВАНА</span>}
                       <NoticeBadge notice={a.editorialNotice} />
+                      <TrialBadge info={a.trialInfo} />
                       <span className="ml-auto flex items-center gap-1">{a.sourceKeys.map((s) => <SourceBadge key={s} k={s} />)}</span>
                     </div>
                     <h3 className={`text-[15px] leading-snug transition-colors ${a.isRead ? "font-medium text-[color:var(--ink-soft)]" : "font-semibold text-[color:var(--ink)]"} group-hover:text-[color:var(--brand-ink)]`}>
@@ -1019,6 +1020,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                       {a.isPreprint && <span className="rounded bg-rose-600 px-1 py-0.5 text-[9px] font-bold text-white">ПРЕПРИНТ</span>}
                       {a.isRetracted && <span className="rounded bg-red-700 px-1 py-0.5 text-[9px] font-bold text-white">ОТОЗВАНА</span>}
                       <NoticeBadge notice={a.editorialNotice} size="sm" />
+                      <TrialBadge info={a.trialInfo} size="sm" />
                     </div>
                     {/* Large tap targets for mobile quick actions */}
                     <button

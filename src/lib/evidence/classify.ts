@@ -52,6 +52,11 @@ export interface RawArticle {
   hasResults?: boolean;
   enrollment?: number | null;
   studyTypeHint?: StudyDesign;
+  /** Статус КИ в реестре (OverallStatus: RECRUITING, COMPLETED, TERMINATED…) — для отслеживания изменений (A-08). */
+  trialStatus?: string | null;
+  /** Даты реестра (yyyy-mm-dd): последнее обновление записи и первая публикация результатов. */
+  trialLastUpdate?: string | null;
+  trialResultsPosted?: string | null;
 }
 
 export interface Classified {
