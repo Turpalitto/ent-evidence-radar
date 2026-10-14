@@ -27,7 +27,7 @@ const migrationsFolder = path.join(process.cwd(), "drizzle");
 const g = globalThis as typeof globalThis & {
   __entRadarPglite?: PGlite;
   __entRadarPgPool?: Pool;
-  __entRadarDb?: any;
+  __entRadarDb?: ReturnType<typeof drizzlePg> | ReturnType<typeof drizzlePglite>;
   __entRadarClosed?: boolean;
 };
 

@@ -172,6 +172,35 @@ describe("getClientIp", () => {
     process.env.CLIENT_IP_HEADER = "cf-connecting-ip";
     expect(getClientIp(req({ "cf-connecting-ip": "198.51.100.7", "x-forwarded-for": "1.2.3.4" }))).toBe("198.51.100.7");
   });
+
+  it("IPv6: скобки с портом, CIDR доверенных прокси и сокращение «::»", () => {
+    process.env.TRUST_PROXY = "1";
+    process.env.TRUSTED_PROXIES = "2001:db8:ffff::/48, ::1";
+    expect(getClientIp(req({ "x-forwarded-for": "[2001:db8::1]:443" }))).toBe("2001:db8::1");
+    // Хоп прокси из IPv6-подсети и loopback пропускаются, клиент — ближайший недоверенный адрес.
+    expect(getClientIp(req({ "x-forwarded-for": "1.2.3.4, 2001:db8::1, 2001:db8:ffff:0:0:0:0:7, ::1" }))).toBe("2001:db8::1");
+    // Семейства адресов не смешиваются: IPv4-клиент не попадает под IPv6-CIDR.
+    expect(getClientIp(req({ "x-forwarded-for": "203.0.113.9, ::1" }))).toBe("203.0.113.9");
+  });
+
+  it("точный IP в TRUSTED_PROXIES и запасные варианты: все хопы доверенные → последний; x-real-ip; пусто → unknown", () => {
+    process.env.TRUST_PROXY = "1";
+    process.env.TRUSTED_PROXIES = "10.0.0.1";
+    expect(getClientIp(req({ "x-forwarded-for": "10.0.0.1" }))).toBe("10.0.0.1");
+    expect(getClientIp(req({ "x-real-ip": "198.51.100.7:8080" }))).toBe("198.51.100.7");
+    expect(getClientIp(req({ "x-forwarded-for": " , " }))).toBe("unknown");
+    expect(getClientIp(req({}))).toBe("unknown");
+  });
+
+  it("некорректные CIDR/адреса не считаются доверенными и не роняют разбор", () => {
+    process.env.TRUST_PROXY = "1";
+    process.env.TRUSTED_PROXIES = "10.0.0.0/99, 300.1.1.1/8, 10.0.0/8, zz::zz/64, 10.0.0.0/0";
+    // /0 — любой IPv4 доверенный → остаётся последний хоп; IPv6-клиент под /0 для IPv4 не попадает.
+    expect(getClientIp(req({ "x-forwarded-for": "203.0.113.9, 10.1.2.3" }))).toBe("10.1.2.3");
+    expect(getClientIp(req({ "x-forwarded-for": "2001:db8::5, 10.1.2.3" }))).toBe("2001:db8::5");
+    process.env.TRUSTED_PROXIES = "10.0.0.0/99";
+    expect(getClientIp(req({ "x-forwarded-for": "203.0.113.9, 10.1.2.3" }))).toBe("10.1.2.3");
+  });
 });
 
 describe("rateLimitKey (I-12)", () => {
