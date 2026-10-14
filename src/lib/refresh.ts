@@ -167,6 +167,7 @@ export function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
     abstract: (primary.abstract?.length ?? 0) >= (secondary.abstract?.length ?? 0) ? primary.abstract : secondary.abstract,
     meshTerms: primary.meshTerms?.length ? primary.meshTerms : secondary.meshTerms,
     keywords: Array.from(new Set([...(primary.keywords ?? []), ...(secondary.keywords ?? [])])),
+    issns: Array.from(new Set([...(primary.issns ?? []), ...(secondary.issns ?? [])])),
     publicationTypes: Array.from(new Set([...(primary.publicationTypes ?? []), ...(secondary.publicationTypes ?? [])])),
     isPreprint: !!(primary.isPreprint && secondary.isPreprint),
     // Слитая журнальная версия не «опубликована» сама в себе.
@@ -385,6 +386,7 @@ export function planWrites(
       title: raw.title,
       abstract: raw.abstract ?? "",
       journal: raw.journal ?? "",
+      issns: raw.issns ?? [],
       authors: raw.authors ?? [],
       publishedAt: raw.publishedAt ?? null,
       publicationTypes: raw.publicationTypes ?? [],

@@ -235,6 +235,7 @@ components:
         title: { type: string }
         abstract: { type: [string, "null"] }
         journal: { type: [string, "null"] }
+        issns: { type: array, items: { type: string }, description: "ISSN журнала из источника (печатный/электронный/ISSN-L), по ним запись сопоставляется с белым списком" }
         authors: { type: [array, "null"], items: { type: string } }
         publishedAt: { type: [string, "null"], format: date-time }
         publicationTypes: { type: [array, "null"], items: { type: string } }

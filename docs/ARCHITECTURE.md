@@ -97,7 +97,7 @@
 | Слагаемое | Баллы |
 | --- | --- |
 | Дизайн | SR 40 · guideline 38 · RCT 34 · cohort 22 · case-control 18 · cross-sectional 14 · registry 12 · case series 8 · narrative 6 · other 5 · preprint 4 |
-| Журнал (`journals.ts`) | Tier 1 +30 · Tier 2 +26 · Tier 3 +16 · вне списка +4 · сомнительное издательство −35 |
+| Журнал (`journals.ts`) | Tier 1 +30 · Tier 2 +26 · Tier 3 +16 · вне списка +4 · сомнительное издательство −35. Сопоставление: паттерны «хищников» по названию → ISSN записи (`articles.issns`, из PubMed `<ISSN>`/`<ISSNLinking>` и Europe PMC `issn`/`essn`) → нормализованное название/ISO-аббревиатура |
 | Источник | PubMed +10 · Europe PMC +8 · CT.gov +6 · medRxiv 0 |
 | Регистрация протокола (PROSPERO/NCT/ISRCTN) | +6 |
 | Стандарт отчётности (GRADE/PRISMA/CONSORT/STROBE) | +4 |

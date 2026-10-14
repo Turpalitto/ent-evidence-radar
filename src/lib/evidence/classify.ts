@@ -31,6 +31,8 @@ export interface RawArticle {
   title: string;
   abstract?: string | null;
   journal?: string | null;
+  /** ISSN журнала (печатный/электронный/linking), если источник их отдал — для сопоставления с белым списком (I-05). */
+  issns?: string[] | null;
   authors?: string[];
   publishedAt?: Date | null;
   publicationTypes?: string[];
@@ -311,7 +313,7 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
   const manualDesign = overrides?.studyDesign && DESIGN_KEYS.has(overrides.studyDesign) ? overrides.studyDesign : null;
   const design = manualDesign ?? detectDesign(a);
   const sampleSize = a.enrollment ?? extractSampleSize(text);
-  const tier = journalTier(a.journal);
+  const tier = journalTier(a.journal, a.issns);
   const isPreprint = !!a.isPreprint || design === "preprint";
   const noticeType = a.editorialNotice?.type;
   const isRetracted =

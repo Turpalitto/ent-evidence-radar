@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { JOURNALS, journalTier, normalizeJournal } from "@/lib/evidence/journals";
+import { JOURNALS, isValidIssn, journalTier, normalizeIssn, normalizeJournal } from "@/lib/evidence/journals";
 
 describe("normalizeJournal", () => {
   it("strips PubMed subtitles, parallel titles, trailing parentheticals, articles and punctuation", () => {
@@ -204,5 +204,56 @@ describe("journalTier", () => {
         seen.set(key, e.tier);
       }
     }
+  });
+});
+
+describe("ISSN (I-05)", () => {
+  it("normalizeIssn принимает варианты записи, isValidIssn проверяет контрольную цифру", () => {
+    expect(normalizeIssn("0023852x")).toBe("0023-852X");
+    expect(normalizeIssn(" 1749-4486 ")).toBe("1749-4486");
+    expect(normalizeIssn("12345")).toBeNull();
+    expect(normalizeIssn(null)).toBeNull();
+    expect(isValidIssn("0023-852X")).toBe(true);
+    expect(isValidIssn("1469-493X")).toBe(true);
+    expect(isValidIssn("0023-8521")).toBe(false); // испорченная контрольная цифра
+    expect(isValidIssn("abcd-efgh")).toBe(false);
+  });
+
+  it("каждый ISSN справочника валиден и встречается ровно в одной записи", () => {
+    const seen = new Map<string, string>();
+    let total = 0;
+    for (const e of JOURNALS) {
+      for (const raw of e.issn ?? []) {
+        total++;
+        expect(isValidIssn(raw), `${e.names[0]}: ${raw}`).toBe(true);
+        const key = normalizeIssn(raw)!;
+        expect(seen.has(key), `${raw} и у «${seen.get(key)}», и у «${e.names[0]}»`).toBe(false);
+        seen.set(key, e.names[0]!);
+      }
+    }
+    // Справочник покрыт ISSN почти целиком; заметное падение — признак случайно стёртых данных.
+    expect(total).toBeGreaterThan(280);
+    expect(JOURNALS.filter((e) => e.issn?.length).length / JOURNALS.length).toBeGreaterThan(0.9);
+  });
+
+  it("ISSN сопоставляется независимо от написания названия и идёт раньше названия", () => {
+    expect(journalTier("Journal with a renamed title nobody knows", ["1531-4995"])).toBe(2); // Laryngoscope (eISSN)
+    expect(journalTier(null, ["0028-4793"])).toBe(1); // NEJM без названия
+    expect(journalTier("", ["1469493x"])).toBe(1); // Cochrane, ISSN без дефиса и в нижнем регистре
+    expect(journalTier("Cureus", ["2168-8184"])).toBe(3);
+    // Неизвестный ISSN не мешает сопоставлению по названию; мусор игнорируется
+    expect(journalTier("Laryngoscope", ["9999-9994", "not-an-issn"])).toBe(2);
+    expect(journalTier("Unknown Journal", ["9999-9994"])).toBe(0);
+  });
+
+  it("«хищнический» паттерн в названии не отбеливается чужим ISSN", () => {
+    expect(journalTier("Journal of Otolaryngology — OMICS International", ["0023-852X"])).toBe(-1);
+  });
+
+  it("классификатор передаёт ISSN записи в белый список", async () => {
+    const { classify } = await import("@/lib/evidence/classify");
+    const base = { title: "Tympanostomy tubes: a randomized controlled trial", abstract: "We randomized 200 children.", publicationTypes: ["Randomized Controlled Trial"], url: "https://x", sourceKey: "europepmc" as const };
+    expect(classify({ ...base, journal: "Renamed Laryngology Journal" }).journalTier).toBe(0);
+    expect(classify({ ...base, journal: "Renamed Laryngology Journal", issns: ["0023-852X"] }).journalTier).toBe(2);
   });
 });

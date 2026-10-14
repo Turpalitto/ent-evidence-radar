@@ -38,11 +38,12 @@ describe("mergeRaw", () => {
   });
 
   it("prefers the PubMed record and unions keywords", () => {
-    const epmc = raw({ sourceKey: "europepmc", title: "EPMC title", pmid: "1", keywords: ["a"] });
-    const pubmed = raw({ sourceKey: "pubmed", title: "PubMed title", pmid: "2", keywords: ["b"], meshTerms: ["M"] });
+    const epmc = raw({ sourceKey: "europepmc", title: "EPMC title", pmid: "1", keywords: ["a"], issns: ["1531-4995"] });
+    const pubmed = raw({ sourceKey: "pubmed", title: "PubMed title", pmid: "2", keywords: ["b"], meshTerms: ["M"], issns: ["0023-852X"] });
     const m = mergeRaw(epmc, pubmed);
     expect(m.sourceKey).toBe("pubmed");
     expect(m.title).toBe("PubMed title");
+    expect(m.issns).toEqual(["0023-852X", "1531-4995"]);
     expect(m.pmid).toBe("2");
     expect(m.keywords).toEqual(["b", "a"]);
     expect(m.meshTerms).toEqual(["M"]);

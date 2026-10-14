@@ -121,6 +121,8 @@ export const articles = pgTable(
     title: text("title").notNull(),
     abstract: text("abstract").notNull().default(""),
     journal: text("journal").notNull().default(""),
+    /** ISSN журнала из источника (печатный/электронный/ISSN-L) — сопоставление с белым списком при переклассификации (I-05). */
+    issns: jsonb("issns").$type<string[]>().notNull().default([]),
     authors: jsonb("authors").$type<string[]>().notNull().default([]),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     publicationTypes: jsonb("publication_types").$type<string[]>().notNull().default([]),

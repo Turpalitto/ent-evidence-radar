@@ -10,7 +10,7 @@ interface EpmcResult {
   title?: string;
   authorString?: string;
   journalTitle?: string;
-  journalInfo?: { journal?: { title?: string } };
+  journalInfo?: { journal?: { title?: string; issn?: string; essn?: string } };
   pubYear?: string;
   firstPublicationDate?: string;
   abstractText?: string;
@@ -70,6 +70,7 @@ export async function fetchEuropePmcQuery(topicQuery: string, days: number, maxR
     .map<RawArticle>((r) => {
       const isPreprint = r.source === "PPR";
       const journal = r.journalTitle ?? r.journalInfo?.journal?.title ?? (isPreprint ? "Preprint (Europe PMC)" : "");
+      const issns = [r.journalInfo?.journal?.issn, r.journalInfo?.journal?.essn].filter((x): x is string => !!x && /^\d{4}-?\d{3}[\dXx]$/.test(x)).map((x) => x.toUpperCase());
       const abstract = stripTags(r.abstractText);
       return {
         pmid: r.pmid ?? null,
@@ -79,6 +80,7 @@ export async function fetchEuropePmcQuery(topicQuery: string, days: number, maxR
         title: stripTags(r.title),
         abstract,
         journal,
+        issns,
         authors: (r.authorString ?? "").split(/,\s*/).filter(Boolean).slice(0, 30),
         publishedAt: r.firstPublicationDate ? new Date(r.firstPublicationDate) : r.pubYear ? new Date(`${r.pubYear}-01-01`) : null,
         publicationTypes: r.pubTypeList?.pubType ?? [],

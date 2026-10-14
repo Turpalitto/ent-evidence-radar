@@ -48,6 +48,7 @@ const FIXTURE = `<?xml version="1.0" ?>
       <Keyword MajorTopicYN="N">biofilm</Keyword>
       <Keyword MajorTopicYN="N"><i>Staphylococcus aureus</i></Keyword>
     </KeywordList>
+    <MedlineJournalInfo><Country>England</Country><MedlineTA>Clin Otolaryngol</MedlineTA><NlmUniqueID>101247023</NlmUniqueID><ISSNLinking>1749-4478</ISSNLinking></MedlineJournalInfo>
   </MedlineCitation>
   <PubmedData>
     <ArticleIdList>
@@ -112,6 +113,8 @@ describe("parsePubmedArticlesXml", () => {
 
   it("extracts journal, authors (incl. collective), language, publication types, MeSH and keywords", () => {
     expect(a.journal).toBe("Clinical otolaryngology");
+    // ISSN электронной версии из <Journal> и ISSN-L из <MedlineJournalInfo> (I-05)
+    expect(a.issns).toEqual(["1749-4486", "1749-4478"]);
     expect(a.authors).toEqual(["Ivanova A", "Smith JP", "ENT Biofilm Consortium"]);
     expect(a.language).toBe("eng");
     expect(a.publicationTypes).toEqual(["Journal Article", "Systematic Review", "Meta-Analysis"]);

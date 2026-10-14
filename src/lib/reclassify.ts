@@ -54,6 +54,7 @@ type Row = Pick<
   | "title"
   | "abstract"
   | "journal"
+  | "issns"
   | "authors"
   | "publishedAt"
   | "publicationTypes"
@@ -109,6 +110,7 @@ const ROW_COLUMNS = {
   title: articles.title,
   abstract: articles.abstract,
   journal: articles.journal,
+  issns: articles.issns,
   authors: articles.authors,
   publishedAt: articles.publishedAt,
   publicationTypes: articles.publicationTypes,
@@ -154,6 +156,7 @@ export function rowToRaw(row: Row): RawArticle {
     title: row.title,
     abstract: row.abstract,
     journal: row.journal,
+    issns: row.issns ?? [],
     authors: row.authors ?? [],
     publishedAt: row.publishedAt,
     publicationTypes: row.publicationTypes ?? [],

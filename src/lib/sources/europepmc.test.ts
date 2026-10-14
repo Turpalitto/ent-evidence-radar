@@ -22,7 +22,7 @@ const FIXTURE = {
         doi: "10.1002/lary.31234",
         title: "Intratympanic <i>versus</i> systemic steroids for sudden sensorineural hearing loss: a systematic review and meta-analysis",
         authorString: "Smith J, Ivanova A, Lee K, Müller R.",
-        journalInfo: { journal: { title: "The Laryngoscope", isoabbreviation: "Laryngoscope" } },
+        journalInfo: { journal: { title: "The Laryngoscope", isoabbreviation: "Laryngoscope", issn: "0023-852X", essn: "1531-4995" } },
         pubYear: "2026",
         firstPublicationDate: "2026-09-18",
         abstractText:
@@ -65,6 +65,7 @@ describe("fetchEuropePmc — разбор реального формата от
     expect(med.doi).toBe("10.1002/lary.31234");
     expect(med.pmcid).toBe("PMC11223344");
     expect(med.journal).toBe("The Laryngoscope");
+    expect(med.issns).toEqual(["0023-852X", "1531-4995"]);
     expect(med.authors).toEqual(["Smith J", "Ivanova A", "Lee K", "Müller R."]);
     expect(med.publishedAt?.toISOString().slice(0, 10)).toBe("2026-09-18");
     expect(med.publicationTypes).toContain("Systematic Review");
@@ -84,6 +85,7 @@ describe("fetchEuropePmc — разбор реального формата от
     expect(ppr.doi).toBe("10.1101/2026.09.20.26012345");
     expect(ppr.pmid).toBeNull();
     expect(ppr.journal).toBe("Preprint (Europe PMC)");
+    expect(ppr.issns).toEqual([]);
     expect(ppr.url).toBe("https://doi.org/10.1101/2026.09.20.26012345");
     const bare = items.find((a) => a.title === "Entry without identifiers")!;
     expect(bare.url).toBe("https://europepmc.org/article/CBA/CBA7777");

@@ -130,6 +130,14 @@ export function parsePubmedArticlesXml(xml: string): RawArticle[] {
         .trim();
 
       const journal = stripTags(textOf((article.Journal as AnyObj)?.Title));
+      // ISSN журнала (<Journal><ISSN IssnType="…">) и ISSN-L (<MedlineJournalInfo><ISSNLinking>) — для белого списка.
+      const issns = Array.from(
+        new Set(
+          [...toArray((article.Journal as AnyObj)?.ISSN as AnyObj | AnyObj[] | string), (citation.MedlineJournalInfo as AnyObj)?.ISSNLinking]
+            .map((n) => textOf(n).trim().toUpperCase())
+            .filter((x) => /^\d{4}-?\d{3}[\dX]$/.test(x)),
+        ),
+      );
       const authors = toArray(((article.AuthorList as AnyObj)?.Author as unknown) as AnyObj | AnyObj[])
         .map((a) => {
           const last = textOf(a.LastName);
@@ -177,6 +185,7 @@ export function parsePubmedArticlesXml(xml: string): RawArticle[] {
         title,
         abstract,
         journal,
+        issns,
         authors,
         publishedAt: parseDate(article),
         publicationTypes: pubTypes,
