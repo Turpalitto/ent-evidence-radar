@@ -195,6 +195,106 @@ describe("<Feed /> офлайн (A-15)", () => {
     expect(banner).toHaveTextContent(/сохранённая .*13 окт/);
   });
 
+  it("горячие клавиши: j/k двигают фокус, b и r шлют PATCH по сфокусированной карточке, Enter открывает, ? — справка, Escape закрывает", async () => {
+    const user = userEvent.setup();
+    const { calls } = setup();
+    await findTitle("Tympanostomy tubes versus watchful waiting");
+    const cards = () => screen.getAllByRole("listitem").filter((li) => li.getAttribute("aria-label"));
+    const focused = (c: HTMLElement) => c.classList.contains("ring-2"); // focus-visible:ring-2 есть всегда — проверяем сам токен
+    expect(cards().some(focused)).toBe(false);
+
+    await user.keyboard("j");
+    expect(focused(cards()[0]!)).toBe(true);
+    await user.keyboard("j");
+    expect(focused(cards()[1]!)).toBe(true);
+    expect(focused(cards()[0]!)).toBe(false);
+    await user.keyboard("k");
+    expect(focused(cards()[0]!)).toBe(true);
+
+    await user.keyboard("b");
+    await waitFor(() => expect(calls.some((c) => c.init?.method === "PATCH" && c.url.pathname === "/api/articles/1")).toBe(true));
+    expect(JSON.parse(String(calls.find((c) => c.init?.method === "PATCH")!.init?.body))).toEqual({ isBookmarked: true });
+    await user.keyboard("r");
+    await waitFor(() => expect(calls.filter((c) => c.init?.method === "PATCH" && c.url.pathname === "/api/articles/1")).toHaveLength(2));
+    expect(JSON.parse(String(calls.filter((c) => c.init?.method === "PATCH").at(-1)!.init?.body))).toEqual({ isRead: true });
+
+    await user.keyboard("{Enter}");
+    const drawer = (await screen.findAllByRole("dialog")).at(-1)!;
+    expect(drawer).toHaveTextContent("Tympanostomy tubes versus watchful waiting");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Tympanostomy tubes versus watchful waiting" })).toBeNull());
+
+    await user.keyboard("?");
+    expect(await screen.findByRole("dialog", { name: "Горячие клавиши" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Горячие клавиши" })).toBeNull());
+
+    // В поле ввода клавиши — обычный текст, фокус карточек не двигается и PATCH не уходит.
+    const patchCount = calls.filter((c) => c.init?.method === "PATCH").length;
+    await user.click(screen.getByRole("searchbox"));
+    await user.keyboard("jb");
+    expect(calls.filter((c) => c.init?.method === "PATCH")).toHaveLength(patchCount);
+  });
+
+  it("пагинация: при total > pageSize появляются «Назад/Вперёд», переход запрашивает page=2 и пишет его в URL", async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 35 }, (_, i) => makeArticle({ id: 100 + i, title: `Paged article ${i + 1}`, isRead: true }));
+    const { fn, calls } = mockFetch({
+      "GET /api/ai": () => ({ configured: false }),
+      "GET /api/articles": (url) => {
+        const page = Number(url.searchParams.get("page") ?? 1);
+        const size = Number(url.searchParams.get("pageSize") ?? 30);
+        return { items: many.slice((page - 1) * size, page * size), total: many.length, page, pageSize: size, searchTerms: [] };
+      },
+    });
+    vi.stubGlobal("fetch", fn);
+    render(<Feed topics={TOPICS} />);
+    await findTitle("Paged article 1");
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    const back = screen.getByRole("button", { name: /Назад/ });
+    expect(back).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /Вперёд/ }));
+    await findTitle("Paged article 31");
+    expect(seen("Paged article 1")).toBe(false);
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Вперёд/ })).toBeDisabled();
+    const last = calls.filter((c) => c.url.pathname === "/api/articles").at(-1)!;
+    expect(last.url.searchParams.get("page")).toBe("2");
+    expect(new URLSearchParams(window.location.search).get("page")).toBe("2");
+  });
+
+  it("ошибка сервера: показывает сообщение с кодом и кнопку «Повторить», повтор загружает ленту", async () => {
+    const user = userEvent.setup();
+    let fail = true;
+    const { fn } = mockFetch({
+      "GET /api/ai": () => ({ configured: false }),
+      "GET /api/articles": () => (fail ? new Response("boom", { status: 503 }) : { items: ARTICLES, total: ARTICLES.length, page: 1, pageSize: 30, searchTerms: [] }),
+    });
+    vi.stubGlobal("fetch", fn);
+    render(<Feed topics={TOPICS} />);
+    expect(await screen.findByText("Не удалось загрузить ленту")).toBeInTheDocument();
+    expect(screen.getByText(/Ошибка сервера 503/)).toBeInTheDocument();
+    fail = false;
+    await user.click(screen.getByRole("button", { name: "Повторить" }));
+    await findTitle("Tympanostomy tubes versus watchful waiting");
+    expect(screen.queryByText("Не удалось загрузить ленту")).toBeNull();
+  });
+
+  it("быстрые действия на карточке: ★ и ✓ шлют PATCH и не открывают карточку", async () => {
+    const user = userEvent.setup();
+    const { calls } = setup();
+    await findTitle("Tympanostomy tubes versus watchful waiting");
+    const card = screen.getAllByRole("listitem").find((li) => li.getAttribute("aria-label") === "Dupilumab for nasal polyps")!;
+    await user.click(within(card).getAllByTitle("Избранное (b)")[0]!);
+    await waitFor(() => expect(calls.some((c) => c.init?.method === "PATCH" && c.url.pathname === "/api/articles/2")).toBe(true));
+    expect(JSON.parse(String(calls.find((c) => c.url.pathname === "/api/articles/2")!.init?.body))).toEqual({ isBookmarked: true });
+    await waitFor(() => expect(within(card).getAllByTitle("Избранное (b)")[0]).toHaveTextContent("★"));
+    await user.click(within(card).getAllByTitle("Прочитано (r)")[0]!);
+    await waitFor(() => expect(calls.filter((c) => c.url.pathname === "/api/articles/2")).toHaveLength(2));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("при потере сети показывает «Нет соединения», при восстановлении — скрывает", async () => {
     setup();
     await findTitle("Tympanostomy tubes versus watchful waiting");

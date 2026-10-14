@@ -10,69 +10,33 @@ export async function register() {
   const { installSignalHandlers, onShutdown, isShuttingDown, SHUTDOWN_ORDER } = await import("@/lib/shutdown");
   const { lastBackupAt, writeBackupToFile } = await import("@/lib/backup");
   const { maybeSendScheduledDigest } = await import("@/lib/digest-schedule");
+  const { createScheduler, parseAutoBackupHours } = await import("@/lib/scheduler");
   const { log } = await import("@/lib/log");
   const { db } = await import("@/db");
   const { fetchRuns } = await import("@/db/schema");
   const { desc } = await import("drizzle-orm");
 
-  // Автобэкап пользовательских данных (A-02): раз в AUTO_BACKUP_HOURS (по умолчанию 24; 0 — выключить).
-  const autoBackupHours = (() => {
-    const n = Number(process.env.AUTO_BACKUP_HOURS ?? 24);
-    return Number.isFinite(n) && n >= 0 ? n : 24;
-  })();
-  let backupCheckedAt = 0;
-  const maybeBackup = async () => {
-    if (!autoBackupHours) return;
-    // Проверяем диск не чаще раза в 10 минут — дёшево, но не на каждый тик.
-    if (Date.now() - backupCheckedAt < 10 * 60_000) return;
-    backupCheckedAt = Date.now();
-    const last = await lastBackupAt();
-    if (last && Date.now() - last.getTime() < autoBackupHours * 3_600_000) return;
-    const file = await writeBackupToFile();
-    log.info("backup.auto_written", { file });
-  };
-
-  // Тики не должны накладываться: долгий refresh внутри тика иначе породил бы параллельные
-  // проверки бэкапа/дайджеста. Пропущенный тик ничего не теряет — следующий через минуту.
-  let inTick = false;
-  const tick = async () => {
-    if (inTick || isShuttingDown()) return;
-    inTick = true;
-    g.__entRadarSchedulerLastTick = Date.now();
-    try {
-      await tickBody();
-    } finally {
-      inTick = false;
-    }
-  };
-  const tickBody = async () => {
-    try {
-      const cfg = await getSettings();
-      if (cfg.autoRefreshEnabled && !isRefreshRunning()) {
-        const last = await db.select({ startedAt: fetchRuns.startedAt }).from(fetchRuns).orderBy(desc(fetchRuns.startedAt)).limit(1);
-        const lastAt = last[0]?.startedAt?.getTime() ?? 0;
-        const due = Date.now() - lastAt >= cfg.refreshIntervalMinutes * 60_000;
-        if (due) {
-          log.info("scheduler.refresh_started");
-          const r = await runRefreshSafe("scheduled");
-          log.info("scheduler.refresh_finished", { runId: r.runId, skipped: r.skipped ?? false });
-        }
-      }
-    } catch (e) {
-      log.error("scheduler.tick_failed", { error: e instanceof Error ? e.message : String(e) });
-    }
-    try {
-      await maybeBackup();
-    } catch (e) {
-      log.error("backup.auto_failed", { error: e instanceof Error ? e.message : String(e) });
-    }
-    // Email-дайджест по расписанию из настроек (A-09).
-    try {
-      await maybeSendScheduledDigest(await getSettings());
-    } catch (e) {
-      log.error("digest.scheduled_failed", { error: e instanceof Error ? e.message : String(e) });
-    }
-  };
+  // Логика тика — в `src/lib/scheduler.ts` (чистая, с тестами); здесь только связывание зависимостей.
+  const scheduler = createScheduler({
+    getSettings,
+    isRefreshRunning,
+    lastRunStartedAt: async () => {
+      const last = await db.select({ startedAt: fetchRuns.startedAt }).from(fetchRuns).orderBy(desc(fetchRuns.startedAt)).limit(1);
+      return last[0]?.startedAt?.getTime() ?? 0;
+    },
+    runRefresh: runRefreshSafe,
+    lastBackupAt: () => lastBackupAt(),
+    writeBackup: () => writeBackupToFile(),
+    sendScheduledDigest: (cfg) => maybeSendScheduledDigest(cfg),
+    isShuttingDown,
+    log,
+    // Автобэкап пользовательских данных (A-02): раз в AUTO_BACKUP_HOURS (по умолчанию 24; 0 — выключить).
+    autoBackupHours: parseAutoBackupHours(process.env.AUTO_BACKUP_HOURS),
+    onTick: (at) => {
+      g.__entRadarSchedulerLastTick = at;
+    },
+  });
+  const tick = () => scheduler.tick();
 
   // Первичная инициализация справочников + первый тик через 20 с после старта, затем каждую минуту проверяем «пора ли».
   setTimeout(async () => {
@@ -94,7 +58,8 @@ export async function register() {
     }
 
     await tick();
-    const timer = setInterval(tick, 60_000);
+    const timer = setInterval(() => void tick(), 60_000);
+    timer.unref?.(); // таймер не должен удерживать процесс, если HTTP-сервер уже закрыт
     onShutdown("scheduler", () => clearInterval(timer), SHUTDOWN_ORDER.scheduler);
   }, 20_000);
 

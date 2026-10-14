@@ -10,4 +10,6 @@ if (typeof document !== "undefined") {
   afterEach(() => {
     cleanup();
   });
+  // jsdom не реализует прокрутку: лента вызывает scrollIntoView у сфокусированной карточки.
+  if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
 }

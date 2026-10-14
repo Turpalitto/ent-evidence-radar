@@ -28,7 +28,7 @@
 | Каталог | Назначение |
 | --- | --- |
 | `src/app/` | страницы (`/`, `/settings`, `/login`, `/stats`, `/runs`, `/topics`), REST API `src/app/api/**/route.ts`, Atom `feed.xml`, `sitemap`, `og.png` |
-| `src/components/` | клиентские компоненты: `Feed` (лента: загрузка, URL-состояние, горячие клавиши, pull-to-refresh) с подпапкой `feed/` — `filters.ts` (чистая логика фильтров: сериализация в URL, пресеты, ссылка Atom), `FilterSidebar`, `ArticleCard`, `ShortcutsModal`, `hooks.ts`; `ArticleDrawer` (карточка: состояние, жесты, фокус) с подпапкой `drawer/` — `sse.ts` (поток ИИ), `consilium.ts`, `AbstractSection`, `EvidenceSections`, `OverridesEditor`, `RelatedArticles` (карточка, ИИ, правки, цитаты), `SettingsPanel`, `RefreshButton`, `ServiceWorkerRegistrar` (офлайн-режим, см. § 6a) |
+| `src/components/` | клиентские компоненты: `Feed` (лента: загрузка, URL-состояние, горячие клавиши, pull-to-refresh) с подпапкой `feed/` — `filters.ts` (чистая логика фильтров: сериализация в URL, пресеты, ссылка Atom), `FilterSidebar`, `ArticleCard`, `ShortcutsModal`, `hooks.ts`; `ArticleDrawer` (карточка: состояние, жесты, фокус) с подпапкой `drawer/` — `sse.ts` (поток ИИ), `consilium.ts`, `AbstractSection`, `EvidenceSections`, `OverridesEditor`, `RelatedArticles` (карточка, ИИ, правки, цитаты); `SettingsPanel` (загрузка, тост, сохранение, источники) с подпапкой `settings/` — `Section`, `DigestSection`, `BackupSection`, `DiagnosticsSection`, `format.ts`; `RefreshButton`, `ServiceWorkerRegistrar` (офлайн-режим, см. § 6a) |
 | `src/db/` | `index.ts` — выбор движка и миграции при старте; `schema.ts` — единственный источник правды о таблицах |
 | `src/lib/evidence/` | чистое ядро без I/O: `classify.ts` (дизайн, уровень, доверие, нормализация идентификаторов, ключ дедупликации), `journals.ts` (белый список журналов по tier + список сомнительных издательств), `guidelines.ts` (органы-издатели руководств), `taxonomy.ts` (метки) |
 | `src/lib/sources/` | адаптеры источников: `pubmed`, `europepmc`, `clinicaltrials`, `medrxiv`; `crossref` (редакционные уведомления по DOI); общий `http.ts` (таймауты, повторы, `Retry-After`, метрики) |
@@ -42,7 +42,7 @@
 | `src/lib/ai.ts` | ИИ-резюме/перевод: семафор, суточный бюджет в БД, LRU-кэш, стриминг с таймаутами |
 | `src/lib/backup.ts`, `digest.ts`, `digest-schedule.ts`, `mailer.ts`, `alerts.ts` | резервные копии и восстановление-слияние; письмо-дайджест и его расписание; SMTP; алерты о сбоях |
 | `src/lib/diagnostics.ts`, `metrics.ts`, `log.ts` | экран диагностики, внутрипроцессные счётчики, JSON-логи с `requestId` |
-| `src/instrumentation.ts` | планировщик долгоживущего процесса (тик раз в минуту) |
+| `src/instrumentation.ts`, `src/lib/scheduler.ts` | планировщик долгоживущего процесса: связывание зависимостей и таймер — в `instrumentation`, логика тика (`createScheduler`) — чистая фабрика с тестами |
 | `src/proxy.ts` | CSP с nonce, `x-request-id` (конвенция Next 16: `proxy` вместо `middleware`) |
 | `scripts/migrate.mjs` | отдельный запуск миграций (`npm run db:migrate`) с advisory-lock и pre-migration снимком |
 
@@ -164,11 +164,13 @@ included» → контекст даты игнорируется) и диапа
 
 Отдельный btree по `is_hidden = false` не нужен: это почти все строки, планировщик идёт по индексу сортировки и фильтрует.
 
-## 6. Планировщик (`src/instrumentation.ts`)
+## 6. Планировщик (`src/instrumentation.ts` + `src/lib/scheduler.ts`)
 
-Один `setInterval` 60 с в долгоживущем процессе (`unref`): восстановление зависших запусков →
-автообновление, если прошло `refreshIntervalMinutes` → автобэкап раз в `AUTO_BACKUP_HOURS` →
-дайджест (`isDigestDue`). На serverless планировщик не живёт — внешний cron вызывает `POST /api/refresh`
+Один `setInterval` 60 с в долгоживущем процессе (`unref`): при старте — восстановление зависших запусков,
+затем каждый тик (`createScheduler(deps).tick()`): автообновление, если прошло `refreshIntervalMinutes` →
+автобэкап раз в `AUTO_BACKUP_HOURS` (каталог проверяется не чаще раза в 10 мин) → дайджест (`isDigestDue`).
+Тики не накладываются, сбой одного этапа не мешает остальным, после `isShuttingDown()` тики не стартуют —
+эти инварианты закреплены в `scheduler.test.ts` (зависимости и часы инъецируются). На serverless планировщик не живёт — внешний cron вызывает `POST /api/refresh`
 (см. `.github/workflows/refresh.yml`). Состояние планировщика видно в `/api/health` и диагностике.
 
 ## 6a. Офлайн-режим: service worker (`public/sw.js`)
