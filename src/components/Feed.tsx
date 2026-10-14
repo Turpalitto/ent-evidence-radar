@@ -72,6 +72,33 @@ const initial: Filters = {
 
 const THIS_YEAR = new Date().getFullYear();
 
+/** Сохранённые пользователем фильтры (I-14). Только клиент: localStorage. */
+interface UserPreset {
+  name: string;
+  f: Filters;
+}
+const USER_PRESETS_KEY = "ent-radar:filter-presets:v1";
+function loadUserPresets(): UserPreset[] {
+  try {
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(USER_PRESETS_KEY) : null;
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((p): p is UserPreset => !!p && typeof p === "object" && typeof (p as UserPreset).name === "string" && !!(p as UserPreset).f)
+      .map((p) => ({ name: p.name.slice(0, 40), f: { ...initial, ...p.f } }))
+      .slice(0, 12);
+  } catch {
+    return [];
+  }
+}
+function persistUserPresets(list: UserPreset[]) {
+  try {
+    window.localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(list));
+  } catch {
+    /* приватный режим / квота — пресеты просто не сохранятся */
+  }
+}
+
 const PRESETS: { label: string; f: Partial<Filters>; hint: string }[] = [
   { label: "⚡ Изменит практику", f: { level: "2", minTrust: 70, sort: "trust" }, hint: "СО/МА, руководства и РКИ с высоким доверием (≥70)" },
   { label: "Только высший уровень", f: { level: "1", minTrust: 60 }, hint: "СО/МА и руководства, доверие ≥60" },
@@ -152,6 +179,13 @@ const SELECT_CLS = "field w-full rounded-xl px-2.5 py-1.5 text-sm text-[color:va
 const GHOST_BTN = "btn-ghost rounded-xl px-3 py-2.5 text-sm font-medium";
 
 export function Feed({ topics }: { topics: Topic[] }) {
+  const topicNameById = useMemo(() => new Map(topics.map((t) => [t.id, t.name])), [topics]);
+  /** «Почему статья в ленте»: названия тем, по запросам которых она пришла (I-14). */
+  const topicNames = (a: Article) => {
+    const names = (a.topicIds ?? []).map((id) => topicNameById.get(id)).filter((x): x is string => !!x);
+    if (!names.length) return "";
+    return names.length > 2 ? `${names.slice(0, 2).join(", ")} +${names.length - 2}` : names.join(", ");
+  };
   const [f, setF] = useState<Filters>(initial);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -338,6 +372,25 @@ export function Feed({ topics }: { topics: Topic[] }) {
     setPage(1);
     setFocusedIdx(-1);
   };
+
+  // ── Пользовательские пресеты фильтров (I-14), localStorage
+  const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
+  useEffect(() => {
+    const t = setTimeout(() => setUserPresets(loadUserPresets()), 0);
+    return () => clearTimeout(t);
+  }, []);
+  const saveUserPreset = () => {
+    const name = window.prompt("Название пресета (например, «Ринология: СО/МА за год»)")?.trim().slice(0, 40);
+    if (!name) return;
+    const next = [...userPresets.filter((p) => p.name !== name), { name, f }].slice(-12);
+    setUserPresets(next);
+    persistUserPresets(next);
+  };
+  const removeUserPreset = (name: string) => {
+    const next = userPresets.filter((p) => p.name !== name);
+    setUserPresets(next);
+    persistUserPresets(next);
+  };
   const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
   const exportParams = useMemo(() => toParams(f, 1, 2000), [f]);
 
@@ -366,6 +419,14 @@ export function Feed({ topics }: { topics: Topic[] }) {
   const onUpdate = (a: Article) => {
     setSelected(a);
     setData((d) => ({ ...d, items: d.items.map((x) => (x.id === a.id ? a : x)) }));
+  };
+
+  // I-14: отметить всю текущую страницу прочитанной одним запросом.
+  const markPageRead = async () => {
+    const ids = data.items.filter((a) => !a.isRead).map((a) => a.id);
+    if (!ids.length) return;
+    const r = await fetch("/api/articles/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, isRead: true }) });
+    if (r.ok) setData((d) => ({ ...d, items: d.items.map((x) => (ids.includes(x.id) ? { ...x, isRead: true } : x)) }));
   };
 
   const quickToggle = async (a: Article, patch: Partial<Article>) => {
@@ -475,6 +536,27 @@ export function Feed({ topics }: { topics: Topic[] }) {
               {p.label}
             </button>
           ))}
+        </div>
+        {/* Пользовательские пресеты (I-14): хранятся в localStorage этого браузера */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {userPresets.map((p) => (
+            <span key={p.name} className="inline-flex items-center overflow-hidden rounded-full border border-[color:var(--hairline)]">
+              <button
+                type="button"
+                title={`Применить сохранённый фильтр «${p.name}»`}
+                onClick={() => { reset(); set(p.f); setQ(p.f.q ?? ""); }}
+                className={`px-2.5 py-1 text-xs transition ${presetActive(p.f) ? "bg-[color:var(--brand-soft)] font-semibold text-[color:var(--brand-ink)]" : "hover:text-[color:var(--brand-ink)]"}`}
+              >
+                ★ {p.name}
+              </button>
+              <button type="button" aria-label={`Удалить пресет ${p.name}`} title="Удалить пресет" onClick={() => removeUserPreset(p.name)} className="px-1.5 py-1 text-xs text-[color:var(--ink-subtle)] hover:text-rose-600">×</button>
+            </span>
+          ))}
+          {activeCount > 0 && (
+            <button type="button" onClick={saveUserPreset} className="chip text-xs hover:border-[color:var(--brand-ring)] hover:text-[color:var(--brand-ink)]" title="Сохранить текущие фильтры как свой пресет (в этом браузере)">
+              + Сохранить фильтр
+            </button>
+          )}
         </div>
       </div>
 
@@ -702,6 +784,17 @@ export function Feed({ topics }: { topics: Topic[] }) {
             <span>{notifyPerm === "granted" ? "🔔" : "🔕"}</span>
             <span>{notifyPerm === "granted" ? "Уведомления" : "Оповещения"}</span>
           </button>
+          {data.items.some((a) => !a.isRead) && (
+            <button
+              type="button"
+              onClick={() => void markPageRead()}
+              className="btn-ghost hidden items-center gap-1.5 rounded-xl px-3 py-2.5 text-xs font-medium md:inline-flex"
+              title="Отметить все статьи на этой странице прочитанными"
+            >
+              <span>✓✓</span>
+              <span>Страницу прочитано</span>
+            </button>
+          )}
           <span className="ml-auto shrink-0 pl-1 text-xs font-medium tabular-nums text-[color:var(--ink-muted)]">
             {loading ? "…" : `${data.total.toLocaleString("ru-RU")} ст.`}
           </span>
@@ -851,6 +944,11 @@ export function Feed({ topics }: { topics: Topic[] }) {
                       <span>{formatDate(a.publishedAt)}</span>
                       {a.authors.length > 0 && <span className="truncate">{a.authors.slice(0, 3).join(", ")}{a.authors.length > 3 ? " и др." : ""}</span>}
                       {a.sampleSize && <span>n≈{a.sampleSize}</span>}
+                      {topicNames(a) && (
+                        <span className="truncate text-[color:var(--ink-subtle)]" title={`Почему в ленте: темы — ${topicNames(a)}; источники — ${a.sourceKeys.join(", ")}`}>
+                          · {topicNames(a)}
+                        </span>
+                      )}
                       <span className="ml-auto flex gap-1">
                         <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isBookmarked: !a.isBookmarked }); }} className={`rounded-md px-1.5 py-0.5 transition ${a.isBookmarked ? "text-amber-600 dark:text-amber-400" : "text-[color:var(--ink-subtle)] hover:text-amber-600 dark:hover:text-amber-400"}`} title="Избранное (b)">{a.isBookmarked ? "★" : "☆"}</button>
                         <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isRead: !a.isRead }); }} className="rounded-md px-1.5 py-0.5 text-[color:var(--ink-subtle)] transition hover:text-[color:var(--brand-ink)]" title={a.isRead ? "Непрочитанным (r)" : "Прочитано (r)"}>{a.isRead ? "↺" : "✓"}</button>
