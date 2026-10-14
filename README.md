@@ -138,6 +138,8 @@ docker compose up -d --build
 
 `instrumentation.ts` планирует автообновление внутри процесса — подходит для VPS/свой сервер. Запускайте с `NEXT_MANUAL_SIG_HANDLE=true`, чтобы остановка по SIGTERM корректно закрывала PGlite и снимала блокировку обновления (см. «Надёжность», п. 10).
 
+Если разворачиваете standalone-сборку вручную (без Docker): `npm run build`, затем рядом с `.next/standalone/server.js` должны лежать `.next/static`, `public/` (service worker, шрифты, og.png) и `drizzle/` — Next.js их в standalone не копирует. После старта прогоните `npm run smoke -- http://127.0.0.1:3000 --secret "$API_SECRET"` — он проверит в том числе, что статика на месте.
+
 ### Serverless (Vercel) — внешний cron
 
 `instrumentation` на serverless не жить. Используйте внешний расписатель — cron, GitHub Actions (`/.github/workflows/refresh.yml`) — который вызывает готовый эндпоинт:
