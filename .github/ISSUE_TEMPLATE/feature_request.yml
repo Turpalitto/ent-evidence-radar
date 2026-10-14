@@ -1,0 +1,22 @@
+name: Предложение
+description: Новая возможность или улучшение существующей
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу это решает
+      description: Клинический или рабочий сценарий, в котором сейчас неудобно.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предлагаемое решение
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы
+      description: Что уже пробовали или чем можно обойтись сейчас.

@@ -156,6 +156,11 @@ components:
       headers:
         Retry-After: { schema: { type: integer } }
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotModified:
+      description: "Копия клиента актуальна (If-None-Match / If-Modified-Since совпали); тело пустое, валидаторы кэша повторены"
+      headers:
+        ETag: { schema: { type: string } }
+        Cache-Control: { schema: { type: string } }
   schemas:
     Error:
       type: object
@@ -415,8 +420,12 @@ paths:
         - $ref: "#/components/parameters/ArticleFilters_pageSize"
       responses:
         "200":
-          description: Страница результатов
+          description: "Страница результатов; заголовок ETag — для условных повторных запросов"
+          headers:
+            ETag: { schema: { type: string } }
           content: { application/json: { schema: { $ref: "#/components/schemas/ArticleList" } } }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/articles/{id}:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:
@@ -485,6 +494,9 @@ paths:
                 type: object
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/Article" } }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /api/articles/bulk:
     post:
       tags: [articles]
@@ -1073,4 +1085,11 @@ paths:
         - $ref: "#/components/parameters/ArticleFilters_topicId"
         - $ref: "#/components/parameters/ArticleFilters_excludePreprints"
       responses:
-        "200": { description: OK, content: { application/atom+xml: { schema: { type: string } } } }
+        "200":
+          description: "Atom-лента; ETag и Last-Modified — для условных запросов читалок"
+          headers:
+            ETag: { schema: { type: string } }
+            Last-Modified: { schema: { type: string } }
+          content: { application/atom+xml: { schema: { type: string } } }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }

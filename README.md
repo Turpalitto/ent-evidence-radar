@@ -73,7 +73,8 @@ npm run dev
 | `npm run build` / `npm start` | Продакшн-сборка/запуск |
 | `npm run typecheck` | Проверка типов TS (`tsc --noEmit`) |
 | `npm run lint` | ESLint (Next core-web-vitals) |
-| `npm test` | Vitest — юнит-тесты |
+| `npm test` | Vitest — юнит-, интеграционные (PGlite) и компонентные тесты |
+| `npm run check` | Всё, что гоняет CI до сборки: ESLint → `tsc --noEmit` → `drizzle-kit check` → Vitest. Запускайте перед PR |
 | `npm run db:generate` | Генерация миграций Drizzle (`drizzle.config.ts`, `DATABASE_URL` нужен только для `push`/`migrate`) |
 | `npm run db:check` | Проверка согласованности миграций и снапшотов Drizzle (выполняется в CI) |
 | `npm run db:migrate` | Применить миграции отдельным шагом (PostgreSQL по `DATABASE_URL` под advisory-lock или файловый PGlite `./.pglite`); перед новыми миграциями пишет снимок пользовательских данных в `BACKUP_DIR` |
@@ -102,7 +103,7 @@ src/
 **Надёжность:** DB-лок `lock_refresh` в `settings` (+ внутрипроцессный мутекс) — без параллельных запусков даже между инстансами; изоляция сбоев источников (одна ошибка не обрывает весь запуск); уважение rate-limit NCBI; идемпотентный посев (`ensureSeeded`).
 
 **Публичные интерфейсы и SEO:**
-- `/feed.xml` — **Atom-лента** 60 последних публикаций: можно подписаться на радар из любой RSS/Atom-читалки. Ссылка объявлена в `<head>` всех страниц (`rel="alternate"`). Лента принимает те же фильтры, что и `/api/articles` (`?subspecialty=rhinology&design=rct&minTrust=70`, `?topicId=3`, `?q=tinnitus`…) — это **подписка на сохранённый поиск**: заголовок ленты описывает фильтры, ссылка «RSS для этого фильтра» есть в боковой панели. Персональные флаги (закладки, прочитано, скрытые) в публичную ленту не попадают.
+- `/feed.xml` — **Atom-лента** 60 последних публикаций: можно подписаться на радар из любой RSS/Atom-читалки. Ссылка объявлена в `<head>` всех страниц (`rel="alternate"`). Лента принимает те же фильтры, что и `/api/articles` (`?subspecialty=rhinology&design=rct&minTrust=70`, `?topicId=3`, `?q=tinnitus`…) — это **подписка на сохранённый поиск**: заголовок ленты описывает фильтры, ссылка «RSS для этого фильтра» есть в боковой панели. Персональные флаги (закладки, прочитано, скрытые) в публичную ленту не попадают. Ответ несёт `ETag` и `Last-Modified`: читалка, приславшая `If-None-Match`/`If-Modified-Since`, получает `304` без тела, пока сбор ничего не добавил; `/api/articles` тоже отвечает `ETag`/`304`. Публичные читающие маршруты прикрыты мягким rate-limit (см. `SECURITY.md`).
 - `/sitemap.xml`, `/robots.txt` — для поисковых систем (API исключён из индексации).
 - `/og.png` — брендовая карточка 1200×630 для превью ссылок (OpenGraph/Twitter).
 - У каждой страницы свои `title`, `description`, `canonical` и `og:*` (см. `src/lib/metadata.ts`).
@@ -181,6 +182,7 @@ curl https://<ваш-домен>/api/runs/123   # → {"ok":true,"run":{...,"sta
 - `docs/openapi.yaml` — OpenAPI 3.1 для всех маршрутов `/api/*` (можно открыть в Swagger UI / Redocly / Insomnia).
 - `SECURITY.md` — модель угроз, сессии и секреты, чек-лист безопасного развёртывания, как сообщить об уязвимости.
 - `CHANGELOG.md` — история изменений; `docs/AUDIT_REPORT.md` — аудит и статус исправлений.
+- `CONTRIBUTING.md` — как устроена разработка: ветки и коммиты, чек-лист PR, миграции (`db:generate`, `CLASSIFIER_VERSION`), как добавить источник/дизайн/эндпоинт, тестовые соглашения.
 
 ## Тесты и CI
 

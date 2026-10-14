@@ -14,7 +14,8 @@
     "db:generate": "drizzle-kit generate",
     "test": "vitest run",
     "db:check": "drizzle-kit check",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "check": "npm run lint && npm run typecheck && npm run db:check && npm test"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.3.11",

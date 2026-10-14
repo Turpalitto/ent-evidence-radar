@@ -33,6 +33,7 @@
 | `src/lib/evidence/` | чистое ядро без I/O: `classify.ts` (дизайн, уровень, доверие, нормализация идентификаторов, ключ дедупликации), `journals.ts` (белый список журналов по tier + список сомнительных издательств), `guidelines.ts` (органы-издатели руководств), `taxonomy.ts` (метки) |
 | `src/lib/sources/` | адаптеры источников: `pubmed`, `europepmc`, `clinicaltrials`, `medrxiv`; `crossref` (редакционные уведомления по DOI); общий `http.ts` (таймауты, повторы, `Retry-After`, метрики) |
 | `src/lib/refresh.ts` | оркестрация обновления, DB-лок, восстановление зависших запусков |
+| `src/lib/public-api.ts` | публичные read-маршруты: ETag/`If-None-Match`, `Last-Modified`/`If-Modified-Since` → 304; мягкий rate-limit (сессия → токен → IP) |
 | `src/lib/trials.ts` | отслеживание сохранённых КИ по NCT: статусы, результаты, история событий (`trial_info`), всплытие изменений в ленте |
 | `src/lib/retraction.ts`, `reclassify.ts` | пост-обработка после обновления: перепроверка отзывов в PubMed (по PMID) и в Crossref (по DOI: отзыв, withdrawal, expression of concern, исправление → `editorial_notice`); переразметка записей со старой `classifier_version` |
 | `src/lib/queries.ts`, `search.ts`, `filters.ts` | выборка статей: разбор фильтров, RU↔EN синонимы, FTS-запрос, пагинация |

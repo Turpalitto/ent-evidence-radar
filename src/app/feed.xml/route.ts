@@ -7,6 +7,7 @@ import { siteBaseUrl } from "@/lib/site";
 import { DESIGN_LABELS, SOURCE_LABELS } from "@/lib/evidence/taxonomy";
 import { listArticles } from "@/lib/queries";
 import { FEED_PARAMS, describeFeedFilters, feedFilters } from "@/lib/feed";
+import { FEED_LIMIT, conditionalResponse, publicRateLimit } from "@/lib/public-api";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,8 @@ function esc(value: string): string {
  * на сохранённый поиск: ссылку «RSS для этого фильтра» даёт боковая панель ленты.
  */
 export async function GET(req: NextRequest) {
+  const limited = publicRateLimit(req, "feed", FEED_LIMIT);
+  if (limited) return limited;
   await ensureSeeded();
   const base = siteBaseUrl();
 
@@ -44,7 +47,8 @@ export async function GET(req: NextRequest) {
   const htmlUrl = `${base}/${selfQuery ? `?${selfQuery}` : ""}`;
   const title = filterParts.length ? `ENT Evidence Radar — ${filterParts.join(" · ")}` : "ENT Evidence Radar — лента доказательных публикаций";
 
-  const feedUpdated = (rows[0]?.fetchedAt ?? new Date()).toISOString();
+  const lastModified = rows[0]?.fetchedAt ?? null;
+  const feedUpdated = (lastModified ?? new Date()).toISOString();
 
   const entries = rows
     .map((a) => {
@@ -91,10 +95,12 @@ ${entries}
 </feed>
 `;
 
-  return new Response(xml, {
+  // ETag + Last-Modified: читалки опрашивают ленту по расписанию и получают 304, пока сбор ничего не добавил.
+  return conditionalResponse(req, xml, {
     headers: {
       "Content-Type": "application/atom+xml; charset=utf-8",
       "Cache-Control": "public, max-age=600, s-maxage=600",
     },
+    lastModified,
   });
 }
