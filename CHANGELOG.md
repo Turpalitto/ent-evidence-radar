@@ -18,13 +18,17 @@
   метаданных, SMTP-конфига и отправки, агрегатов статистики и общего rate-limit (окно, сброс, fail-open);
   компонентные тесты кнопки обновления (запуск → опрос → итог, подхват идущего запуска, занятость, 401,
   событие из пустой ленты), индикатора авторизации и регистратора service worker, ловушки фокуса.
-  Всего 69 файлов / 463 теста.
+  Всего 70 файлов / 472 теста.
 
 ### Changed
 - `Feed.tsx` (1170 строк) разделён: чистая логика фильтров вынесена в `components/feed/filters.ts`
   (`toParams`/`parseSearch`/`feedLink`/`countActiveFilters`/`presetActive`, пресеты, localStorage) и покрыта
   юнит-тестами (8), разметка — в `FilterSidebar`, `ArticleCard`, `ShortcutsModal`, хуки онлайна и уведомлений —
-  в `feed/hooks.ts`. Поведение и тесты ленты не изменились.
+  в `feed/hooks.ts`. Поведение и тесты ленты не изменились. Аналогично `ArticleDrawer.tsx` (796 → 376 строк):
+  `components/drawer/` — `sse.ts` (чтение потока `/api/ai` с буферизацией разрезанных строк, хвостом без
+  `\n` и UTF-8 через границы фрагментов; 3 теста), `consilium.ts` (текст «Для консилиума», PICO-правило,
+  заголовки секций; 2 теста), `AbstractSection`, `EvidenceSections` (идентификаторы, КИ, PICO, индекс
+  доверия, метаданные), `OverridesEditor`, `RelatedArticles`.
 - CI: обновлены экшены (`actions/checkout@v7`, `actions/setup-node@v7`, `docker/setup-buildx-action@v4`,
   `docker/build-push-action@v7`) — убраны предупреждения о Node 20.
 - Зависимости: патч-обновления `next` 16.4.1, `eslint-config-next` 16.4.1, `drizzle-orm` 0.45.4,

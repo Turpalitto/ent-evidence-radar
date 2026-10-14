@@ -2,15 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Article } from "@/db/schema";
-import { DESIGN_CONFIDENCE_LABELS, DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTIES, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
-import { parseStructuredAbstract, extractConclusion, sectionHeaderRu, translateMesh } from "@/lib/evidence/abstract";
-import { PICO_LABELS, extractPico } from "@/lib/evidence/pico";
-import { msg, type I18n } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
-import { DesignBadge, IssuerBadge, LevelBadge, NOTICE_LABELS, NoticeBadge, TierBadge, TrialBadge, TrustScore } from "./Badges";
-import { trialStatusLabel } from "@/lib/evidence/trial-status";
 import { citeBibtex, citeGost, citeVancouver } from "@/lib/citation";
+import { DesignBadge, IssuerBadge, LevelBadge, NoticeBadge, TierBadge, TrialBadge, TrustScore } from "./Badges";
 import { useFocusTrap } from "./useFocusTrap";
+import { AbstractSection, type AiState } from "./drawer/AbstractSection";
+import { IdentifierLinks, MetaSections, PicoSection, TrialInfoSection, TrustBreakdown } from "./drawer/EvidenceSections";
+import { OverridesEditor, hasManualOverrides } from "./drawer/OverridesEditor";
+import { RelatedArticles } from "./drawer/RelatedArticles";
+import { buildConsiliumSummary, picoFor } from "./drawer/consilium";
+import { consumeSseDeltas } from "./drawer/sse";
 
 interface Props {
   article: Article | null;
@@ -44,47 +45,20 @@ function useBodyScrollLock(active: boolean) {
   }, [active]);
 }
 
-/** Заголовок секции структурированной аннотации: по-русски из словаря, по-английски — как в источнике («BACKGROUND» → «Background»). */
-function sectionHeader(locale: I18n["locale"], label: string): string {
-  if (locale === "ru") return sectionHeaderRu(label);
-  const clean = label.trim();
-  return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
-}
-
-function buildConsiliumSummary(a: Article, { t }: Pick<I18n, "t">): string {
-  const citation = citeVancouver(a);
-  const conclusion = extractConclusion(a.abstract);
-  const design = DESIGN_LABELS[a.studyDesign] ? t(DESIGN_LABELS[a.studyDesign]) : a.studyDesign;
-  const level = t(EVIDENCE_LEVEL_LABELS[a.evidenceLevel] ?? msg("Уровень {level}"), { level: a.evidenceLevel });
-  let text = `📄 ${citation}\n${t("📊 Дизайн: {design} ({level}), Индекс доверия: {score}/100", { design, level, score: a.trustScore })}`;
-  if (a.sampleSize) text += `, n≈${a.sampleSize}`;
-  const pico = a.studyDesign === "guideline" || a.studyDesign === "trial_registry" ? null : extractPico(a.abstract, a.title);
-  if (pico) {
-    const parts = (["population", "intervention", "comparator", "outcome"] as const).filter((k) => pico[k]).map((k) => `${PICO_LABELS[k].letter}: ${pico[k]}`);
-    if (parts.length) text += `\n🧩 PICO — ${parts.join("; ")}`;
-  }
-  if (conclusion) text += `\n${t("💡 Вывод:")} ${conclusion}`;
-  text += `\n${t("🔗 Источник:")} ${a.url}`;
-  return text;
-}
-
+/**
+ * Карточка публикации: мобильный нижний лист и десктопная боковая панель с одним содержимым.
+ * Здесь — состояние (заметки, ИИ-поток, копирование), жесты и фокус; секции вынесены в `drawer/`.
+ */
 export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: Props) {
   const i18n = useI18n();
-  const { t, locale, date, stored } = i18n;
+  const { t, locale, date } = i18n;
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [editOverrides, setEditOverrides] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const [related, setRelated] = useState<Article[]>([]);
-  const [loadingRelated, setLoadingRelated] = useState(false);
   // showTranslate — показывать ли перевод (toggleable)
   const [showTranslate, setShowTranslate] = useState(false);
-  const [aiState, setAiState] = useState<{
-    mode: "idle" | "loading" | "done" | "error";
-    translate?: string;
-    summary?: string;
-    error?: string;
-  }>({ mode: "idle" });
+  const [aiState, setAiState] = useState<AiState>({ mode: "idle" });
 
   const sheetRef = useRef<HTMLElement>(null);
   const dragStartY = useRef(0);
@@ -114,37 +88,14 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         const j = (await r.json().catch(() => ({}))) as { error?: string };
         throw new Error(j.error ?? t("Ошибка {status}", { status: r.status }));
       }
-      const reader = r.body.getReader();
-      const decoder = new TextDecoder();
-      let acc = "";
-      let done = false;
-      while (!done) {
-        const { value, done: d } = await reader.read();
-        done = d;
-        acc += decoder.decode(value, { stream: !done });
-        let nl: number;
-        while ((nl = acc.indexOf("\n")) !== -1) {
-          const line = acc.slice(0, nl).trim();
-          acc = acc.slice(nl + 1);
-          if (!line.startsWith("data:")) continue;
-          const data = line.slice(5).trim();
-          try {
-            const j = JSON.parse(data) as { ok: boolean; delta?: string; error?: string };
-            if (!j.ok || j.error) throw new Error(j.error ?? t("Не удалось получить ответ"));
-            if (j.delta) {
-              // Накапливаем дельты (поле уже сброшено в "", дублирования нет)
-              setAiState((s) =>
-                action === "translate"
-                  ? { ...s, mode: "done", translate: (s.translate ?? "") + j.delta }
-                  : { ...s, mode: "done", summary: (s.summary ?? "") + j.delta },
-              );
-            }
-          } catch (e) {
-            if (e instanceof SyntaxError) continue;
-            throw e;
-          }
-        }
-      }
+      await consumeSseDeltas(r.body, (delta) => {
+        // Накапливаем дельты (поле уже сброшено в "", дублирования нет)
+        setAiState((s) =>
+          action === "translate"
+            ? { ...s, mode: "done", translate: (s.translate ?? "") + delta }
+            : { ...s, mode: "done", summary: (s.summary ?? "") + delta },
+        );
+      }, t("Не удалось получить ответ"));
     } catch (e) {
       setAiState((s) => ({ ...s, mode: "error", error: e instanceof Error ? e.message : String(e) }));
     }
@@ -154,19 +105,6 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
   useEffect(() => {
     setAiState({ mode: "idle" });
     setShowTranslate(false);
-  }, [article?.id]);
-
-  // Загрузка похожих статей
-  useEffect(() => {
-    if (!article?.id) { setRelated([]); return; }
-    let cancelled = false;
-    setLoadingRelated(true);
-    fetch(`/api/articles/${article.id}/related`)
-      .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((data: { items?: Article[] }) => { if (!cancelled) setRelated(data.items ?? []); })
-      .catch(() => { if (!cancelled) setRelated([]); })
-      .finally(() => { if (!cancelled) setLoadingRelated(false); });
-    return () => { cancelled = true; };
   }, [article?.id]);
 
   async function copyToClipboard(text: string, key: string) {
@@ -252,11 +190,8 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
 
   if (!article) return null;
   const a = article;
-  const hasOverrides = !!(a.overrides?.studyDesign || a.overrides?.subspecialties?.length);
-  const positives = a.trustBreakdown.filter((b) => b.points > 0);
-  const negatives = a.trustBreakdown.filter((b) => b.points <= 0);
-  // PICO (A-10) имеет смысл для первичных исследований и обзоров, но не для руководств/записей реестра.
-  const pico = a.studyDesign === "guideline" || a.studyDesign === "trial_registry" ? null : extractPico(a.abstract, a.title);
+  const hasOverrides = hasManualOverrides(a);
+  const pico = picoFor(a);
 
   const handleTranslateClick = () => {
     if (aiState.mode === "loading") return;
@@ -362,383 +297,28 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         </div>
 
         {/* ── Ручная правка классификации и скрытие (A-11) ── */}
-        <details className="rounded-xl border border-[color:var(--hairline)] px-3 py-2 text-xs" open={hasOverrides || editOverrides}>
-          <summary className="cursor-pointer select-none font-semibold text-[color:var(--ink-soft)]" onClick={() => setEditOverrides(true)}>
-            {t("Исправить классификацию")}{hasOverrides ? ` · ${t("есть ручные правки")}` : ""}
-          </summary>
-          <div className="mt-2 space-y-2.5">
-            <p className="text-[11px] text-[color:var(--ink-subtle)]">
-              {t("Правки сохраняются и переживают обновление и переклассификацию. Уровень доказательности и индекс доверия пересчитываются от выбранного дизайна.")}
-            </p>
-            <label className="flex flex-wrap items-center gap-2">
-              <span className="w-28 text-[color:var(--ink-muted)]">{t("Дизайн")}</span>
-              <select
-                value={a.overrides?.studyDesign ?? ""}
-                disabled={saving}
-                onChange={(e) => void patch(a.id, { overrides: { ...a.overrides, studyDesign: e.target.value || undefined } })}
-                className="input-base rounded-lg px-2 py-1 text-xs"
-              >
-                <option value="">{t("Автоматически ({design})", { design: t(DESIGN_LABELS[a.studyDesign]) })}</option>
-                {(Object.keys(DESIGN_LABELS) as Array<keyof typeof DESIGN_LABELS>).map((k) => (
-                  <option key={k} value={k}>{t(DESIGN_LABELS[k])}</option>
-                ))}
-              </select>
-            </label>
-            <div className="flex flex-wrap items-start gap-2">
-              <span className="w-28 pt-1 text-[color:var(--ink-muted)]">{t("Субспециальности")}</span>
-              <div className="flex flex-1 flex-wrap gap-1.5">
-                {SUBSPECIALTIES.map((s) => {
-                  const manual = a.overrides?.subspecialties;
-                  const active = (manual ?? a.subspecialties).includes(s.key);
-                  return (
-                    <button
-                      key={s.key}
-                      type="button"
-                      disabled={saving}
-                      onClick={() => {
-                        const base = manual ?? a.subspecialties;
-                        const next = active ? base.filter((k) => k !== s.key) : [...base, s.key];
-                        void patch(a.id, { overrides: { ...a.overrides, subspecialties: next.length ? next : undefined } });
-                      }}
-                      className={`rounded-full border px-2 py-0.5 text-[11px] transition ${active ? "border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200" : "border-[color:var(--hairline)] text-[color:var(--ink-subtle)] hover:border-teal-400"}`}
-                      aria-pressed={active}
-                    >
-                      {t(s.short)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 pt-1">
-              {hasOverrides && (
-                <button type="button" disabled={saving} onClick={() => void patch(a.id, { overrides: null })} className="btn-ghost rounded-lg px-2.5 py-1 text-xs font-semibold">
-                  {t("Сбросить к автоматике")}
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void patch(a.id, { isHidden: !a.isHidden })}
-                className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${a.isHidden ? "border-teal-300 text-teal-700 dark:text-teal-300" : "border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-950/30"}`}
-                title={a.isHidden ? t("Вернуть запись в ленту") : t("Скрыть из ленты и статистики; при следующем обновлении запись не вернётся")}
-              >
-                {a.isHidden ? t("Вернуть в ленту") : t("Скрыть: не ЛОР / не по теме")}
-              </button>
-            </div>
-          </div>
-        </details>
+        <OverridesEditor a={a} saving={saving} open={editOverrides} onOpen={() => setEditOverrides(true)} patch={(body) => void patch(a.id, body)} />
 
         {/* ── Идентификаторы (компактно) ── */}
-        {(a.doi || a.pmid || a.pmcid || a.nctId || a.publishedDoi) && (
-          <div className="flex flex-wrap gap-2">
-            {a.editorialNotice?.noticeDoi && (
-              <a
-                href={`https://doi.org/${a.editorialNotice.noticeDoi}`}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-800 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300"
-                title={`${t(NOTICE_LABELS[a.editorialNotice.type].title)}${a.editorialNotice.date ? `, ${a.editorialNotice.date}` : ""}`}
-              >
-                {a.editorialNotice.type === "correction" ? t("Текст исправления") : a.editorialNotice.type === "expression_of_concern" ? t("Текст expression of concern") : t("Уведомление об отзыве")} ↗
-              </a>
-            )}
-            {a.publishedDoi && <a href={`https://doi.org/${a.publishedDoi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" title={t("Рецензированная версия этого препринта в журнале")}>{t("Журнальная версия (DOI)")} ↗</a>}
-            {a.pmcid && <a href={`https://www.ncbi.nlm.nih.gov/pmc/articles/${a.pmcid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">{t("Полный текст (PMC)")} ↗</a>}
-            {a.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">PubMed (PMID {a.pmid}) ↗</a>}
-            {a.doi && <a href={`https://doi.org/${a.doi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">{t("Первоисточник (DOI)")} ↗</a>}
-            {a.nctId && <a href={`https://clinicaltrials.gov/study/${a.nctId}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">{t("Реестр КИ ({id})", { id: a.nctId })} ↗</a>}
-          </div>
-        )}
+        <IdentifierLinks a={a} />
 
         {/* ── Отслеживание КИ (A-08) ── */}
-        {a.trialInfo && (
-          <section className="panel rounded-xl p-3 text-xs" data-testid="trial-info">
-            <h3 className="eyebrow mb-1.5">{t("Реестр ClinicalTrials.gov")}</h3>
-            <p className="text-[color:var(--ink-soft)]">
-              {t("Статус:")} <strong>{t(trialStatusLabel(a.trialInfo.status))}</strong>
-              {a.trialInfo.hasResults ? ` · ${t("результаты опубликованы")}` : ` · ${t("результатов пока нет")}`}
-              {a.trialInfo.enrollment ? ` · n=${a.trialInfo.enrollment}` : ""}
-              {a.trialInfo.lastUpdatePosted ? ` · ${t("запись обновлена {date}", { date: a.trialInfo.lastUpdatePosted })}` : ""}
-              {` · ${t("проверено")} `}{date(a.trialInfo.checkedAt)}
-            </p>
-            {a.trialInfo.events.length > 0 && (
-              <ul className="mt-1.5 space-y-0.5 text-[color:var(--ink-muted)]">
-                {[...a.trialInfo.events].reverse().map((e, i) => (
-                  <li key={i}>
-                    {date(e.at)}: {e.kind === "results" ? t("появились результаты{date}", { date: e.to ? ` (${e.to})` : "" }) : t("статус {from} → {to}", { from: t(trialStatusLabel(e.from)), to: t(trialStatusLabel(e.to)) })}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
+        {a.trialInfo && <TrialInfoSection info={a.trialInfo} />}
 
         {/* ── PICO (A-10): пациенты / вмешательство / сравнение / исходы ── */}
-        {pico && (
-          <section className="panel rounded-xl p-3" data-testid="pico" aria-label="PICO">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="eyebrow">PICO</h3>
-              <span className="text-[10px] text-[color:var(--ink-muted)]" title={t("Извлечено автоматически из заголовка и аннотации — сверяйте с полным текстом")}>
-                {pico.source === "structured" ? t("из секций аннотации") : t("эвристика по тексту")}
-              </span>
-            </div>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1.5 text-xs">
-              {(["population", "intervention", "comparator", "outcome"] as const).map((slot) => {
-                const value = pico[slot];
-                if (!value) return null;
-                const meta = PICO_LABELS[slot];
-                return (
-                  <div key={slot} className="contents">
-                    <dt className="flex items-start gap-1.5" title={t(meta.hint)}>
-                      <span className="inline-flex h-5 w-5 flex-none items-center justify-center rounded-md bg-[color:var(--brand-a)]/15 text-[11px] font-bold text-[color:var(--brand-ink)]" aria-hidden>
-                        {meta.letter}
-                      </span>
-                      <span className="sr-only">{t(meta.title)}: </span>
-                    </dt>
-                    <dd className="text-[color:var(--ink-soft)]">
-                      <span className="mr-1 font-semibold text-[color:var(--ink)]">{t(meta.title)}.</span>
-                      {value}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </section>
-        )}
+        {pico && <PicoSection pico={pico} />}
 
-        {/* ── Аннотация ── */}
-        <section>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="eyebrow">{t("Аннотация исследования")}</h3>
-            {a.abstract && (
-              <div className="flex gap-1.5">
-                {/* Перевод — только для русского интерфейса: аннотации источников уже на английском. */}
-                {locale === "ru" && (
-                  <button
-                    onClick={handleTranslateClick}
-                    disabled={aiState.mode === "loading"}
-                    className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-40 ${
-                      showTranslate && aiState.translate
-                        ? "border-[color:var(--brand-ring)] bg-[color:var(--brand-soft)] text-[color:var(--brand-ink)]"
-                        : "btn-ghost"
-                    }`}
-                  >
-                    {aiState.mode === "loading" ? "…" : showTranslate && aiState.translate ? t("Скрыть перевод") : t("🌐 Перевод на русский")}
-                  </button>
-                )}
-                <button
-                  onClick={() => void runAi("summary")}
-                  disabled={aiState.mode === "loading"}
-                  className="btn-ghost rounded-lg px-2.5 py-1 text-xs font-semibold transition disabled:opacity-40"
-                >
-                  {t("💡 Резюме для практики (PICO)")}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Перевод (если запрошен и показан) */}
-          {showTranslate && aiState.translate && (
-            <div className="mb-3 rounded-xl border border-teal-100 bg-teal-50/50 p-3 dark:border-teal-900/50 dark:bg-teal-950/20">
-              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">{t("Перевод (AI)")}</p>
-              <div className="space-y-1.5 text-sm leading-relaxed text-slate-800 dark:text-slate-200">
-                {aiState.translate.split("\n").filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}
-              </div>
-            </div>
-          )}
-
-          {/* AI-резюме */}
-          {aiState.summary && (
-            <div className="mb-3 rounded-xl border border-teal-100 bg-teal-50/60 p-3 dark:border-teal-900/50 dark:bg-teal-950/30">
-              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">{t("💡 Для практики")}</p>
-              <p className="text-sm leading-relaxed text-slate-800 dark:text-slate-200">{aiState.summary}</p>
-            </div>
-          )}
-
-          {/* Оригинал — структурированное отображение */}
-          {a.abstract ? (
-            <div className="space-y-2.5 text-sm leading-relaxed">
-              {(() => {
-                const sections = parseStructuredAbstract(a.abstract);
-                if (sections.length > 1) {
-                  return sections.map((sec, i) => {
-                    const isConclusion = /^CONCLUSIONS?$/i.test(sec.label);
-                    const isResults = /^RESULTS?$/i.test(sec.label);
-                    return (
-                      <div
-                        key={i}
-                        className={
-                          isConclusion
-                            ? "rounded-xl border border-teal-200 bg-teal-50/70 p-3 dark:border-teal-800 dark:bg-teal-950/30"
-                            : isResults
-                              ? "rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 dark:border-slate-800 dark:bg-slate-800/30"
-                              : "py-0.5"
-                        }
-                      >
-                        {sec.label && (
-                          <span
-                            className={
-                              isConclusion
-                                ? "mb-1 block text-[11px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400"
-                                : "mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
-                            }
-                          >
-                            {isConclusion ? t("💡 Клинический вывод") : sectionHeader(locale, sec.label)}
-                          </span>
-                        )}
-                        <p className={isConclusion ? "font-medium text-teal-950 dark:text-teal-100" : "text-slate-700 dark:text-slate-300"}>
-                          {sec.text}
-                        </p>
-                      </div>
-                    );
-                  });
-                }
-                return a.abstract.split("\n").filter(Boolean).map((p, i) => (
-                  <p key={i} className="text-slate-700 dark:text-slate-300">{p}</p>
-                ));
-              })()}
-            </div>
-          ) : (
-            <p className="text-sm italic text-slate-400">{t("Аннотация недоступна в источнике.")}</p>
-          )}
-
-          {aiState.mode === "error" && (
-            <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">{t("Ошибка AI:")} {aiState.error}</p>
-          )}
-        </section>
+        {/* ── Аннотация, перевод и резюме ── */}
+        <AbstractSection a={a} ai={aiState} showTranslate={showTranslate} onTranslate={handleTranslateClick} onSummary={() => void runAi("summary")} />
 
         {/* ── Индекс доверия ── */}
-        <section className="panel rounded-xl p-3.5">
-          <h3 className="eyebrow mb-2.5">
-            {t("Индекс доверия — {score}/100", { score: a.trustScore })}
-          </h3>
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            <ul className="space-y-1 text-sm">
-              {positives.map((b, i) => (
-                <li key={i} className="flex justify-between gap-2">
-                  <span className="text-[color:var(--ink-soft)]">{stored(b.label)}</span>
-                  <span className="shrink-0 font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">+{b.points}</span>
-                </li>
-              ))}
-            </ul>
-            <ul className="space-y-1 text-sm">
-              {negatives.length ? negatives.map((b, i) => (
-                <li key={i} className="flex justify-between gap-2">
-                  <span className="text-[color:var(--ink-soft)]">{stored(b.label)}</span>
-                  <span className="shrink-0 font-semibold tabular-nums text-rose-600 dark:text-rose-400">{b.points}</span>
-                </li>
-              )) : (
-                <li className="text-sm text-[color:var(--ink-subtle)]">{t("Штрафных факторов нет")}</li>
-              )}
-            </ul>
-          </div>
-          <p className="mt-2.5 text-[11px] text-[color:var(--ink-subtle)]">
-            {t(DESIGN_LABELS[a.studyDesign])} · {t(EVIDENCE_LEVEL_LABELS[a.evidenceLevel] ?? String(a.evidenceLevel))}
-          </p>
-          {a.designReason && (
-            <p className="mt-1 text-[11px] text-[color:var(--ink-subtle)]" data-testid="design-reason">
-              {t("Почему такой дизайн:")} {stored(a.designReason)}
-              {a.designConfidence && (
-                <>
-                  {" "}· {t("уверенность")}{" "}
-                  <span className={a.designConfidence === "low" ? "font-semibold text-amber-700 dark:text-amber-300" : "font-semibold"}>
-                    {t(DESIGN_CONFIDENCE_LABELS[a.designConfidence])}
-                  </span>
-                  {a.designConfidence === "low" && ` — ${t("стоит проверить и при необходимости поправить вручную")}`}
-                </>
-              )}
-            </p>
-          )}
-        </section>
+        <TrustBreakdown a={a} />
 
-        {/* ── Метаданные ── */}
-        <section className="grid gap-3 text-sm sm:grid-cols-2">
-          {a.authors.length > 0 && (
-            <div>
-              <p className="mb-1 eyebrow">{t("Авторы")}</p>
-              <p className="text-slate-700 dark:text-slate-300">
-                {a.authors.slice(0, 10).join(", ")}{a.authors.length > 10 ? ` ${t("и ещё {n}", { n: a.authors.length - 10 })}` : ""}
-              </p>
-            </div>
-          )}
-          {(a.subspecialties.length > 0 || a.sourceKeys.length > 0) && (
-            <div className="space-y-2">
-              {a.subspecialties.length > 0 && (
-                <div>
-                  <p className="mb-1 eyebrow">{t("Субспециальность")}</p>
-                  <p className="text-slate-700 dark:text-slate-300">{a.subspecialties.map((s) => (SUBSPECIALTY_LABELS[s] ? t(SUBSPECIALTY_LABELS[s]) : s)).join(", ")}</p>
-                </div>
-              )}
-              {a.sourceKeys.length > 0 && (
-                <div>
-                  <p className="mb-1 eyebrow">{t("Источник")}</p>
-                  <p className="text-slate-700 dark:text-slate-300">{a.sourceKeys.map((s) => (SOURCE_LABELS[s] ? t(SOURCE_LABELS[s]) : s)).join(", ")}</p>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        {/* MeSH + ключевые слова */}
-        {(a.meshTerms.length > 0 || a.keywords.length > 0) && (
-          <section>
-            {a.meshTerms.length > 0 && (
-              <>
-                <p className="mb-1.5 eyebrow">{t("MeSH-термины (медицинские дескрипторы)")}</p>
-                <div className="mb-2 flex flex-wrap gap-1.5">
-                  {a.meshTerms.map((term) => {
-                    // Русская расшифровка дескриптора — только для русского интерфейса.
-                    const ru = locale === "ru" ? translateMesh(term) : null;
-                    return (
-                      <span
-                        key={term}
-                        title={ru ? `${term} (${ru})` : term}
-                        className="rounded-lg bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
-                      >
-                        {term}
-                        {ru && <span className="font-normal text-blue-600/80 dark:text-blue-400"> · {ru}</span>}
-                      </span>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-            {a.keywords.length > 0 && (
-              <>
-                <p className="mb-1.5 eyebrow">{t("Ключевые слова")}</p>
-                <div className="flex flex-wrap gap-1">
-                  {a.keywords.slice(0, 20).map((kw, i) => <span key={i} className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">{kw}</span>)}
-                </div>
-              </>
-            )}
-          </section>
-        )}
+        {/* ── Авторы, субспециальности, источники, MeSH, ключевые слова ── */}
+        <MetaSections a={a} />
 
         {/* ── Похожие публикации ── */}
-        {(loadingRelated || related.length > 0) && (
-          <section>
-            <p className="mb-2 eyebrow">{t("Похожие публикации")}</p>
-            {loadingRelated && <p className="text-xs text-slate-400">{t("Поиск…")}</p>}
-            {!loadingRelated && related.length > 0 && (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {related.map((rel) => (
-                  <div
-                    key={rel.id}
-                    onClick={() => (onSelectArticle ? onSelectArticle(rel) : onUpdate(rel))}
-                    className="panel group cursor-pointer rounded-xl p-3 transition hover:border-[color:var(--brand-ring)] active:scale-[0.98]"
-                  >
-                    <div className="mb-1 flex items-center gap-1.5">
-                      <DesignBadge design={rel.studyDesign} />
-                      <TrustScore score={rel.trustScore} size="sm" />
-                    </div>
-                    <p className="line-clamp-2 text-xs font-medium text-[color:var(--ink)] transition-colors group-hover:text-[color:var(--brand-ink)]">{rel.title}</p>
-                    <p className="mt-1 truncate text-[11px] text-[color:var(--ink-subtle)]">{rel.journal || "—"} · {date(rel.publishedAt)}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
+        <RelatedArticles articleId={a.id} onSelect={(rel) => (onSelectArticle ? onSelectArticle(rel) : onUpdate(rel))} />
 
         {/* ── Заметки ── */}
         <section>
