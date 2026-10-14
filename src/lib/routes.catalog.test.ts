@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { db } from "@/db";
-import { fetchRuns, sources, topics } from "@/db/schema";
+import { articles, fetchRuns, sources, topics } from "@/db/schema";
 import { GET as topicsGet, POST as topicsPost } from "@/app/api/topics/route";
 import { PATCH as topicPatch } from "@/app/api/topics/[id]/route";
 import { GET as sourcesGet } from "@/app/api/sources/route";
@@ -52,6 +52,25 @@ describe("/api/topics", () => {
     expect(rows.length).toBeGreaterThan(3);
     expect(rows.every((r) => r.isDefault)).toBe(true);
     expect(rows.map((r) => r.id)).toEqual([...rows.map((r) => r.id)].sort((a, b) => a - b));
+  });
+
+  it("GET отдаёт счётчики статей по теме: всего (без скрытых) и за 30 дней", async () => {
+    const list = (await (await topicsGet()).json()) as { id: number; articleCount: number; recentCount: number }[];
+    const [t1, t2] = list;
+    expect(list.every((r) => r.articleCount === 0 && r.recentCount === 0)).toBe(true);
+    const base = { sourceKey: "pubmed", sourceKeys: ["pubmed"], studyDesign: "cohort" as const, evidenceLevel: 3, trustScore: 50, subspecialties: ["general"], url: "https://e.org/x" };
+    await db.insert(articles).values([
+      { ...base, dedupKey: "topic-c1", title: "Fresh in topic 1", topicIds: [t1.id], publishedAt: new Date() },
+      { ...base, dedupKey: "topic-c2", title: "Old in topics 1 and 2", topicIds: [t1.id, t2.id], publishedAt: new Date("2020-01-01") },
+      { ...base, dedupKey: "topic-c3", title: "Hidden in topic 1", topicIds: [t1.id], publishedAt: new Date(), isHidden: true },
+    ]);
+    try {
+      const after = (await (await topicsGet()).json()) as typeof list;
+      expect(after.find((r) => r.id === t1.id)).toMatchObject({ articleCount: 2, recentCount: 1 });
+      expect(after.find((r) => r.id === t2.id)).toMatchObject({ articleCount: 1, recentCount: 0 });
+    } finally {
+      await db.delete(articles).where(sql`${articles.dedupKey} like 'topic-c%'`);
+    }
   });
 
   it("POST: валидация (тело, обязательные поля, длина, субспециальность) → 400; успех → 201", async () => {

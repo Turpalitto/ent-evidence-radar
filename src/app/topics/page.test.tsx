@@ -5,12 +5,12 @@ import userEvent from "@testing-library/user-event";
 import TopicsPage from "./page";
 import { mockFetch } from "@/test/fixtures";
 
-type Row = { id: number; name: string; subspecialty: string; query: string; enabled: boolean; isDefault: boolean; lookbackDays: number | null; createdAt: string };
+type Row = { id: number; name: string; subspecialty: string; query: string; enabled: boolean; isDefault: boolean; lookbackDays: number | null; createdAt: string; articleCount?: number; recentCount?: number };
 
 const ROWS: Row[] = [
-  { id: 1, name: "Средний отит", subspecialty: "otology", query: "otitis media", enabled: true, isDefault: true, lookbackDays: null, createdAt: "2026-01-01" },
-  { id: 2, name: "Риносинусит", subspecialty: "rhinology", query: "rhinosinusitis", enabled: false, isDefault: true, lookbackDays: null, createdAt: "2026-01-01" },
-  { id: 3, name: "Холестеатома у детей", subspecialty: "general", query: "cholesteatoma AND child*", enabled: true, isDefault: false, lookbackDays: 90, createdAt: "2026-02-01" },
+  { id: 1, name: "Средний отит", subspecialty: "otology", query: "otitis media", enabled: true, isDefault: true, lookbackDays: null, createdAt: "2026-01-01", articleCount: 21, recentCount: 3 },
+  { id: 2, name: "Риносинусит", subspecialty: "rhinology", query: "rhinosinusitis", enabled: false, isDefault: true, lookbackDays: null, createdAt: "2026-01-01", articleCount: 1, recentCount: 0 },
+  { id: 3, name: "Холестеатома у детей", subspecialty: "general", query: "cholesteatoma AND child*", enabled: true, isDefault: false, lookbackDays: 90, createdAt: "2026-02-01", articleCount: 0, recentCount: 0 },
 ];
 
 const unauthorized = () => new Response(JSON.stringify({ error: "Требуется авторизация" }), { status: 401, headers: { "content-type": "application/json" } });
@@ -61,6 +61,10 @@ describe("/topics (управление темами)", () => {
     expect(within(rowOf("Холестеатома у детей")).queryByText("базовая")).toBeNull();
     expect(screen.getByRole("textbox", { name: "Поисковый запрос темы «Средний отит»" })).toHaveValue("otitis media");
     expect(within(rowOf("Риносинусит")).getByRole("checkbox")).not.toBeChecked();
+    // Счётчики статей по теме: склонение, «за 30 дн.», пустая включённая тема подсвечена
+    expect(within(rowOf("Средний отит")).getByText("21 статья · 3 за 30 дн.")).toBeInTheDocument();
+    expect(within(rowOf("Риносинусит")).getByText("1 статья · 0 за 30 дн.")).toBeInTheDocument();
+    expect(within(rowOf("Холестеатома у детей")).getByText("пока нет статей")).toHaveClass("text-amber-700");
   });
 
   it("новая тема: валидация пустых полей, затем POST с обрезанными полями и глубиной; форма очищается, список перечитывается", async () => {

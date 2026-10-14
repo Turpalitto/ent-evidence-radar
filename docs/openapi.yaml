@@ -314,6 +314,8 @@ components:
         isDefault: { type: boolean }
         lookbackDays: { type: [integer, "null"] }
         createdAt: { type: string, format: date-time }
+        articleCount: { type: integer, description: "Только в GET /api/topics: видимых статей, относящихся к теме" }
+        recentCount: { type: integer, description: "Только в GET /api/topics: из них опубликовано за последние 30 дней" }
     Source:
       type: object
       properties:

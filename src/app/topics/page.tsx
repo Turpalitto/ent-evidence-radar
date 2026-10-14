@@ -14,6 +14,9 @@ interface Topic {
   isDefault: boolean;
   lookbackDays: number | null;
   createdAt: string;
+  /** Сколько видимых статей собрала тема и сколько из них опубликовано за 30 дней (с сервера). */
+  articleCount?: number;
+  recentCount?: number;
 }
 
 const empty = { name: "", query: "", subspecialty: "general", lookbackDays: "" };
@@ -35,7 +38,7 @@ async function api(path: string, init?: RequestInit): Promise<unknown> {
 const FIELD = "field w-full rounded-xl px-3 py-2 text-sm text-[color:var(--ink)]";
 
 export default function TopicsPage() {
-  const { t } = useI18n();
+  const { t, plural } = useI18n();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [form, setForm] = useState(empty);
   const [error, setError] = useState<string | null>(null); // загрузка списка и действия над темами
@@ -214,6 +217,16 @@ export default function TopicsPage() {
                     {tp.isDefault && <span className="chip">{t("базовая")}</span>}
                     {tp.subspecialty !== "general" && (
                       <span className="chip">{t(SUBSPECIALTY_SHORT[tp.subspecialty] ?? tp.subspecialty)}</span>
+                    )}
+                    {tp.articleCount !== undefined && (
+                      <span
+                        className={`text-xs tabular-nums ${tp.articleCount === 0 && tp.enabled ? "text-amber-700 dark:text-amber-400" : "text-[color:var(--ink-subtle)]"}`}
+                        title={t("Сколько статей в базе относится к теме (без скрытых) и сколько из них опубликовано за последние 30 дней")}
+                      >
+                        {tp.articleCount === 0
+                          ? t("пока нет статей")
+                          : `${plural(tp.articleCount, ["{n} статья", "{n} статьи", "{n} статей"])} · ${t("{n} за 30 дн.", { n: tp.recentCount ?? 0 })}`}
+                      </span>
                     )}
                   </div>
                   <input

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc } from "drizzle-orm";
+import { asc, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { topics } from "@/db/schema";
+import { articles, topics } from "@/db/schema";
 import { ensureSeeded } from "@/lib/refresh";
 import { apiError, isSubspecialtyKey, normalizeTopicLookback, readJsonObject, TOPIC_LIMITS } from "@/lib/api";
 import { checkApiAuth } from "@/lib/security";
@@ -9,10 +9,27 @@ import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Список тем со счётчиками: сколько видимых статей собрала тема и сколько из них опубликовано
+ * за последние 30 дней — так видно, какие темы «работают», а какие пустые (ошибка запроса, слишком узкая).
+ * Одна группирующая выборка: статья относится к теме, если её id есть в `topic_ids`.
+ */
 export async function GET() {
   await ensureSeeded();
-  const rows = await db.select().from(topics).orderBy(asc(topics.id));
-  return NextResponse.json(rows);
+  const [rows, counts] = await Promise.all([
+    db.select().from(topics).orderBy(asc(topics.id)),
+    db
+      .select({
+        topicId: topics.id,
+        articleCount: sql<number>`count(${articles.id})::int`,
+        recentCount: sql<number>`count(${articles.id}) filter (where ${articles.publishedAt} >= now() - interval '30 days')::int`,
+      })
+      .from(topics)
+      .leftJoin(articles, sql`${articles.topicIds} @> to_jsonb(array[${topics.id}]) and ${articles.isHidden} = false`)
+      .groupBy(topics.id),
+  ]);
+  const byId = new Map(counts.map((c) => [c.topicId, c]));
+  return NextResponse.json(rows.map((r) => ({ ...r, articleCount: byId.get(r.id)?.articleCount ?? 0, recentCount: byId.get(r.id)?.recentCount ?? 0 })));
 }
 
 export async function POST(req: NextRequest) {
