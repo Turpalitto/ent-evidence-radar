@@ -37,7 +37,7 @@
 | 25 | A-15 — PWA-офлайн: service worker, страница `/offline`, баннер в ленте; попутно починена продакшен-сборка (граница клиент/сервер) и политика `Cache-Control` для API | ✅ |
 | 26 | I-05 — ISSN в справочнике журналов (315 ISSN, проверка контрольных цифр), `articles.issns` из PubMed/Europe PMC, сопоставление ISSN → название; честное примечание о «хищниках» в README | ✅ |
 | 27 | I-03 — слоистый классификатор: 6 новых дизайнов, `designReason`/`designConfidence`, объяснение в карточке; `CLASSIFIER_VERSION = 5`, миграция 0017 | ✅ |
-| 28+ | A-16 (i18n RU/EN) — требует отдельного решения | ⏳ |
+| 28 | A-16 i18n RU/EN: `src/lib/i18n/` (gettext-стиль, ключ = русская строка; `index.ts` ядро, `en.ts` словарь ≈ 600 строк, `stored.ts` шаблоны хранимых текстов классификатора, `server.ts`/`client.tsx`), переключатель в шапке (cookie `ent_radar_lang`, `router.refresh()`), `DEFAULT_LOCALE`; переведены все компоненты и страницы (`Feed`, `ArticleDrawer`, `SettingsPanel`, `AppNav`, `Badges`, `RefreshButton`, `AuthStatus`, `LoginForm`, home/stats/runs/topics/settings/login/offline/404/error), `generateMetadata` по языку, `<html lang>`/OG locale, даты и числа по Intl; ИИ-резюме с `lang` (кэш `sum-en`). Стражи: `i18n.test.ts` (13), `coverage.test.ts` (3), `components/i18n.test.tsx` (3). Остаются русскими: дайджест, Atom, экспорт, ошибки API | ✅ |
 
 Оставшиеся уязвимости `npm audit` (9) — только dev-цепочка (`braces` через `eslint-config-next`, `esbuild` через `drizzle-kit`); исправлений без понижения версий этих пакетов нет, в рантайм не попадают.
 
@@ -349,7 +349,7 @@ GET   /api/backup    -H "Sec-Fetch-Site: same-origin"      → 200  ✗ бэка
 
 **A-15 · PWA-офлайн.** Манифест есть, service worker нет: кэш последней ленты и открытых карточек для чтения без сети. — **Сделано:** `public/sw.js` (оболочка/статика cache-first, публичные GET network-first ≤ 80 записей, `/offline`), баннер офлайна в ленте, очистка кэша при выходе, `DISABLE_SW`.
 
-**A-16 · i18n (RU/EN)** и выбор формата дат; интерфейс хардкодит русский.
+**A-16 · i18n (RU/EN)** и выбор формата дат; интерфейс хардкодит русский. — **Сделано:** словарь `src/lib/i18n/en.ts`, переключатель языка, перевод хранимых текстов классификатора при показе, даты/числа по локали, тест-стражи полноты и покрытия.
 
 ---
 

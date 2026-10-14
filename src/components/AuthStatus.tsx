@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { clearServiceWorkerCache } from "@/components/ServiceWorkerRegistrar";
+import { useI18n } from "@/lib/i18n/client";
 
 type AuthState = { required: boolean; authenticated: boolean };
 
@@ -13,6 +14,7 @@ type AuthState = { required: boolean; authenticated: boolean };
  * Обновляется по событию `ent-radar:auth` (его шлёт форма входа/выхода).
  */
 export function AuthStatus() {
+  const { t } = useI18n();
   const [state, setState] = useState<AuthState | null>(null);
   const path = usePathname();
   const router = useRouter();
@@ -38,13 +40,13 @@ export function AuthStatus() {
       <Link
         href={href}
         className="btn-ghost inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium"
-        title="Режим чтения. Войдите, чтобы изменять настройки и заметки"
+        title={t("Режим чтения. Войдите, чтобы изменять настройки и заметки")}
       >
         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
           <rect x="4" y="11" width="16" height="10" rx="2" />
           <path d="M8 11V7a4 4 0 0 1 8 0v4" />
         </svg>
-        <span className="hidden sm:inline">Войти</span>
+        <span className="hidden sm:inline">{t("Войти")}</span>
       </Link>
     );
   }
@@ -62,14 +64,14 @@ export function AuthStatus() {
       type="button"
       onClick={logout}
       className="btn-ghost inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium"
-      title="Завершить сессию"
-      aria-label="Выйти"
+      title={t("Завершить сессию")}
+      aria-label={t("Выйти")}
     >
       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
         <path d="M16 17l5-5-5-5M21 12H9" />
       </svg>
-      <span className="hidden sm:inline">Выйти</span>
+      <span className="hidden sm:inline">{t("Выйти")}</span>
     </button>
   );
 }

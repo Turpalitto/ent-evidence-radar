@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RunSourceDetail } from "@/db/schema";
 import { SOURCE_LABELS } from "@/lib/evidence/taxonomy";
+import type { I18n } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n/client";
 
 interface StartResponse {
   ok: boolean;
@@ -26,20 +28,21 @@ interface RunState {
 const POLL_MS = 4000;
 
 /** Короткая строка прогресса: «PubMed 120 · Europe PMC ✗ · ClinicalTrials.gov 15». */
-export function progressText(details: RunSourceDetail[]): string {
-  if (!details.length) return "Запрашиваем PubMed, Europe PMC, ClinicalTrials.gov, medRxiv…";
+export function progressText(details: RunSourceDetail[], t: I18n["t"]): string {
+  if (!details.length) return t("Запрашиваем PubMed, Europe PMC, ClinicalTrials.gov, medRxiv…");
   return details
     .map((d) => `${(SOURCE_LABELS[d.source] ?? d.source).split(" ")[0]} ${d.error ? "✗" : d.found}`)
     .join(" · ");
 }
 
-export function finalText(run: RunState): string {
-  const st = run.status === "success" ? "Готово" : run.status === "partial" ? "Готово частично" : "Ошибка";
-  if (run.status === "failed") return `${st}: ${run.errorMessage ?? "обновление не выполнено"}`;
-  return `${st}. Запуск #${run.id}: +${run.newAdded} новых, обновлено ${run.updated}.`;
+export function finalText(run: RunState, t: I18n["t"]): string {
+  const st = run.status === "success" ? t("Готово") : run.status === "partial" ? t("Готово частично") : t("Ошибка");
+  if (run.status === "failed") return `${st}: ${run.errorMessage ?? t("обновление не выполнено")}`;
+  return `${st}. ${t("Запуск #{id}: +{added} новых, обновлено {updated}.", { id: run.id, added: run.newAdded, updated: run.updated })}`;
 }
 
 export function RefreshButton() {
+  const { t } = useI18n();
   const router = useRouter();
   const [running, setRunning] = useState(false);
   const [runId, setRunId] = useState<number | null>(null);
@@ -65,25 +68,25 @@ export function RefreshButton() {
   // Запуск: сервер отвечает 202 сразу, дальше опрашиваем состояние запуска (аудит F-05).
   const start = useCallback(async () => {
     setRunning(true);
-    setToast("Запускаем обновление…");
+    setToast(t("Запускаем обновление…"));
     try {
       const r = await fetch("/api/refresh", { method: "POST" });
       const j = (await r.json().catch(() => ({ ok: false }))) as StartResponse;
       if (j.runId) {
         setRunId(j.runId);
-        setToast(j.running ? "Обновление уже выполняется — следим за ним." : "Запрашиваем PubMed, Europe PMC, ClinicalTrials.gov, medRxiv…");
+        setToast(j.running ? t("Обновление уже выполняется — следим за ним.") : t("Запрашиваем PubMed, Europe PMC, ClinicalTrials.gov, medRxiv…"));
         return;
       }
       if (j.running) {
         // Идёт в другом процессе и id неизвестен — просто ждём смены флага.
-        setToast(j.message ?? "Обновление уже выполняется");
+        setToast(j.message ?? t("Обновление уже выполняется"));
         return;
       }
-      finish(j.message ?? j.error ?? `Ошибка обновления (${r.status})`);
+      finish(j.message ?? j.error ?? t("Ошибка обновления ({status})", { status: r.status }));
     } catch (e) {
-      finish(e instanceof Error ? e.message : "Ошибка сети");
+      finish(e instanceof Error ? e.message : t("Ошибка сети"));
     }
-  }, [finish]);
+  }, [finish, t]);
 
   const startRef = useRef(start);
   useEffect(() => {
@@ -92,21 +95,21 @@ export function RefreshButton() {
 
   // При монтировании подхватываем уже идущее обновление (например, запущенное cron'ом).
   useEffect(() => {
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
         const r = await fetch("/api/refresh", { cache: "no-store" });
         const j = (await r.json()) as { running: boolean; runId: number | null };
         if (j.running) {
           setRunning(true);
           setRunId(j.runId);
-          setToast("Обновление выполняется…");
+          setToast(t("Обновление выполняется…"));
         }
       } catch {
         /* нет сети — кнопка остаётся доступной */
       }
     }, 0);
-    return () => clearTimeout(t);
-  }, []);
+    return () => clearTimeout(timer);
+  }, [t]);
 
   // Опрос состояния запуска, пока он не завершится.
   useEffect(() => {
@@ -116,29 +119,29 @@ export function RefreshButton() {
       try {
         if (runId) {
           const r = await fetch(`/api/runs/${runId}`, { cache: "no-store" });
-          if (r.status === 404) return finish("Запуск не найден");
+          if (r.status === 404) return finish(t("Запуск не найден"));
           const j = (await r.json()) as { ok: boolean; run?: RunState; finished?: boolean };
           if (cancelled || !j.ok || !j.run) return;
-          if (j.finished) return finish(finalText(j.run));
-          setToast(progressText(j.run.details ?? []));
+          if (j.finished) return finish(finalText(j.run, t));
+          setToast(progressText(j.run.details ?? [], t));
         } else {
           const r = await fetch("/api/refresh", { cache: "no-store" });
           const j = (await r.json()) as { running: boolean; runId: number | null };
           if (cancelled) return;
           if (j.runId) setRunId(j.runId);
-          else if (!j.running) finish("Обновление завершено.");
+          else if (!j.running) finish(t("Обновление завершено."));
         }
       } catch {
         /* временная ошибка сети — повторим на следующем тике */
       }
     };
-    const t = setInterval(() => void tick(), POLL_MS);
+    const timer = setInterval(() => void tick(), POLL_MS);
     void tick();
     return () => {
       cancelled = true;
-      clearInterval(t);
+      clearInterval(timer);
     };
-  }, [running, runId, finish]);
+  }, [running, runId, finish, t]);
 
   // Пустое состояние ленты диспетчит это событие — запускаем обновление отсюда,
   // чтобы кнопка и статус «running» оставались в одном месте.
@@ -173,7 +176,7 @@ export function RefreshButton() {
           <path d="M21 12a9 9 0 1 1-3-6.7" />
           <path d="M21 3v6h-6" />
         </svg>
-        {running ? "Идёт поиск…" : "Обновить данные"}
+        {running ? t("Идёт поиск…") : t("Обновить данные")}
       </button>
       {running && <span className="pulse-ring absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-500" />}
     </div>

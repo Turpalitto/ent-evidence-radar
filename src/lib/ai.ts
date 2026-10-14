@@ -41,9 +41,14 @@ export const PROMPT_VERSION = 2;
  * Срез «первые N символов» опасен: у структурированных аннотаций префиксы
  * часто совпадают (BACKGROUND:…METHODS:…), и одной статье показался бы чужой перевод.
  */
-export function cacheKeyFor(kind: "tr" | "sum", text: string): string {
+export type AiCacheKind = "tr" | "sum" | "sum-en";
+
+export function cacheKeyFor(kind: AiCacheKind, text: string): string {
   return `${kind}${PROMPT_VERSION}:${createHash("sha256").update(text, "utf8").digest("hex")}`;
 }
+
+/** Язык клинического резюме (A-16): русский по умолчанию, английский для EN-интерфейса. Перевод аннотации всегда на русский. */
+export type SummaryLang = "ru" | "en";
 
 /** Потолок записей в памяти (F-24): старые вытесняются по LRU; персистентный слой — таблица ai_cache. */
 export const MEMORY_CACHE_MAX = 500;
@@ -493,6 +498,19 @@ const SUMMARIZE_SYSTEM =
   "• Клинический вывод: что это меняет в практике (рекомендовано/неэффективно/безопасно)\n\n" +
   "Пиши предельно конкретно, без вводных фраз и воды. Не выдумывай данные, которых нет в аннотации. Терминология — профессиональная русская ЛОР-медицина. Верни ТОЛЬКО текст резюме.";
 
+const SUMMARIZE_SYSTEM_EN =
+  "You are an evidence-based medicine assistant for an otolaryngologist (ENT surgeon).\n" +
+  "Read the abstract of a scientific article and write a structured clinical summary strictly in this format:\n" +
+  "• Patients (P): who was studied, diagnosis, sample size (n)\n" +
+  "• Intervention (I/C): what was compared (drug/surgery vs control/placebo)\n" +
+  "• Main outcome (O): key outcome figures and statistical significance (p-value, CI)\n" +
+  "• Clinical bottom line: what it changes in practice (recommended/ineffective/safe)\n\n" +
+  "Be extremely specific, no preamble or filler. Do not invent data that is not in the abstract. Use professional ENT terminology in English. Return ONLY the summary text.";
+
+function summaryPrompt(lang: SummaryLang): { system: string; kind: "sum" | "sum-en" } {
+  return lang === "en" ? { system: SUMMARIZE_SYSTEM_EN, kind: "sum-en" } : { system: SUMMARIZE_SYSTEM, kind: "sum" };
+}
+
 /** Перевод англ. аннотации на русский. Пустой текст -> пустой ответ. */
 export function translateAbstract(text: string): Promise<string> {
   const t = text.trim();
@@ -500,11 +518,12 @@ export function translateAbstract(text: string): Promise<string> {
   return cached(cacheKeyFor("tr", t), "tr", () => chat(t, TRANSLATE_SYSTEM));
 }
 
-/** Краткое резюме «о чём статья» (RU). Пустой текст -> пустой ответ. */
-export function summarizeAbstract(text: string): Promise<string> {
+/** Краткое резюме «о чём статья» (RU по умолчанию, EN по запросу). Пустой текст -> пустой ответ. */
+export function summarizeAbstract(text: string, lang: SummaryLang = "ru"): Promise<string> {
   const t = text.trim();
   if (!t) return Promise.resolve("");
-  return cached(cacheKeyFor("sum", t), "sum", () => chat(t, SUMMARIZE_SYSTEM));
+  const { system, kind } = summaryPrompt(lang);
+  return cached(cacheKeyFor(kind, t), kind, () => chat(t, system));
 }
 
 /** Стриминговый перевод аннотации. Если перевод уже в кэше (память/БД) — отдаёт его мгновенно. */
@@ -524,7 +543,7 @@ export async function* translateStream(text: string): AsyncGenerator<string> {
 export const TRUNCATED_MARK = "\n\n⚠ Ответ усечён: модель перестала отвечать. Нажмите ещё раз, чтобы повторить.";
 
 /** Общий стрим с кэшированием. Усечённый ответ в кэш НЕ пишем — иначе обрывок станет «переводом» навсегда. */
-async function* streamAndCache(text: string, system: string, key: string, kind: "tr" | "sum"): AsyncGenerator<string> {
+async function* streamAndCache(text: string, system: string, key: string, kind: AiCacheKind): AsyncGenerator<string> {
   let acc = "";
   try {
     for await (const delta of aiStream(text, system)) {
@@ -543,15 +562,16 @@ async function* streamAndCache(text: string, system: string, key: string, kind: 
   void dbSet(key, kind, acc);
 }
 
-/** Стриминговое резюме. Если резюме уже в кэше — отдаёт его мгновенно. */
-export async function* summarizeStream(text: string): AsyncGenerator<string> {
+/** Стриминговое резюме. Если резюме уже в кэше — отдаёт его мгновенно. Русское и английское резюме кэшируются раздельно. */
+export async function* summarizeStream(text: string, lang: SummaryLang = "ru"): AsyncGenerator<string> {
   const t = text.trim();
   if (!t) return;
-  const key = cacheKeyFor("sum", t);
+  const { system, kind } = summaryPrompt(lang);
+  const key = cacheKeyFor(kind, t);
   const pre = await cachedPick(key);
   if (pre !== undefined) {
     yield pre;
     return;
   }
-  yield* streamAndCache(t, SUMMARIZE_SYSTEM, key, "sum");
+  yield* streamAndCache(t, system, key, kind);
 }

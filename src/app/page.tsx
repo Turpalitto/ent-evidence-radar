@@ -6,25 +6,30 @@ import { db } from "@/db";
 import { articles, fetchRuns, topics } from "@/db/schema";
 import { ensureSeeded, getSettings } from "@/lib/refresh";
 import { Feed } from "@/components/Feed";
-import { formatDateTime } from "@/components/Badges";
+import { msg } from "@/lib/i18n";
+import { getI18n } from "@/lib/i18n/server";
 import { pageMetadata } from "@/lib/metadata";
 import { ARTICLE_AGGREGATES_PREFIX, cached } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = pageMetadata({
-  title: "Лента доказательных публикаций",
-  absolute: "ENT Evidence Radar — мониторинг доказательной оториноларингологии",
-  description:
-    "Лента свежих систематических обзоров, РКИ и клинических руководств по оториноларингологии из PubMed, Cochrane, Europe PMC, ClinicalTrials.gov и medRxiv — с оценкой дизайна, уровня доказательности и индекса доверия.",
-  path: "/",
-});
+export async function generateMetadata(): Promise<Metadata> {
+  const { t, locale } = await getI18n();
+  return pageMetadata({
+    title: t("Лента доказательных публикаций"),
+    absolute: t("ENT Evidence Radar — мониторинг доказательной оториноларингологии"),
+    description: t("Лента свежих систематических обзоров, РКИ и клинических руководств по оториноларингологии из PubMed, Cochrane, Europe PMC, ClinicalTrials.gov и medRxiv — с оценкой дизайна, уровня доказательности и индекса доверия."),
+    path: "/",
+    locale,
+  });
+}
 
+/** Подписи статусов — ключи словаря (msg), переводятся через t(). */
 const RUN_STATUS: Record<string, { label: string; dot: string; text: string }> = {
-  success: { label: "успешно", dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-400" },
-  running: { label: "выполняется", dot: "bg-sky-500", text: "text-sky-700 dark:text-sky-400" },
-  partial: { label: "частично", dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-400" },
-  failed: { label: "ошибка", dot: "bg-rose-500", text: "text-rose-700 dark:text-rose-400" },
+  success: { label: msg("успешно"), dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-400" },
+  running: { label: msg("выполняется"), dot: "bg-sky-500", text: "text-sky-700 dark:text-sky-400" },
+  partial: { label: msg("частично"), dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-400" },
+  failed: { label: msg("ошибка"), dot: "bg-rose-500", text: "text-rose-700 dark:text-rose-400" },
 };
 
 const ICONS: Record<string, ReactNode> = {
@@ -47,13 +52,14 @@ const ICONS: Record<string, ReactNode> = {
 
 export default async function HomePage() {
   await ensureSeeded();
+  const { t, dateTime, number } = await getI18n();
   const [topicRows, cfg, [totalsRow], lastRun] = await Promise.all([
     db.select().from(topics).orderBy(asc(topics.id)),
     getSettings(),
     // Аудит I-11: счётчики по всей таблице кэшируются на 30 с и сбрасываются по событиям
     // (прочитано/закладка/обновление/реклассификация), поэтому цифры не «отстают».
     cached(`${ARTICLE_AGGREGATES_PREFIX}home-totals`, 30_000, async () => {
-      const [t] = await db
+      const [row] = await db
         .select({
           total: sql<number>`count(*)::int`,
           unread: sql<number>`count(*) filter (where not ${articles.isRead})::int`,
@@ -64,7 +70,7 @@ export default async function HomePage() {
         })
         .from(articles)
         .where(eq(articles.isHidden, false));
-      return [t];
+      return [row];
     }),
     db.select().from(fetchRuns).orderBy(desc(fetchRuns.startedAt)).limit(1),
   ]);
@@ -74,11 +80,11 @@ export default async function HomePage() {
   const status = run ? RUN_STATUS[run.status] ?? RUN_STATUS.failed : null;
 
   const cards = [
-    { key: "total", label: "Всего записей", value: totals.total, sub: `+${totals.last7} за 7 дней`, href: "/" },
-    { key: "unread", label: "Непрочитано", value: totals.unread, sub: "новое для вас", href: "/?unread=1" },
-    { key: "level1", label: "Уровень 1", value: totals.l1, sub: "СО/МА и руководства", href: "/?level=1&sort=trust" },
-    { key: "trust", label: "Доверие ≥ 70", value: totals.high, sub: "высоконадёжные", href: "/?minTrust=70&sort=trust" },
-    { key: "guideline", label: "Руководств", value: totals.guidelines, sub: "guidelines / consensus", href: "/?design=guideline" },
+    { key: "total", label: t("Всего записей"), value: totals.total, sub: t("+{n} за 7 дней", { n: totals.last7 }), href: "/" },
+    { key: "unread", label: t("Непрочитано"), value: totals.unread, sub: t("новое для вас"), href: "/?unread=1" },
+    { key: "level1", label: t("Уровень 1"), value: totals.l1, sub: t("СО/МА и руководства"), href: "/?level=1&sort=trust" },
+    { key: "trust", label: t("Доверие ≥ 70"), value: totals.high, sub: t("высоконадёжные"), href: "/?minTrust=70&sort=trust" },
+    { key: "guideline", label: t("Руководств"), value: totals.guidelines, sub: "guidelines / consensus", href: "/?design=guideline" },
   ];
 
   return (
@@ -97,27 +103,26 @@ export default async function HomePage() {
           style={{ background: "radial-gradient(circle, rgba(2,132,199,0.22), transparent 68%)" }}
         />
         <div className="relative">
-          <p className="eyebrow">Доказательная оториноларингология</p>
+          <p className="eyebrow">{t("Доказательная оториноларингология")}</p>
           <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-[color:var(--ink)] sm:text-[32px]">
-            Лента <span className="brand-gradient-text">доказательных публикаций</span>
+            {t("Лента")} <span className="brand-gradient-text">{t("доказательных публикаций")}</span>
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[color:var(--ink-soft)]">
-            Автоматический мониторинг систематических обзоров, РКИ и клинических руководств из первоисточников —
-            с оценкой дизайна исследования, уровня доказательности и индекса доверия.
+            {t("Автоматический мониторинг систематических обзоров, РКИ и клинических руководств из первоисточников — с оценкой дизайна исследования, уровня доказательности и индекса доверия.")}
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <span className="chip">
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
-              Окно {cfg.lookbackDays} дн.
+              {t("Окно {days} дн.", { days: cfg.lookbackDays })}
             </span>
             <span className="chip">
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h10M4 18h7" /></svg>
-              {topicRows.filter((t) => t.enabled).length} активных тем
+              {t("{n} активных тем", { n: topicRows.filter((tp) => tp.enabled).length })}
             </span>
             <span className="chip">
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></svg>
-              {cfg.autoRefreshEnabled ? `Автообновление · ${cfg.refreshIntervalMinutes} мин` : "Автообновление выключено"}
+              {cfg.autoRefreshEnabled ? t("Автообновление · {n} мин", { n: cfg.refreshIntervalMinutes }) : t("Автообновление выключено")}
             </span>
 
             <span className="mx-1 hidden h-5 w-px bg-[color:var(--hairline-strong)] sm:block" />
@@ -125,13 +130,13 @@ export default async function HomePage() {
             {run && status ? (
               <span className="chip">
                 <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
-                Запуск <span className={`font-semibold ${status.text}`}>{status.label}</span> · {formatDateTime(run.startedAt)} · +{run.newAdded}
+                {t("Запуск")} <span className={`font-semibold ${status.text}`}>{t(status.label)}</span> · {dateTime(run.startedAt)} · +{run.newAdded}
               </span>
             ) : (
-              <span className="chip">Обновление ещё не запускалось</span>
+              <span className="chip">{t("Обновление ещё не запускалось")}</span>
             )}
             <Link href="/runs" className="link-brand text-xs font-semibold">
-              Журнал запусков →
+              {t("Журнал запусков →")}
             </Link>
           </div>
         </div>
@@ -152,7 +157,7 @@ export default async function HomePage() {
                 {ICONS[c.key]}
               </span>
             </div>
-            <p className="stat-value mt-2.5">{c.value.toLocaleString("ru-RU")}</p>
+            <p className="stat-value mt-2.5">{number(c.value)}</p>
             <p className="mt-1.5 text-[11px] text-[color:var(--ink-muted)] transition group-hover:text-[color:var(--brand-ink)]">
               {c.sub}
             </p>

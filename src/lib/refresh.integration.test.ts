@@ -62,6 +62,12 @@ vi.mock("@/lib/sources/medrxiv", () => ({
     throw new Error("medRxiv недоступен (тест)");
   }),
 }));
+// Crossref (A-04) проверяет DOI сохранённых статей: без мока тест ходил бы в сеть (в CI — реально,
+// и шаг «crossref-notices» менял итоги запуска). Отвечаем «уведомлений нет».
+vi.mock("@/lib/sources/crossref", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/sources/crossref")>()),
+  crossrefNoticesFor: vi.fn(async () => new Map()),
+}));
 
 import { db } from "@/db";
 import { articles, fetchRuns, sources, topics } from "@/db/schema";
@@ -114,11 +120,17 @@ describe("startRefresh — фоновое выполнение (F-05)", () => {
     expect(epmcQueries[0]).toMatch(/MESH:|TITLE:|JOURNAL:/); // переведённый PubMed-синтаксис
     expect(epmcQueries[0]).not.toMatch(/\[(MeSH|tiab|pt)\]/i);
     expect(bySource.medrxiv.error).toMatch(/medRxiv недоступен/);
-    expect(run.totalFound).toBe(2 * topicCount + 1); // служебный шаг retraction-recheck не считается
+    expect(run.totalFound).toBe(2 * topicCount + 1); // служебные шаги (retraction-recheck, crossref-notices, trial-tracking) не считаются
     expect(run.errorMessage).toMatch(/medrxiv/);
 
     const rows = await db.select().from(articles);
     expect(rows).toHaveLength(2);
+    // Служебный шаг Crossref: found = проверено DOI (мок ответил «уведомлений нет»), его found не входит в totalFound,
+    // а added/updated — собственные счётчики шага, не затёртые нулями реальных источников.
+    const crossref = bySource["crossref-notices"];
+    expect(crossref?.found).toBe(rows.filter((r) => r.doi).length);
+    expect(crossref?.added).toBe(0);
+    expect(crossref?.error).toBeUndefined();
     const merged = rows.find((r) => r.pmid === "40000001")!;
     expect(new Set(merged.sourceKeys)).toEqual(new Set(["pubmed", "europepmc"]));
     const firstTopicId = (await db.select().from(topics).where(eq(topics.enabled, true)))[0]!.id;

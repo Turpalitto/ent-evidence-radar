@@ -43,12 +43,13 @@ function sse(stream: AsyncGenerator<string>): Response {
 }
 
 /**
- * Тело: `{ articleId, action }`. Текст берётся из БД (аудит F-08): раньше сервер переводил
- * любой присланный текст за счёт владельца ключа.
+ * Тело: `{ articleId, action, lang? }`. Текст берётся из БД (аудит F-08): раньше сервер переводил
+ * любой присланный текст за счёт владельца ключа. `lang` (A-16) — язык резюме; перевод всегда на русский.
  */
 const BodySchema = z.object({
   articleId: z.number().int().positive(),
   action: z.enum(["translate", "summary"]).default("summary"),
+  lang: z.enum(["ru", "en"]).default("ru"),
 });
 
 export async function POST(req: NextRequest) {
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = await parseBody(req, BodySchema);
   if (!parsed.ok) return parsed.response;
-  const { articleId, action } = parsed.data;
+  const { articleId, action, lang } = parsed.data;
 
   const [row] = await db.select({ abstract: articles.abstract }).from(articles).where(eq(articles.id, articleId)).limit(1);
   if (!row) return Response.json({ ok: false, error: "Статья не найдена" }, { status: 404 });
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
 
   // Бюджет проверяем до открытия стрима: кэш-попадания бюджета не расходуют, их пропускаем ниже.
   const usage = await getAiUsage();
-  const stream = action === "translate" ? translateStream(text) : summarizeStream(text);
+  const stream = action === "translate" ? translateStream(text) : summarizeStream(text, lang);
   if (usage.budget > 0 && usage.calls >= usage.budget) {
     // Отдаём из кэша, если есть; иначе — честный 429.
     const first = await stream.next();

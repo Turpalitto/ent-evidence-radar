@@ -894,6 +894,11 @@ paths:
               properties:
                 articleId: { type: integer, minimum: 1 }
                 action: { type: string, enum: [summary, translate], default: summary }
+                lang:
+                  type: string
+                  enum: [ru, en]
+                  default: ru
+                  description: "Язык резюме (`action: summary`); русское и английское резюме кэшируются раздельно. Перевод всегда на русский."
       responses:
         "200":
           description: "Поток `text/event-stream` с фрагментами текста; обрезанный по таймауту ответ помечается и не кэшируется"

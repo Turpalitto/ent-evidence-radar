@@ -1,6 +1,9 @@
-export default function Loading() {
+import { getI18n } from "@/lib/i18n/server";
+
+export default async function Loading() {
+  const { t } = await getI18n();
   return (
-    <div className="space-y-3" aria-busy="true" aria-label="Загрузка">
+    <div className="space-y-3" aria-busy="true" aria-label={t("Загрузка")}>
       <div className="space-y-2">
         <div className="skeleton h-6 w-72" />
         <div className="skeleton h-4 w-96 max-w-full" />

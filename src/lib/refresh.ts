@@ -47,7 +47,12 @@ const LOCK_KEY = "lock_refresh";
 /** Сколько устаревших записей переразмечать за один запуск refresh (ограничивает время запуска). */
 const RECLASSIFY_PER_RUN = 2000;
 /** Служебные шаги запуска, попадающие в details наряду с источниками. */
-const SERVICE_STEPS = new Set(["retraction-recheck", "reclassify"]);
+/**
+ * Служебные шаги запуска: их `found` означает «проверено/просмотрено», а `added`/`updated`
+ * проставляет сам шаг (новых отзывов, появившихся результатов, изменённых записей) — поэтому
+ * они не входят в «найдено» запуска и не перезаписываются счётчиками реальных источников.
+ */
+export const SERVICE_STEPS: ReadonlySet<string> = new Set(["retraction-recheck", "crossref-notices", "trial-tracking", "reclassify"]);
 const LOCK_LEASE_MS = 6 * 60 * 1000;
 
 async function acquireLock(holder: string): Promise<boolean> {

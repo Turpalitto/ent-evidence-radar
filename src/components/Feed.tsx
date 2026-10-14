@@ -25,7 +25,9 @@ function getServerNotificationSnapshot(): string {
 import type { Article, Topic } from "@/db/schema";
 import { DESIGN_LABELS, DESIGN_SHORT, SOURCE_LABELS, SUBSPECIALTIES, EVIDENCE_LEVEL_LABELS } from "@/lib/evidence/taxonomy";
 import { extractConclusion } from "@/lib/evidence/abstract";
-import { DesignBadge, IssuerBadge, LevelBadge, NoticeBadge, SourceBadge, SubBadge, TierBadge, TrialBadge, TrustScore, formatDate } from "./Badges";
+import { INTL_LOCALE, msg, type Params } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n/client";
+import { DesignBadge, IssuerBadge, LevelBadge, NoticeBadge, SourceBadge, SubBadge, TierBadge, TrialBadge, TrustScore } from "./Badges";
 import { guidelineIssuerLabel } from "@/lib/evidence/guidelines";
 import { ArticleDrawer } from "./ArticleDrawer";
 import { Highlight } from "./Highlight";
@@ -103,15 +105,16 @@ function persistUserPresets(list: UserPreset[]) {
   }
 }
 
-const PRESETS: { label: string; f: Partial<Filters>; hint: string }[] = [
-  { label: "⚡ Изменит практику", f: { level: "2", minTrust: 70, sort: "trust" }, hint: "СО/МА, руководства и РКИ с высоким доверием (≥70)" },
-  { label: "Только высший уровень", f: { level: "1", minTrust: 60 }, hint: "СО/МА и руководства, доверие ≥60" },
-  { label: "Свежие РКИ", f: { design: "rct", days: "30" }, hint: "РКИ за 30 дней" },
-  { label: "Руководства", f: { design: "guideline" }, hint: "Клинические руководства и консенсусы" },
+/** Подписи и подсказки — ключи словаря (msg), переводятся через t() при рендере. */
+export const PRESETS: { label: string; f: Partial<Filters>; hint: string; params?: Params }[] = [
+  { label: msg("⚡ Изменит практику"), f: { level: "2", minTrust: 70, sort: "trust" }, hint: msg("СО/МА, руководства и РКИ с высоким доверием (≥70)") },
+  { label: msg("Только высший уровень"), f: { level: "1", minTrust: 60 }, hint: msg("СО/МА и руководства, доверие ≥60") },
+  { label: msg("Свежие РКИ"), f: { design: "rct", days: "30" }, hint: msg("РКИ за 30 дней") },
+  { label: msg("Руководства"), f: { design: "guideline" }, hint: msg("Клинические руководства и консенсусы") },
   { label: "Cochrane", f: { q: "Cochrane" }, hint: "Cochrane Database of Systematic Reviews" },
-  { label: "Непрочитанное ≥70", f: { unread: true, minTrust: 70, sort: "trust" }, hint: "Что стоит прочитать в первую очередь" },
-  { label: "Этот год", f: { fromYear: String(THIS_YEAR) }, hint: `Исследования, опубликованные с 1 января ${THIS_YEAR} года` },
-  { label: "Прошлый год", f: { fromYear: String(THIS_YEAR - 1), toYear: String(THIS_YEAR - 1) }, hint: `Только публикации ${THIS_YEAR - 1} года` },
+  { label: msg("Непрочитанное ≥70"), f: { unread: true, minTrust: 70, sort: "trust" }, hint: msg("Что стоит прочитать в первую очередь") },
+  { label: msg("Этот год"), f: { fromYear: String(THIS_YEAR) }, hint: msg("Исследования, опубликованные с 1 января {year} года"), params: { year: THIS_YEAR } },
+  { label: msg("Прошлый год"), f: { fromYear: String(THIS_YEAR - 1), toYear: String(THIS_YEAR - 1) }, hint: msg("Только публикации {year} года"), params: { year: THIS_YEAR - 1 } },
 ];
 
 function toParams(f: Filters, page: number, pageSize: number) {
@@ -198,14 +201,15 @@ function useOnlineStatus(): boolean {
   return useSyncExternalStore(subscribeOnline, () => navigator.onLine !== false, () => true);
 }
 
-function formatCachedAt(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "ранее";
-  return d.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
 export function Feed({ topics }: { topics: Topic[] }) {
-  const topicNameById = useMemo(() => new Map(topics.map((t) => [t.id, t.name])), [topics]);
+  const { t, locale, date, number } = useI18n();
+  const formatCachedAt = (iso: string): string => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return t("ранее");
+    return d.toLocaleString(INTL_LOCALE[locale], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+  // Названия встроенных тем есть в словаре; пользовательские t() возвращает как есть.
+  const topicNameById = useMemo(() => new Map(topics.map((tp) => [tp.id, t(tp.name)])), [topics, t]);
   /** «Почему статья в ленте»: названия тем, по запросам которых она пришла (I-14). */
   const topicNames = (a: Article) => {
     const names = (a.topicIds ?? []).map((id) => topicNameById.get(id)).filter((x): x is string => !!x);
@@ -271,7 +275,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
     const p = await Notification.requestPermission();
     if (p === "granted") {
       new Notification("ENT Evidence Radar", {
-        body: "Уведомления включены: вы получите оповещение при появлении публикаций 1-го уровня доказательности с доверием ≥80.",
+        body: t("Уведомления включены: вы получите оповещение при появлении публикаций 1-го уровня доказательности с доверием ≥80."),
       });
     }
   };
@@ -281,20 +285,20 @@ export function Feed({ topics }: { topics: Topic[] }) {
   // (initial → восстановленные из URL → debounce поиска) и столько же warm-вызовов AI.
   const [restored, setRestored] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       const parsed = parseUrlSearch();
       setF((prev) => (sameFilters(prev, parsed.f) ? prev : parsed.f));
       setQ(parsed.q);
       setPage(parsed.page);
       setRestored(true);
     }, 0);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
     // Не создаём новый объект фильтров, если строка поиска фактически не изменилась.
-    const t = setTimeout(() => setF((s) => (s.q === q ? s : { ...s, q })), 200);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setF((s) => (s.q === q ? s : { ...s, q })), 200);
+    return () => clearTimeout(timer);
   }, [q]);
 
   // Защита от гонки: при смене фильтров предыдущий запрос отменяется, а его поздний
@@ -312,7 +316,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
     try {
       // no-cache (а не no-store): браузер шлёт If-None-Match и получает 304 без тела, если лента не изменилась.
       const r = await fetch(`/api/articles?${toParams(f, page, pageSize)}`, { cache: "no-cache", signal: ctrl.signal });
-      if (!r.ok) throw new Error(`Ошибка сервера ${r.status}`);
+      if (!r.ok) throw new Error(t("Ошибка сервера {status}", { status: r.status }));
       const parsed = (await r.json()) as { items?: Article[]; total?: number; searchTerms?: string[]; issuers?: { key: string; count: number }[] };
       if (ctrl.signal.aborted) return;
       setCachedAt(r.headers.get("x-sw-cache") === "hit" ? (r.headers.get("x-sw-cached-at") ?? "") : null);
@@ -321,17 +325,17 @@ export function Feed({ topics }: { topics: Topic[] }) {
       setFocusedIdx(-1);
     } catch (e) {
       if (ctrl.signal.aborted) return; // отменён более новым запросом или размонтированием
-      setError(e instanceof Error ? e.message : "Ошибка сети");
+      setError(e instanceof Error ? e.message : t("Ошибка сети"));
     } finally {
       if (loadAbortRef.current === ctrl) setLoading(false);
     }
-  }, [f, page]);
+  }, [f, page, t]);
 
   useEffect(() => {
     if (!restored) return;
     // setTimeout(0) склеивает одновременные изменения (фильтры + страница) в один запрос.
-    const t = setTimeout(() => void load(), 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void load(), 0);
+    return () => clearTimeout(timer);
   }, [load, restored]);
 
   useEffect(() => () => loadAbortRef.current?.abort(), []);
@@ -345,8 +349,8 @@ export function Feed({ topics }: { topics: Topic[] }) {
             .then((d: { items?: Article[] }) => {
               const top = d.items?.find((a) => !a.isRead);
               if (top) {
-                new Notification("⚡ ENT Evidence Radar: важное исследование", {
-                  body: `${top.title}\n${top.journal || "ЛОР"} · Доверие ${top.trustScore}/100`,
+                new Notification(t("⚡ ENT Evidence Radar: важное исследование"), {
+                  body: `${top.title}\n${t("{journal} · Доверие {score}/100", { journal: top.journal || t("ЛОР"), score: top.trustScore })}`,
                 });
               }
             })
@@ -356,7 +360,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
     };
     window.addEventListener("ent-radar:refreshed", h);
     return () => window.removeEventListener("ent-radar:refreshed", h);
-  }, [load]);
+  }, [load, t]);
 
   // Синхронизируем фильтры/поиск/страницу в URL (replaceState — без захламления истории).
   useEffect(() => {
@@ -409,11 +413,11 @@ export function Feed({ topics }: { topics: Topic[] }) {
   // ── Пользовательские пресеты фильтров (I-14), localStorage
   const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
   useEffect(() => {
-    const t = setTimeout(() => setUserPresets(loadUserPresets()), 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setUserPresets(loadUserPresets()), 0);
+    return () => clearTimeout(timer);
   }, []);
   const saveUserPreset = () => {
-    const name = window.prompt("Название пресета (например, «Ринология: СО/МА за год»)")?.trim().slice(0, 40);
+    const name = window.prompt(t("Название пресета (например, «Ринология: СО/МА за год»)"))?.trim().slice(0, 40);
     if (!name) return;
     const next = [...userPresets.filter((p) => p.name !== name), { name, f }].slice(-12);
     setUserPresets(next);
@@ -554,19 +558,19 @@ export function Feed({ topics }: { topics: Topic[] }) {
     <div className="space-y-5 text-sm">
       <div>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="eyebrow">Быстрые фильтры</h3>
+          <h3 className="eyebrow">{t("Быстрые фильтры")}</h3>
           <button
             onClick={reset}
             className={`link-brand text-xs font-semibold hover:underline ${activeCount > 0 ? "" : "invisible"}`}
           >
-            Сбросить{activeCount > 0 ? ` (${activeCount})` : ""}
+            {t("Сбросить")}{activeCount > 0 ? ` (${activeCount})` : ""}
           </button>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {PRESETS.map((p) => (
             <button
               key={p.label}
-              title={p.hint}
+              title={t(p.hint, p.params)}
               onClick={() => { reset(); set(p.f); if (p.f.q) setQ(p.f.q); }}
               className={`chip transition ${
                 presetActive(p.f)
@@ -574,7 +578,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                   : "hover:border-[color:var(--brand-ring)] hover:text-[color:var(--brand-ink)]"
               }`}
             >
-              {p.label}
+              {t(p.label)}
             </button>
           ))}
         </div>
@@ -584,48 +588,49 @@ export function Feed({ topics }: { topics: Topic[] }) {
             <span key={p.name} className="inline-flex items-center overflow-hidden rounded-full border border-[color:var(--hairline)]">
               <button
                 type="button"
-                title={`Применить сохранённый фильтр «${p.name}»`}
+                title={t("Применить сохранённый фильтр «{name}»", { name: p.name })}
                 onClick={() => { reset(); set(p.f); setQ(p.f.q ?? ""); }}
                 className={`px-2.5 py-1 text-xs transition ${presetActive(p.f) ? "bg-[color:var(--brand-soft)] font-semibold text-[color:var(--brand-ink)]" : "hover:text-[color:var(--brand-ink)]"}`}
               >
                 ★ {p.name}
               </button>
-              <button type="button" aria-label={`Удалить пресет ${p.name}`} title="Удалить пресет" onClick={() => removeUserPreset(p.name)} className="px-1.5 py-1 text-xs text-[color:var(--ink-subtle)] hover:text-rose-600">×</button>
+              <button type="button" aria-label={t("Удалить пресет {name}", { name: p.name })} title={t("Удалить пресет")} onClick={() => removeUserPreset(p.name)} className="px-1.5 py-1 text-xs text-[color:var(--ink-subtle)] hover:text-rose-600">×</button>
             </span>
           ))}
           {activeCount > 0 && (
-            <button type="button" onClick={saveUserPreset} className="chip text-xs hover:border-[color:var(--brand-ring)] hover:text-[color:var(--brand-ink)]" title="Сохранить текущие фильтры как свой пресет (в этом браузере)">
-              + Сохранить фильтр
+            <button type="button" onClick={saveUserPreset} className="chip text-xs hover:border-[color:var(--brand-ring)] hover:text-[color:var(--brand-ink)]" title={t("Сохранить текущие фильтры как свой пресет (в этом браузере)")}>
+              {t("+ Сохранить фильтр")}
             </button>
           )}
         </div>
       </div>
 
       <label className="block">
-        <span className="eyebrow mb-1.5 block">Субспециальность</span>
+        <span className="eyebrow mb-1.5 block">{t("Субспециальность")}</span>
         <select value={f.subspecialty} onChange={(e) => set({ subspecialty: e.target.value })} className={SELECT_CLS}>
-          <option value="">Все</option>
-          {SUBSPECIALTIES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+          <option value="">{t("Все")}</option>
+          {SUBSPECIALTIES.map((s) => <option key={s.key} value={s.key}>{t(s.label)}</option>)}
         </select>
       </label>
 
       <label className="block">
-        <span className="eyebrow mb-1.5 block">Дизайн исследования</span>
+        <span className="eyebrow mb-1.5 block">{t("Дизайн исследования")}</span>
         <select value={f.design} onChange={(e) => set({ design: e.target.value, ...(e.target.value !== "guideline" ? { issuer: "" } : {}) })} className={SELECT_CLS}>
-          <option value="">Все</option>
-          {Object.entries(DESIGN_SHORT).map(([k, v]) => <option key={k} value={k} title={DESIGN_LABELS[k as keyof typeof DESIGN_LABELS]}>{v}</option>)}
+          <option value="">{t("Все")}</option>
+          {Object.entries(DESIGN_SHORT).map(([k, v]) => <option key={k} value={k} title={t(DESIGN_LABELS[k as keyof typeof DESIGN_LABELS])}>{t(v)}</option>)}
         </select>
       </label>
 
       {(f.design === "guideline" || f.issuer) && (
         <div className="block" data-testid="issuer-facet">
-          <span className="eyebrow mb-1.5 block">Издатель руководства</span>
+          <span className="eyebrow mb-1.5 block">{t("Издатель руководства")}</span>
           {data.issuers.length === 0 ? (
-            <p className="text-xs text-[color:var(--ink-subtle)]">Нет руководств под текущие фильтры.</p>
+            <p className="text-xs text-[color:var(--ink-subtle)]">{t("Нет руководств под текущие фильтры.")}</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {data.issuers.map(({ key, count }) => {
-                const l = key === "other" ? { label: "Без издателя", name: "Руководства, у которых орган-издатель не распознан" } : guidelineIssuerLabel(key) ?? { label: key, name: key };
+                const raw = key === "other" ? { label: msg("Без издателя"), name: msg("Руководства, у которых орган-издатель не распознан") } : guidelineIssuerLabel(key) ?? { label: key, name: key };
+                const l = { label: t(raw.label), name: t(raw.name) };
                 const active = f.issuer === key;
                 return (
                   <button
@@ -646,16 +651,16 @@ export function Feed({ topics }: { topics: Topic[] }) {
       )}
 
       <label className="block">
-        <span className="eyebrow mb-1.5 block">Уровень доказательности (не ниже)</span>
+        <span className="eyebrow mb-1.5 block">{t("Уровень доказательности (не ниже)")}</span>
         <select value={f.level} onChange={(e) => set({ level: e.target.value })} className={SELECT_CLS}>
-          <option value="">Любой</option>
-          {[1, 2, 3, 4].map((l) => <option key={l} value={l} title={EVIDENCE_LEVEL_LABELS[l]}>Уровень {l}</option>)}
+          <option value="">{t("Любой")}</option>
+          {[1, 2, 3, 4].map((l) => <option key={l} value={l} title={t(EVIDENCE_LEVEL_LABELS[l] ?? "")}>{t("Уровень {level}", { level: l })}</option>)}
         </select>
       </label>
 
       <label className="block">
         <span className="eyebrow mb-1.5 flex justify-between">
-          <span>Мин. индекс доверия</span>
+          <span>{t("Мин. индекс доверия")}</span>
           <span className="tabular-nums text-[color:var(--brand-ink)]">{f.minTrust}</span>
         </span>
         <input type="range" min={0} max={100} step={5} value={f.minTrust} onChange={(e) => set({ minTrust: Number(e.target.value) })} className="w-full accent-teal-600" />
@@ -663,59 +668,59 @@ export function Feed({ topics }: { topics: Topic[] }) {
 
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <span className="eyebrow mb-1.5 block">Источник</span>
+          <span className="eyebrow mb-1.5 block">{t("Источник")}</span>
           <select value={f.source} onChange={(e) => set({ source: e.target.value })} className={SELECT_CLS}>
-            <option value="">Все</option>
-            {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            <option value="">{t("Все")}</option>
+            {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{t(v)}</option>)}
           </select>
         </label>
         <label className="block">
-          <span className="eyebrow mb-1.5 block">Период</span>
+          <span className="eyebrow mb-1.5 block">{t("Период")}</span>
           <select value={f.days} onChange={(e) => set({ days: e.target.value })} className={SELECT_CLS}>
-            <option value="">Всё</option>
-            <option value="7">7 дней</option>
-            <option value="14">14 дней</option>
-            <option value="30">30 дней</option>
-            <option value="90">90 дней</option>
-            <option value="365">Год</option>
+            <option value="">{t("Всё")}</option>
+            <option value="7">{t("7 дней")}</option>
+            <option value="14">{t("14 дней")}</option>
+            <option value="30">{t("30 дней")}</option>
+            <option value="90">{t("90 дней")}</option>
+            <option value="365">{t("Год")}</option>
           </select>
         </label>
       </div>
 
       <label className="block">
-        <span className="eyebrow mb-1.5 block">Тема (поисковый запрос)</span>
+        <span className="eyebrow mb-1.5 block">{t("Тема (поисковый запрос)")}</span>
         <select value={f.topicId} onChange={(e) => set({ topicId: e.target.value })} className={SELECT_CLS}>
-          <option value="">Все темы</option>
-          {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          <option value="">{t("Все темы")}</option>
+          {topics.map((tp) => <option key={tp.id} value={tp.id}>{t(tp.name)}</option>)}
         </select>
       </label>
 
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <span className="eyebrow mb-1.5 block">Год от</span>
+          <span className="eyebrow mb-1.5 block">{t("Год от")}</span>
           <select value={f.fromYear} onChange={(e) => set({ fromYear: e.target.value, toYear: f.toYear && e.target.value && Number(e.target.value) > Number(f.toYear) ? e.target.value : f.toYear })} className={SELECT_CLS}>
-            <option value="">Все</option>
+            <option value="">{t("Все")}</option>
             {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </label>
         <label className="block">
-          <span className="eyebrow mb-1.5 block">Год до</span>
+          <span className="eyebrow mb-1.5 block">{t("Год до")}</span>
           <select value={f.toYear} onChange={(e) => set({ toYear: e.target.value, fromYear: f.fromYear && e.target.value && Number(e.target.value) < Number(f.fromYear) ? e.target.value : f.fromYear })} className={SELECT_CLS}>
-            <option value="">Все</option>
+            <option value="">{t("Все")}</option>
             {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </label>
       </div>
 
       <div className="space-y-2 text-[color:var(--ink-soft)]">
-        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.unread} onChange={(e) => set({ unread: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Только непрочитанные</label>
-        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.bookmarked} onChange={(e) => set({ bookmarked: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Только избранное</label>
-        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.excludePreprints} onChange={(e) => set({ excludePreprints: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Скрыть препринты</label>
-        <label className="flex items-center gap-2.5" title="Записи, которые вы скрыли как «не ЛОР / не по теме». Их можно вернуть из карточки."><input type="checkbox" checked={f.hidden} onChange={(e) => set({ hidden: e.target.checked })} className="h-4 w-4 accent-teal-600" /> Показать скрытые мной</label>
+        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.unread} onChange={(e) => set({ unread: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Только непрочитанные")}</label>
+        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.bookmarked} onChange={(e) => set({ bookmarked: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Только избранное")}</label>
+        <label className="flex items-center gap-2.5"><input type="checkbox" checked={f.excludePreprints} onChange={(e) => set({ excludePreprints: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Скрыть препринты")}</label>
+        <label className="flex items-center gap-2.5" title={t("Записи, которые вы скрыли как «не ЛОР / не по теме». Их можно вернуть из карточки.")}><input type="checkbox" checked={f.hidden} onChange={(e) => set({ hidden: e.target.checked })} className="h-4 w-4 accent-teal-600" /> {t("Показать скрытые мной")}</label>
       </div>
 
       <div className="border-t border-[color:var(--hairline)] pt-4">
-        <span className="eyebrow mb-2 block">Экспорт выборки</span>
+        <span className="eyebrow mb-2 block">{t("Экспорт выборки")}</span>
         <div className="flex gap-1.5">
           {(["csv", "ris", "bibtex", "json"] as const).map((fmt) => (
             <a key={fmt} href={`/api/export?format=${fmt}&${exportParams}`} className="btn-ghost flex-1 rounded-xl py-1.5 text-center text-xs font-semibold uppercase">
@@ -723,14 +728,14 @@ export function Feed({ topics }: { topics: Topic[] }) {
             </a>
           ))}
         </div>
-        <p className="mt-1.5 text-[11px] text-[color:var(--ink-subtle)]">RIS — для Zotero / EndNote / Mendeley; BibTeX — для LaTeX</p>
+        <p className="mt-1.5 text-[11px] text-[color:var(--ink-subtle)]">{t("RIS — для Zotero / EndNote / Mendeley; BibTeX — для LaTeX")}</p>
         <a
           href={feedHref}
           className="link-brand mt-2 inline-flex items-center gap-1.5 text-xs font-semibold hover:underline"
-          title={feedHref === "/feed.xml" ? "Atom-лента всех новых публикаций" : "Atom-лента только по текущим фильтрам — добавьте ссылку в RSS-читалку"}
+          title={feedHref === "/feed.xml" ? t("Atom-лента всех новых публикаций") : t("Atom-лента только по текущим фильтрам — добавьте ссылку в RSS-читалку")}
         >
           <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6.18 15.64a2.18 2.18 0 1 1 0 4.36 2.18 2.18 0 0 1 0-4.36M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27zm0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93z" /></svg>
-          {feedHref === "/feed.xml" ? "RSS-лента радара" : "RSS для этого фильтра"}
+          {feedHref === "/feed.xml" ? t("RSS-лента радара") : t("RSS для этого фильтра")}
         </a>
       </div>
     </div>
@@ -756,7 +761,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
             ref={filtersRef}
             role="dialog"
             aria-modal="true"
-            aria-label="Фильтры ленты"
+            aria-label={t("Фильтры ленты")}
             tabIndex={-1}
             className="sheet-enter relative w-full overflow-y-auto overscroll-contain rounded-t-3xl bg-[color:var(--surface-1)] px-4 pb-4 pt-3 shadow-[var(--shadow-modal)] outline-none"
             style={{ maxHeight: "85dvh" }}
@@ -764,11 +769,11 @@ export function Feed({ topics }: { topics: Topic[] }) {
           >
             <div className="sheet-handle mb-3 text-slate-400" />
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-[color:var(--ink)]">Фильтры</h2>
+              <h2 className="text-base font-semibold text-[color:var(--ink)]">{t("Фильтры")}</h2>
               <button
                 onClick={() => setShowFilters(false)}
                 className="rounded-xl p-2 text-[color:var(--ink-muted)] hover:bg-[color:var(--surface-3)]"
-                aria-label="Закрыть фильтры"
+                aria-label={t("Закрыть фильтры")}
               >
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
@@ -778,7 +783,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
               onClick={() => setShowFilters(false)}
               className="btn-brand mt-5 w-full rounded-xl py-3 text-sm font-semibold text-white"
             >
-              Применить
+              {t("Применить")}
             </button>
             <div className="pb-safe" />
           </div>
@@ -790,7 +795,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
         {ptrActive && (
           <div className="mb-2 flex items-center justify-center gap-2 text-xs text-[color:var(--brand-ink)]">
             <svg viewBox="0 0 24 24" className="h-4 w-4 ptr-spinning" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></svg>
-            Обновляем…
+            {t("Обновляем…")}
           </div>
         )}
 
@@ -801,15 +806,15 @@ export function Feed({ topics }: { topics: Topic[] }) {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Поиск по названию, авторам, журналу…"
-              aria-label="Поиск публикаций"
+              placeholder={t("Поиск по названию, авторам, журналу…")}
+              aria-label={t("Поиск публикаций")}
               type="search"
               className="field w-full rounded-xl py-2.5 pl-9 pr-8 text-sm text-[color:var(--ink)]"
             />
             {q && (
               <button
                 onClick={() => setQ("")}
-                aria-label="Очистить поиск"
+                aria-label={t("Очистить поиск")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-[color:var(--ink-subtle)] hover:bg-[color:var(--surface-3)] hover:text-[color:var(--ink)]"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
@@ -826,33 +831,33 @@ export function Feed({ topics }: { topics: Topic[] }) {
             }`}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="12" y1="18" x2="12" y2="18" /></svg>
-            {activeCount ? `Фильтры (${activeCount})` : "Фильтры"}
+            {activeCount ? `${t("Фильтры")} (${activeCount})` : t("Фильтры")}
           </button>
           <select
             value={f.q && f.sort === "date" ? "relevance" : f.sort}
             onChange={(e) => set({ sort: e.target.value as Filters["sort"] })}
             className="field rounded-xl px-3 py-2.5 text-sm text-[color:var(--ink-soft)]"
-            aria-label="Сортировка"
+            aria-label={t("Сортировка")}
           >
-            {f.q && <option value="relevance">По релевантности</option>}
-            <option value="date">Новые</option>
-            <option value="fetched">Недавние</option>
-            <option value="trust">По доверию</option>
+            {f.q && <option value="relevance">{t("По релевантности")}</option>}
+            <option value="date">{t("Новые")}</option>
+            <option value="fetched">{t("Недавние")}</option>
+            <option value="trust">{t("По доверию")}</option>
           </select>
           <button
             onClick={() => setShowShortcutsModal(true)}
-            title="Горячие клавиши (?)"
+            title={t("Горячие клавиши (?)")}
             className={`${GHOST_BTN} hidden items-center gap-1.5 md:inline-flex`}
           >
             <kbd className="rounded bg-[color:var(--surface-3)] px-1 py-0.5 font-mono text-[11px]">?</kbd>
-            <span>Клавиши</span>
+            <span>{t("Клавиши")}</span>
           </button>
           <button
             onClick={requestNotification}
             title={
               notifyPerm === "granted"
-                ? "Уведомления о важных статьях включены"
-                : "Включить браузерные уведомления о статьях 1-го уровня"
+                ? t("Уведомления о важных статьях включены")
+                : t("Включить браузерные уведомления о статьях 1-го уровня")
             }
             className={`hidden items-center gap-1.5 rounded-xl border px-3 py-2.5 text-xs font-medium transition md:inline-flex ${
               notifyPerm === "granted"
@@ -861,21 +866,21 @@ export function Feed({ topics }: { topics: Topic[] }) {
             }`}
           >
             <span>{notifyPerm === "granted" ? "🔔" : "🔕"}</span>
-            <span>{notifyPerm === "granted" ? "Уведомления" : "Оповещения"}</span>
+            <span>{notifyPerm === "granted" ? t("Уведомления") : t("Оповещения")}</span>
           </button>
           {data.items.some((a) => !a.isRead) && (
             <button
               type="button"
               onClick={() => void markPageRead()}
               className="btn-ghost hidden items-center gap-1.5 rounded-xl px-3 py-2.5 text-xs font-medium md:inline-flex"
-              title="Отметить все статьи на этой странице прочитанными"
+              title={t("Отметить все статьи на этой странице прочитанными")}
             >
               <span>✓✓</span>
-              <span>Страницу прочитано</span>
+              <span>{t("Страницу прочитано")}</span>
             </button>
           )}
           <span className="ml-auto shrink-0 pl-1 text-xs font-medium tabular-nums text-[color:var(--ink-muted)]">
-            {loading ? "…" : `${data.total.toLocaleString("ru-RU")} ст.`}
+            {loading ? "…" : t("{n} ст.", { n: number(data.total) })}
           </span>
         </div>
 
@@ -883,11 +888,11 @@ export function Feed({ topics }: { topics: Topic[] }) {
           <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1 text-xs text-[color:var(--ink-muted)]">
             <label className="flex cursor-pointer items-center gap-1.5">
               <input type="checkbox" checked={f.scope === "title"} onChange={(e) => set({ scope: e.target.checked ? "title" : "all" })} className="h-3.5 w-3.5 accent-[color:var(--brand-a)]" />
-              Только в заголовке
+              {t("Только в заголовке")}
             </label>
             {data.searchTerms.length > 0 && (
               <span className="min-w-0 truncate" title={data.searchTerms.join(", ")}>
-                Искали по термам: <span className="text-[color:var(--ink-soft)]">{data.searchTerms.slice(0, 8).join(", ")}{data.searchTerms.length > 8 ? ` +${data.searchTerms.length - 8}` : ""}</span>
+                {t("Искали по термам:")} <span className="text-[color:var(--ink-soft)]">{data.searchTerms.slice(0, 8).join(", ")}{data.searchTerms.length > 8 ? ` +${data.searchTerms.length - 8}` : ""}</span>
               </span>
             )}
           </div>
@@ -917,11 +922,11 @@ export function Feed({ topics }: { topics: Topic[] }) {
 
         {(!online || cachedAt !== null) && !loading && !error && (
           <div role="status" className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200">
-            <span className="font-semibold">{online ? "Данные из офлайн-кэша" : "Нет соединения"}</span>
+            <span className="font-semibold">{online ? t("Данные из офлайн-кэша") : t("Нет соединения")}</span>
             <span>
               {cachedAt
-                ? `показана лента, сохранённая ${formatCachedAt(cachedAt)}; обновится при появлении сети.`
-                : "показаны последние загруженные данные; действия с записями пока недоступны."}
+                ? t("показана лента, сохранённая {when}; обновится при появлении сети.", { when: formatCachedAt(cachedAt) })
+                : t("показаны последние загруженные данные; действия с записями пока недоступны.")}
             </span>
           </div>
         )}
@@ -930,13 +935,13 @@ export function Feed({ topics }: { topics: Topic[] }) {
             <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-rose-50 dark:bg-rose-950/40">
               <svg viewBox="0 0 24 24" className="h-6 w-6 text-rose-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 9v4M12 17h.01" /><circle cx="12" cy="12" r="9" /></svg>
             </div>
-            <p className="text-base font-semibold text-[color:var(--ink)]">Не удалось загрузить ленту</p>
-            <p className="mt-1 text-sm text-[color:var(--ink-muted)]">{error}. Проверьте соединение и попробуйте ещё раз.</p>
+            <p className="text-base font-semibold text-[color:var(--ink)]">{t("Не удалось загрузить ленту")}</p>
+            <p className="mt-1 text-sm text-[color:var(--ink-muted)]">{error}. {t("Проверьте соединение и попробуйте ещё раз.")}</p>
             <button
               onClick={() => void load()}
               className="btn-brand mt-4 rounded-xl px-4 py-2 text-sm font-semibold text-white"
             >
-              Повторить
+              {t("Повторить")}
             </button>
           </div>
         )}
@@ -949,18 +954,18 @@ export function Feed({ topics }: { topics: Topic[] }) {
                 <path d="m21 21-4.3-4.3" />
               </svg>
             </div>
-            <p className="text-base font-semibold text-[color:var(--ink)]">Пока ничего не найдено</p>
+            <p className="text-base font-semibold text-[color:var(--ink)]">{t("Пока ничего не найдено")}</p>
             <p className="mx-auto mt-1 max-w-md text-sm text-[color:var(--ink-muted)]">
               {data.total === 0 && activeCount === 0 && !f.q
-                ? "База пуста. Запустите обновление — приложение опросит PubMed, Europe PMC, ClinicalTrials.gov и medRxiv (обычно 1–3 минуты)."
-                : "Попробуйте ослабить фильтры или изменить запрос."}
+                ? t("База пуста. Запустите обновление — приложение опросит PubMed, Europe PMC, ClinicalTrials.gov и medRxiv (обычно 1–3 минуты).")
+                : t("Попробуйте ослабить фильтры или изменить запрос.")}
             </p>
             {data.total === 0 && activeCount === 0 && !f.q && (
               <button
                 onClick={() => window.dispatchEvent(new CustomEvent("ent-radar:refresh-request"))}
                 className="btn-brand mt-4 rounded-xl px-4 py-2 text-sm font-semibold text-white"
               >
-                Обновить данные
+                {t("Обновить данные")}
               </button>
             )}
           </div>
@@ -1011,9 +1016,9 @@ export function Feed({ topics }: { topics: Topic[] }) {
                       <LevelBadge level={a.evidenceLevel} />
                       <TierBadge tier={a.journalTier} />
                       {a.subspecialties.map((s) => <SubBadge key={s} k={s} />)}
-                      {a.isPreprint && <span title="Препринт" className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">ПРЕПРИНТ</span>}
-                      {a.isPreprint && a.publishedDoi && <span title={`Есть рецензированная журнальная версия: doi:${a.publishedDoi}`} className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">ОПУБЛИКОВАН</span>}
-                      {a.isRetracted && <span title="Статья отозвана" className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">ОТОЗВАНА</span>}
+                      {a.isPreprint && <span title={t("Препринт")} className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">{t("ПРЕПРИНТ")}</span>}
+                      {a.isPreprint && a.publishedDoi && <span title={t("Есть рецензированная журнальная версия: doi:{doi}", { doi: a.publishedDoi })} className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{t("ОПУБЛИКОВАН")}</span>}
+                      {a.isRetracted && <span title={t("Статья отозвана")} className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">{t("ОТОЗВАНА")}</span>}
                       <NoticeBadge notice={a.editorialNotice} />
                       <TrialBadge info={a.trialInfo} />
                       <span className="ml-auto flex items-center gap-1">{a.sourceKeys.map((s) => <SourceBadge key={s} k={s} />)}</span>
@@ -1024,26 +1029,26 @@ export function Feed({ topics }: { topics: Topic[] }) {
                     {conclusion ? (
                       <div className="mt-2 rounded-xl border border-teal-100 bg-teal-50/70 p-2.5 dark:border-teal-900/50 dark:bg-teal-950/30">
                         <p className="line-clamp-2 text-[12.5px] leading-relaxed text-teal-950 dark:text-teal-100">
-                          <span className="font-semibold text-teal-700 dark:text-teal-400">💡 Вывод: </span>
+                          <span className="font-semibold text-teal-700 dark:text-teal-400">{t("💡 Вывод:")} </span>
                           <Highlight text={conclusion} terms={data.searchTerms} />
                         </p>
                       </div>
                     ) : (
-                      <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-[color:var(--ink-muted)]">{a.abstract || "Аннотация недоступна"}</p>
+                      <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-[color:var(--ink-muted)]">{a.abstract || t("Аннотация недоступна")}</p>
                     )}
                     <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--ink-muted)]">
                       <span className="font-medium text-[color:var(--ink-soft)]">{a.journal || "—"}</span>
-                      <span>{formatDate(a.publishedAt)}</span>
-                      {a.authors.length > 0 && <span className="truncate">{a.authors.slice(0, 3).join(", ")}{a.authors.length > 3 ? " и др." : ""}</span>}
+                      <span>{date(a.publishedAt)}</span>
+                      {a.authors.length > 0 && <span className="truncate">{a.authors.slice(0, 3).join(", ")}{a.authors.length > 3 ? ` ${t("и др.")}` : ""}</span>}
                       {a.sampleSize && <span>n≈{a.sampleSize}</span>}
                       {topicNames(a) && (
-                        <span className="truncate text-[color:var(--ink-subtle)]" title={`Почему в ленте: темы — ${topicNames(a)}; источники — ${a.sourceKeys.join(", ")}`}>
+                        <span className="truncate text-[color:var(--ink-subtle)]" title={t("Почему в ленте: темы — {topics}; источники — {sources}", { topics: topicNames(a), sources: a.sourceKeys.join(", ") })}>
                           · {topicNames(a)}
                         </span>
                       )}
                       <span className="ml-auto flex gap-1">
-                        <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isBookmarked: !a.isBookmarked }); }} className={`rounded-md px-1.5 py-0.5 transition ${a.isBookmarked ? "text-amber-600 dark:text-amber-400" : "text-[color:var(--ink-subtle)] hover:text-amber-600 dark:hover:text-amber-400"}`} title="Избранное (b)">{a.isBookmarked ? "★" : "☆"}</button>
-                        <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isRead: !a.isRead }); }} className="rounded-md px-1.5 py-0.5 text-[color:var(--ink-subtle)] transition hover:text-[color:var(--brand-ink)]" title={a.isRead ? "Непрочитанным (r)" : "Прочитано (r)"}>{a.isRead ? "↺" : "✓"}</button>
+                        <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isBookmarked: !a.isBookmarked }); }} className={`rounded-md px-1.5 py-0.5 transition ${a.isBookmarked ? "text-amber-600 dark:text-amber-400" : "text-[color:var(--ink-subtle)] hover:text-amber-600 dark:hover:text-amber-400"}`} title={t("Избранное (b)")}>{a.isBookmarked ? "★" : "☆"}</button>
+                        <button onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isRead: !a.isRead }); }} className="rounded-md px-1.5 py-0.5 text-[color:var(--ink-subtle)] transition hover:text-[color:var(--brand-ink)]" title={a.isRead ? t("Непрочитанным (r)") : t("Прочитано (r)")}>{a.isRead ? "↺" : "✓"}</button>
                       </span>
                     </div>
                   </div>
@@ -1057,8 +1062,8 @@ export function Feed({ topics }: { topics: Topic[] }) {
                       <DesignBadge design={a.studyDesign} reason={a.designReason} />
                       <IssuerBadge issuer={a.guidelineIssuer} size="sm" />
                       <LevelBadge level={a.evidenceLevel} />
-                      {a.isPreprint && <span className="rounded bg-rose-600 px-1 py-0.5 text-[9px] font-bold text-white">ПРЕПРИНТ</span>}
-                      {a.isRetracted && <span className="rounded bg-red-700 px-1 py-0.5 text-[9px] font-bold text-white">ОТОЗВАНА</span>}
+                      {a.isPreprint && <span className="rounded bg-rose-600 px-1 py-0.5 text-[9px] font-bold text-white">{t("ПРЕПРИНТ")}</span>}
+                      {a.isRetracted && <span className="rounded bg-red-700 px-1 py-0.5 text-[9px] font-bold text-white">{t("ОТОЗВАНА")}</span>}
                       <NoticeBadge notice={a.editorialNotice} size="sm" />
                       <TrialBadge info={a.trialInfo} size="sm" />
                     </div>
@@ -1066,7 +1071,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                     <button
                       onClick={(e) => { e.stopPropagation(); void quickToggle(a, { isBookmarked: !a.isBookmarked }); }}
                       className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg transition ${a.isBookmarked ? "text-amber-500" : "text-[color:var(--ink-subtle)]"}`}
-                      aria-label="Избранное"
+                      aria-label={t("Избранное")}
                     >
                       {a.isBookmarked ? "★" : "☆"}
                     </button>
@@ -1077,14 +1082,14 @@ export function Feed({ topics }: { topics: Topic[] }) {
                   {conclusion && (
                     <div className="mt-1.5 rounded-lg border border-teal-100 bg-teal-50/60 p-2 dark:border-teal-900/40 dark:bg-teal-950/20">
                       <p className="line-clamp-2 text-[11px] leading-relaxed text-teal-900 dark:text-teal-200">
-                        <span className="font-semibold text-teal-700 dark:text-teal-400">💡 Вывод: </span>
+                        <span className="font-semibold text-teal-700 dark:text-teal-400">{t("💡 Вывод:")} </span>
                         <Highlight text={conclusion} terms={data.searchTerms} />
                       </p>
                     </div>
                   )}
                   <div className="mt-1.5 flex items-center gap-2 text-[12px] text-[color:var(--ink-muted)]">
                     <span className="min-w-0 truncate font-medium text-[color:var(--ink-soft)]">{a.journal || "—"}</span>
-                    <span className="shrink-0">{formatDate(a.publishedAt)}</span>
+                    <span className="shrink-0">{date(a.publishedAt)}</span>
                     {a.isRead && <span className="ml-auto shrink-0 text-[color:var(--brand-ink)]">✓</span>}
                   </div>
                 </div>
@@ -1100,7 +1105,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
               onClick={() => setPage((p) => p - 1)}
               className="btn-ghost flex h-11 items-center gap-1.5 rounded-xl px-4 text-sm font-medium disabled:opacity-40"
             >
-              ← Назад
+              {t("← Назад")}
             </button>
             <span className="min-w-[80px] text-center text-sm font-medium tabular-nums text-[color:var(--ink-muted)]">{page} / {totalPages}</span>
             <button
@@ -1108,7 +1113,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
               onClick={() => setPage((p) => p + 1)}
               className="btn-ghost flex h-11 items-center gap-1.5 rounded-xl px-4 text-sm font-medium disabled:opacity-40"
             >
-              Вперёд →
+              {t("Вперёд →")}
             </button>
           </div>
         )}
@@ -1117,38 +1122,38 @@ export function Feed({ topics }: { topics: Topic[] }) {
       {/* Модальное окно горячих клавиш */}
       {showShortcutsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]" onClick={() => setShowShortcutsModal(false)}>
-          <div ref={shortcutsRef} role="dialog" aria-modal="true" aria-label="Горячие клавиши" tabIndex={-1} className="card overlay-enter w-full max-w-sm rounded-2xl p-5 shadow-[var(--shadow-modal)] outline-none" onClick={(e) => e.stopPropagation()}>
+          <div ref={shortcutsRef} role="dialog" aria-modal="true" aria-label={t("Горячие клавиши")} tabIndex={-1} className="card overlay-enter w-full max-w-sm rounded-2xl p-5 shadow-[var(--shadow-modal)] outline-none" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-[color:var(--ink)]">Горячие клавиши</h3>
-              <button onClick={() => setShowShortcutsModal(false)} className="rounded-lg p-1.5 text-[color:var(--ink-subtle)] hover:bg-[color:var(--surface-3)] hover:text-[color:var(--ink)]">✕</button>
+              <h3 className="text-base font-semibold text-[color:var(--ink)]">{t("Горячие клавиши")}</h3>
+              <button onClick={() => setShowShortcutsModal(false)} aria-label={t("Закрыть")} className="rounded-lg p-1.5 text-[color:var(--ink-subtle)] hover:bg-[color:var(--surface-3)] hover:text-[color:var(--ink)]">✕</button>
             </div>
             <ul className="space-y-2 text-sm">
               <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">Следующая статья</span>
+                <span className="text-[color:var(--ink-soft)]">{t("Следующая статья")}</span>
                 <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">j / ↓</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">Предыдущая статья</span>
+                <span className="text-[color:var(--ink-soft)]">{t("Предыдущая статья")}</span>
                 <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">k / ↑</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">Открыть подробности</span>
+                <span className="text-[color:var(--ink-soft)]">{t("Открыть подробности")}</span>
                 <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">Enter</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">В избранное / из избранного</span>
+                <span className="text-[color:var(--ink-soft)]">{t("В избранное / из избранного")}</span>
                 <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">b</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">Прочитано / непрочитано</span>
+                <span className="text-[color:var(--ink-soft)]">{t("Прочитано / непрочитано")}</span>
                 <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">r</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">Закрыть / сбросить фокус</span>
+                <span className="text-[color:var(--ink-soft)]">{t("Закрыть / сбросить фокус")}</span>
                 <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">Esc</kbd>
               </li>
               <li className="flex items-center justify-between">
-                <span className="text-[color:var(--ink-soft)]">Справка по клавишам</span>
+                <span className="text-[color:var(--ink-soft)]">{t("Справка по клавишам")}</span>
                 <kbd className="rounded bg-[color:var(--surface-3)] px-2 py-0.5 font-mono text-xs text-[color:var(--ink-soft)]">?</kbd>
               </li>
             </ul>

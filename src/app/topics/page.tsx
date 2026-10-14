@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SUBSPECIALTIES, SUBSPECIALTY_SHORT } from "@/lib/evidence/taxonomy";
+import { useI18n } from "@/lib/i18n/client";
 
 interface Topic {
   id: number;
@@ -29,6 +30,7 @@ async function api(path: string, init?: RequestInit): Promise<unknown> {
 const FIELD = "field w-full rounded-xl px-3 py-2 text-sm text-[color:var(--ink)]";
 
 export default function TopicsPage() {
+  const { t } = useI18n();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [form, setForm] = useState(empty);
   const [error, setError] = useState<string | null>(null);
@@ -47,14 +49,14 @@ export default function TopicsPage() {
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => void load(), 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void load(), 0);
+    return () => clearTimeout(timer);
   }, [load]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.query.trim()) {
-      setError("Укажите название и поисковый запрос");
+      setError(t("Укажите название и поисковый запрос"));
       return;
     }
     try {
@@ -75,59 +77,59 @@ export default function TopicsPage() {
     }
   }
 
-  async function toggle(t: Topic) {
-    await api(`/api/topics/${t.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !t.enabled }) });
+  async function toggle(tp: Topic) {
+    await api(`/api/topics/${tp.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !tp.enabled }) });
     await load();
   }
 
-  async function remove(t: Topic) {
-    if (!confirm(`Удалить тему «${t.name}»?`)) return;
-    await api(`/api/topics/${t.id}`, { method: "DELETE" });
+  async function remove(tp: Topic) {
+    if (!confirm(t("Удалить тему «{name}»?", { name: t(tp.name) }))) return;
+    await api(`/api/topics/${tp.id}`, { method: "DELETE" });
     await load();
   }
 
-  async function updateQuery(t: Topic, query: string) {
-    if (!query.trim() || query === t.query) return;
-    await api(`/api/topics/${t.id}`, { method: "PATCH", body: JSON.stringify({ query: query.trim() }) });
+  async function updateQuery(tp: Topic, query: string) {
+    if (!query.trim() || query === tp.query) return;
+    await api(`/api/topics/${tp.id}`, { method: "PATCH", body: JSON.stringify({ query: query.trim() }) });
     await load();
   }
 
-  const enabledCount = topics.filter((t) => t.enabled).length;
+  const enabledCount = topics.filter((tp) => tp.enabled).length;
 
   return (
     <main className="mx-auto max-w-5xl space-y-6">
       <div className="rise-in">
-        <p className="eyebrow">Мониторинг</p>
-        <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-[color:var(--ink)]">Темы мониторинга</h1>
+        <p className="eyebrow">{t("Мониторинг")}</p>
+        <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-[color:var(--ink)]">{t("Темы мониторинга")}</h1>
         <p className="mt-1 text-sm text-[color:var(--ink-muted)]">
-          Поисковые запросы, которые собираются при каждом обновлении из PubMed / Europe PMC / ClinicalTrials.gov / medRxiv.
+          {t("Поисковые запросы, которые собираются при каждом обновлении из PubMed / Europe PMC / ClinicalTrials.gov / medRxiv.")}
         </p>
         {!loading && (
           <div className="mt-3 flex flex-wrap gap-2">
             <span className="chip">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Активных тем: <span className="font-semibold">{enabledCount}</span>
+              {t("Активных тем:")} <span className="font-semibold">{enabledCount}</span>
             </span>
-            <span className="chip">Всего: <span className="font-semibold">{topics.length}</span></span>
+            <span className="chip">{t("Всего:")} <span className="font-semibold">{topics.length}</span></span>
           </div>
         )}
       </div>
 
       <form onSubmit={submit} className="card rise-in space-y-3.5 rounded-2xl p-5">
-        <h2 className="text-sm font-semibold text-[color:var(--ink)]">Новая тема</h2>
+        <h2 className="text-sm font-semibold text-[color:var(--ink)]">{t("Новая тема")}</h2>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <input
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="Название (например, «Холестеатома у детей»)"
-            aria-label="Название темы"
+            placeholder={t("Название (например, «Холестеатома у детей»)")}
+            aria-label={t("Название темы")}
             className={FIELD}
           />
           <input
             value={form.query}
             onChange={(e) => setForm({ ...form, query: e.target.value })}
-            placeholder="Поисковый запрос (PubMed-строка: cholesteatoma AND child*)"
-            aria-label="Поисковый запрос темы"
+            placeholder={t("Поисковый запрос (PubMed-строка: cholesteatoma AND child*)")}
+            aria-label={t("Поисковый запрос темы")}
             className={FIELD}
           />
         </div>
@@ -136,12 +138,12 @@ export default function TopicsPage() {
             value={form.subspecialty}
             onChange={(e) => setForm({ ...form, subspecialty: e.target.value })}
             className={FIELD}
-            aria-label="Субспециальность темы"
+            aria-label={t("Субспециальность темы")}
           >
-            <option value="general">Общее</option>
+            <option value="general">{t("Общее")}</option>
             {SUBSPECIALTIES.map((s) => (
               <option key={s.key} value={s.key}>
-                {s.short}
+                {t(s.short)}
               </option>
             ))}
           </select>
@@ -151,14 +153,14 @@ export default function TopicsPage() {
             max={730}
             value={form.lookbackDays}
             onChange={(e) => setForm({ ...form, lookbackDays: e.target.value })}
-            aria-label="Глубина поиска темы, дней"
-            placeholder="Глубина, дней (пусто = глобальная настройка)"
+            aria-label={t("Глубина поиска темы, дней")}
+            placeholder={t("Глубина, дней (пусто = глобальная настройка)")}
             className={FIELD}
           />
         </div>
         {error && <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
         <button type="submit" className="btn-brand rounded-xl px-4 py-2.5 text-sm font-semibold text-white">
-          Добавить тему
+          {t("Добавить тему")}
         </button>
       </form>
 
@@ -169,35 +171,35 @@ export default function TopicsPage() {
             <div className="skeleton h-4 w-1/3" />
           </div>
         ) : topics.length === 0 ? (
-          <p className="p-6 text-sm text-[color:var(--ink-muted)]">Тем не найдено.</p>
+          <p className="p-6 text-sm text-[color:var(--ink-muted)]">{t("Тем не найдено.")}</p>
         ) : (
           <ul className="divide-y divide-[color:var(--hairline)]">
-            {topics.map((t) => (
-              <li key={t.id} className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-[color:var(--surface-2)]">
-                <input type="checkbox" checked={t.enabled} onChange={() => void toggle(t)} className="h-4 w-4 accent-teal-600" title={t.enabled ? "Выключить" : "Включить"} />
+            {topics.map((tp) => (
+              <li key={tp.id} className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-[color:var(--surface-2)]">
+                <input type="checkbox" checked={tp.enabled} onChange={() => void toggle(tp)} className="h-4 w-4 accent-teal-600" title={tp.enabled ? t("Выключить") : t("Включить")} />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate font-medium text-[color:var(--ink)]">{t.name}</span>
-                    {t.isDefault && <span className="chip">базовая</span>}
-                    {t.subspecialty !== "general" && (
-                      <span className="chip">{SUBSPECIALTY_SHORT[t.subspecialty] ?? t.subspecialty}</span>
+                    <span className="truncate font-medium text-[color:var(--ink)]">{t(tp.name)}</span>
+                    {tp.isDefault && <span className="chip">{t("базовая")}</span>}
+                    {tp.subspecialty !== "general" && (
+                      <span className="chip">{t(SUBSPECIALTY_SHORT[tp.subspecialty] ?? tp.subspecialty)}</span>
                     )}
                   </div>
                   <input
-                    defaultValue={t.query}
-                    key={`q-${t.id}-${t.query}`}
-                    onBlur={(e) => void updateQuery(t, e.target.value)}
-                    aria-label={`Поисковый запрос темы «${t.name}»`}
+                    defaultValue={tp.query}
+                    key={`q-${tp.id}-${tp.query}`}
+                    onBlur={(e) => void updateQuery(tp, e.target.value)}
+                    aria-label={t("Поисковый запрос темы «{name}»", { name: t(tp.name) })}
                     className="mt-1 w-full truncate rounded-lg border border-transparent bg-transparent px-2 py-1 font-mono text-sm text-[color:var(--ink-muted)] outline-none transition hover:border-[color:var(--hairline)] focus:border-[color:var(--brand-a)] focus:bg-[color:var(--surface-1)] focus:text-[color:var(--ink)]"
-                    title="Кликните, чтобы изменить запрос (сохранение при потере фокуса)"
+                    title={t("Кликните, чтобы изменить запрос (сохранение при потере фокуса)")}
                   />
                 </div>
                 <button
-                  onClick={() => void remove(t)}
+                  onClick={() => void remove(tp)}
                   className="shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                  title="Удалить тему"
+                  title={t("Удалить тему")}
                 >
-                  Удалить
+                  {t("Удалить")}
                 </button>
               </li>
             ))}
