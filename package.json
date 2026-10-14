@@ -15,6 +15,7 @@
     "test": "vitest run",
     "db:check": "drizzle-kit check",
     "db:migrate": "node scripts/migrate.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "check": "npm run lint && npm run typecheck && npm run db:check && npm test"
   },
   "dependencies": {

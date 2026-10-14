@@ -85,6 +85,7 @@ npm run dev
 | `npm run check` | Всё, что гоняет CI до сборки: ESLint → `tsc --noEmit` → `drizzle-kit check` → Vitest. Запускайте перед PR |
 | `npm run db:generate` | Генерация миграций Drizzle (`drizzle.config.ts`, `DATABASE_URL` нужен только для `push`/`migrate`) |
 | `npm run db:check` | Проверка согласованности миграций и снапшотов Drizzle (выполняется в CI) |
+| `npm run smoke -- <url> [--secret <API_SECRET>]` | Smoke-проверка работающего экземпляра (после деплоя или локального `npm start`): SSR всех страниц, язык по cookie, Atom/манифест/sitemap, ETag/304, заголовки безопасности, 401 без токена. Без зависимостей, код выхода 1 при провале |
 | `npm run db:migrate` | Применить миграции отдельным шагом (PostgreSQL по `DATABASE_URL` под advisory-lock или файловый PGlite `./.pglite`); перед новыми миграциями пишет снимок пользовательских данных в `BACKUP_DIR` |
 
 ## Архитектура
@@ -214,4 +215,4 @@ npm test
 
 Интернационализация охраняется двумя тестами: `src/lib/i18n/i18n.test.ts` (перевод, склонение, даты, шаблоны хранимых текстов классификатора, полнота словаря для таксономии/статусов КИ/PICO/пресетов) и `src/lib/i18n/coverage.test.ts` (в `src/components`, `src/app` — включая API-маршруты — и помощниках API нет кириллицы вне `t()`/`msg()`/комментариев, и у каждой обёрнутой строки есть перевод); язык API-ответов — `src/lib/i18n/request.test.ts`.
 
-На каждый push в `main` и PR запускается CI (`.github/workflows/ci.yml`): `npm audit --omit=dev --audit-level=high` → ESLint → `tsc --noEmit` → `drizzle-kit check` → Vitest → `next build`, затем отдельная job собирает Docker-образ и делает smoke-тест контейнера (`/api/health` отвечает, процесс работает от uid 1001). Dependabot (`.github/dependabot.yml`) еженедельно предлагает обновления npm-зависимостей (минорные/патчи — одним PR), ежемесячно — GitHub Actions и базового образа.
+На каждый push в `main` и PR запускается CI (`.github/workflows/ci.yml`): `npm audit --omit=dev --audit-level=high` → ESLint → `tsc --noEmit` → `drizzle-kit check` → Vitest → `next build`, затем отдельная job собирает Docker-образ и прогоняет контейнер: `/api/health` отвечает, процесс работает от uid 1001, `scripts/smoke.mjs` проверяет SSR страниц, язык по cookie, Atom/манифест/sitemap, ETag/304, заголовки безопасности и 401 без токена, а `docker stop` завершает процесс с кодом 0 и событиями `shutdown.hook_done`/`shutdown.finished` в логах (штатная остановка, п. 10 «Надёжности»). Dependabot (`.github/dependabot.yml`) еженедельно предлагает обновления npm-зависимостей (минорные/патчи — одним PR), ежемесячно — GitHub Actions и базового образа.

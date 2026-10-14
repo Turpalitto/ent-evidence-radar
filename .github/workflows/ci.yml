@@ -86,4 +86,20 @@ jobs:
           # Процесс должен работать от uid 1001 (F-17).
           uid=$(docker exec radar id -u)
           test "$uid" = "1001" || { echo "::error::ожидался uid 1001, получен $uid"; exit 1; }
+
+      # Сквозная проверка собранного приложения: SSR всех страниц, язык по cookie, Atom/манифест/sitemap,
+      # ETag/304, заголовки безопасности, закрытость изменяющих маршрутов без токена.
+      - name: Smoke checks (pages, API, headers, auth)
+        run: node scripts/smoke.mjs http://127.0.0.1:3000 --secret ci-secret --timeout 30
+
+      # Штатная остановка (R-01): SIGTERM → хуки (прерывание refresh, закрытие PGlite) → exit 0.
+      - name: Graceful stop
+        run: |
+          set -euo pipefail
+          docker stop -t 20 radar
+          code=$(docker inspect --format '{{.State.ExitCode}}' radar)
+          docker logs radar 2>&1 | grep -E '"event":"shutdown[.](started|hook_done|finished)"' || true
+          test "$code" = "0" || { echo "::error::контейнер завершился с кодом $code (ожидался 0 после SIGTERM)"; docker logs radar; exit 1; }
+          docker logs radar 2>&1 | grep -q '"event":"shutdown.finished"' || { echo "::error::в логах нет shutdown.finished — хуки остановки не отработали"; docker logs radar; exit 1; }
+          docker logs radar 2>&1 | grep -q '"event":"shutdown.hook_done","hook":"db"' || { echo "::error::хук закрытия БД не выполнен"; docker logs radar; exit 1; }
           docker rm -f radar

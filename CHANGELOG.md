@@ -12,6 +12,11 @@
   `isShuttingDown`. Лента: горячие клавиши (j/k/Enter/b/r/?/Escape и игнорирование в полях ввода),
   пагинация, ошибка сервера + «Повторить», быстрые действия на карточке (`Feed.tsx` 61 → 80 % строк).
   `settings/format.test.ts` (байты/аптайм). Всего 74 файла / 507 тестов.
+- `scripts/smoke.mjs` (`npm run smoke -- <url> [--secret …]`): сквозная проверка работающего экземпляра без
+  зависимостей — SSR всех страниц, `<html lang>` по cookie, Atom/манифест/sitemap/robots, ETag/304 и
+  `X-Robots-Tag` API, CSP/HSTS/X-Frame-Options, ошибки API на языке запроса, 401 без токена и доступ с Bearer.
+  CI-job `docker` теперь гоняет его против контейнера и проверяет штатную остановку: `docker stop` → код 0,
+  в логах `shutdown.hook_done` (db) и `shutdown.finished`.
 
 ### Changed
 - Планировщик вынесен из `src/instrumentation.ts` в чистую фабрику `src/lib/scheduler.ts`

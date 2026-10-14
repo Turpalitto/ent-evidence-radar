@@ -19,7 +19,7 @@ npm run check   # ESLint → tsc --noEmit → drizzle-kit check → Vitest
 npm run build   # то, что соберёт CI (опционально, но полезно при изменениях в app/)
 ```
 
-CI (`.github/workflows/ci.yml`) гоняет то же самое плюс `npm audit --omit=dev` и smoke-тест Docker-образа.
+CI (`.github/workflows/ci.yml`) гоняет то же самое плюс `npm audit --omit=dev` и smoke-тест Docker-образа (`scripts/smoke.mjs` против контейнера + проверка штатной остановки по `docker stop`). Тот же скрипт можно запустить против любого экземпляра: `npm run smoke -- https://radar.example --secret …`.
 Шаблон PR содержит чек-лист — пройдите его честно, он короткий.
 
 ## Соглашения
