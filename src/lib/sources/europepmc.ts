@@ -29,18 +29,29 @@ function fmt(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
+/** Страховочный запрос по умолчанию: широкая ЛОР-тематика × доказательные дизайны. */
+export const EPMC_FALLBACK_QUERY =
+  '(TITLE:"otolaryngology" OR TITLE:"otorhinolaryngology" OR TITLE:sinusitis OR TITLE:rhinosinusitis OR TITLE:otitis OR TITLE:"hearing loss" OR TITLE:tinnitus OR TITLE:vertigo OR TITLE:cochlear OR TITLE:laryngeal OR TITLE:tonsillectomy OR TITLE:"head and neck" OR TITLE:"sleep apnea" OR TITLE:"nasal polyps" OR TITLE:dysphonia OR TITLE:"vocal fold" OR TITLE:epistaxis OR TITLE:septoplasty OR TITLE:rhinoplasty OR TITLE:cholesteatoma OR TITLE:"vestibular")' +
+  ' AND (PUB_TYPE:"Systematic Review" OR PUB_TYPE:"Meta-Analysis" OR PUB_TYPE:"Randomized Controlled Trial" OR PUB_TYPE:"Guideline" OR PUB_TYPE:"Practice Guideline" OR TITLE:"systematic review" OR TITLE:"meta-analysis" OR TITLE:randomized OR TITLE:randomised OR TITLE:guideline)';
+
 /**
- * Europe PMC: ищем свежие записи по ЛОР-тематике с высоким уровнем доказательности,
- * включая препринты (SRC:PPR) с явной пометкой.
+ * Europe PMC: свежие записи по широкой ЛОР-тематике с высоким уровнем доказательности,
+ * включая препринты (SRC:PPR) с явной пометкой. Используется как страховочный канал,
+ * когда ни одну тему не удалось перевести в синтаксис Europe PMC (аудит I-06).
  */
 export async function fetchEuropePmc(days: number, maxResults: number, includePreprints: boolean): Promise<RawArticle[]> {
+  return fetchEuropePmcQuery(EPMC_FALLBACK_QUERY, days, maxResults, includePreprints);
+}
+
+/**
+ * Europe PMC по произвольному тематическому запросу в синтаксисе Europe PMC
+ * (см. `pubmedToEpmcQuery` — перевод запросов тем из PubMed-синтаксиса).
+ */
+export async function fetchEuropePmcQuery(topicQuery: string, days: number, maxResults: number, includePreprints: boolean): Promise<RawArticle[]> {
   const to = new Date();
   const from = new Date(Date.now() - days * 86400_000);
-  const topic =
-    '(TITLE:"otolaryngology" OR TITLE:"otorhinolaryngology" OR TITLE:sinusitis OR TITLE:rhinosinusitis OR TITLE:otitis OR TITLE:"hearing loss" OR TITLE:tinnitus OR TITLE:vertigo OR TITLE:cochlear OR TITLE:laryngeal OR TITLE:tonsillectomy OR TITLE:"head and neck" OR TITLE:"sleep apnea" OR TITLE:"nasal polyps" OR TITLE:dysphonia OR TITLE:"vocal fold" OR TITLE:epistaxis OR TITLE:septoplasty OR TITLE:rhinoplasty OR TITLE:cholesteatoma OR TITLE:"vestibular")';
-  const design = '(PUB_TYPE:"Systematic Review" OR PUB_TYPE:"Meta-Analysis" OR PUB_TYPE:"Randomized Controlled Trial" OR PUB_TYPE:"Guideline" OR PUB_TYPE:"Practice Guideline" OR TITLE:"systematic review" OR TITLE:"meta-analysis" OR TITLE:randomized OR TITLE:randomised OR TITLE:guideline)';
   const src = includePreprints ? "(SRC:MED OR SRC:PPR)" : "SRC:MED";
-  const query = `${topic} AND ${design} AND ${src} AND FIRST_PDATE:[${fmt(from)} TO ${fmt(to)}]`;
+  const query = `(${topicQuery}) AND ${src} AND FIRST_PDATE:[${fmt(from)} TO ${fmt(to)}]`;
 
   const p = new URLSearchParams({
     query,

@@ -1,11 +1,12 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { isShuttingDown } from "@/lib/shutdown";
 import { db } from "@/db";
 import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail, type ManualOverrides, type EditorialNotice } from "@/db/schema";
 import { CLASSIFIER_VERSION, classify, dedupKeyFor, normalizeIds, normalizeNct, type RawArticle } from "@/lib/evidence/classify";
 import { DEFAULT_SETTINGS, DEFAULT_SOURCES, DEFAULT_TOPICS, type AppSettings } from "@/lib/defaults";
 import { fetchPubmed } from "@/lib/sources/pubmed";
-import { fetchEuropePmc } from "@/lib/sources/europepmc";
+import { fetchEuropePmc, fetchEuropePmcQuery } from "@/lib/sources/europepmc";
+import { pubmedToEpmcQuery } from "@/lib/sources/epmc-query";
 import { fetchClinicalTrials } from "@/lib/sources/clinicaltrials";
 import { fetchMedrxiv } from "@/lib/sources/medrxiv";
 import { recheckEditorialNotices, recheckRetractions } from "@/lib/retraction";
@@ -94,6 +95,8 @@ export async function ensureSeeded() {
   const have = new Set(existingSources.map((s) => s.key));
   for (const s of DEFAULT_SOURCES) {
     if (!have.has(s.key)) await db.insert(sources).values(s).onConflictDoNothing();
+    // Описание источника — справочный текст приложения, а не пользовательская настройка: держим актуальным.
+    else await db.update(sources).set({ description: s.description }).where(and(eq(sources.key, s.key), ne(sources.description, s.description)));
   }
   const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(topics);
   const count = row?.count ?? 0;
@@ -619,7 +622,45 @@ async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promis
       })(),
     );
   };
-  runSource("europepmc", () => fetchEuropePmc(cfg.lookbackDays, 200, cfg.includePreprints));
+  // Europe PMC по темам (аудит I-06): запрос темы переводится из синтаксиса PubMed, найденное
+  // получает topicId; темы, которые перевести нельзя, пропускаются, а если таких все — страховочный запрос.
+  if (enabledSources.has("europepmc")) {
+    parallel.push(
+      (async () => {
+        const t0 = Date.now();
+        let found = 0;
+        const errors: string[] = [];
+        const plan = enabledTopics
+          .map((topic) => ({ topic, query: pubmedToEpmcQuery(cfg.englishOnly ? `(${topic.query}) AND english[la]` : topic.query) }))
+          .filter((x): x is { topic: (typeof enabledTopics)[number]; query: string } => !!x.query);
+        try {
+          if (plan.length === 0) {
+            const items = await fetchEuropePmc(cfg.lookbackDays, 200, cfg.includePreprints);
+            found += items.length;
+            for (const it of items) addCandidate(it);
+          }
+          for (const { topic, query } of plan) {
+            try {
+              const items = await fetchEuropePmcQuery(query, topic.lookbackDays ?? cfg.lookbackDays, cfg.maxPerTopic, cfg.includePreprints);
+              found += items.length;
+              for (const it of items) addCandidate(it, topic.id);
+            } catch (e) {
+              errors.push(`${topic.name}: ${e instanceof Error ? e.message : String(e)}`);
+            }
+          }
+          const status = pubmedSourceStatus(errors.length, plan.length);
+          const note = errors.length ? `${status === "degraded" ? `Ошибка в ${errors.length} из ${plan.length} тем: ` : ""}${errors.join(" | ")}`.slice(0, 1000) : undefined;
+          details.push({ source: "europepmc", found, added: 0, updated: 0, durationMs: Date.now() - t0, error: note });
+          await markSource("europepmc", status, note);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          details.push({ source: "europepmc", found, added: 0, updated: 0, durationMs: Date.now() - t0, error: msg });
+          await markSource("europepmc", "error", msg);
+        }
+        await persistProgress();
+      })(),
+    );
+  }
   runSource("clinicaltrials", () => fetchClinicalTrials(cfg.lookbackDays, 150));
   if (cfg.includePreprints) runSource("medrxiv", () => fetchMedrxiv(cfg.lookbackDays, 100));
   await Promise.all(parallel);

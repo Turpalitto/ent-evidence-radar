@@ -42,7 +42,16 @@ vi.mock("@/lib/sources/pubmed", () => ({
   pubmedRetractedSet: vi.fn(async () => new Set<string>()),
   pubmedRetractionMap: vi.fn(async () => new Map<string, boolean>()),
 }));
-vi.mock("@/lib/sources/europepmc", () => ({ fetchEuropePmc: vi.fn(async () => epmcFixtures) }));
+// Europe PMC опрашивается по темам (I-06): фикстура отдаётся на первую тему, остальные пусты —
+// так проверяется и перевод запроса (не пустой), и привязка найденного к теме.
+const epmcQueries: string[] = [];
+vi.mock("@/lib/sources/europepmc", () => ({
+  fetchEuropePmc: vi.fn(async () => epmcFixtures),
+  fetchEuropePmcQuery: vi.fn(async (query: string) => {
+    epmcQueries.push(query);
+    return epmcQueries.length === 1 ? epmcFixtures : [];
+  }),
+}));
 const ctFixtures: RawArticle[] = [];
 vi.mock("@/lib/sources/clinicaltrials", () => ({
   fetchClinicalTrials: vi.fn(async () => ctFixtures),
@@ -100,6 +109,10 @@ describe("startRefresh — фоновое выполнение (F-05)", () => {
     expect(bySource.pubmed.found).toBe(2 * topicCount); // фикстура отдаётся на каждую тему
     expect(bySource.pubmed.added).toBe(2);
     expect(bySource.europepmc.found).toBe(1);
+    expect(bySource.europepmc.error).toBeUndefined();
+    expect(epmcQueries).toHaveLength(topicCount); // по запросу на каждую включённую тему
+    expect(epmcQueries[0]).toMatch(/MESH:|TITLE:|JOURNAL:/); // переведённый PubMed-синтаксис
+    expect(epmcQueries[0]).not.toMatch(/\[(MeSH|tiab|pt)\]/i);
     expect(bySource.medrxiv.error).toMatch(/medRxiv недоступен/);
     expect(run.totalFound).toBe(2 * topicCount + 1); // служебный шаг retraction-recheck не считается
     expect(run.errorMessage).toMatch(/medrxiv/);
@@ -108,6 +121,8 @@ describe("startRefresh — фоновое выполнение (F-05)", () => {
     expect(rows).toHaveLength(2);
     const merged = rows.find((r) => r.pmid === "40000001")!;
     expect(new Set(merged.sourceKeys)).toEqual(new Set(["pubmed", "europepmc"]));
+    const firstTopicId = (await db.select().from(topics).where(eq(topics.enabled, true)))[0]!.id;
+    expect(merged.topicIds).toContain(firstTopicId); // запись Europe PMC принесла привязку к своей теме
     expect(merged.studyDesign).toBe("rct");
     expect(merged.classifierVersion).toBe(CLASSIFIER_VERSION);
     const cochrane = rows.find((r) => r.pmid === "40000002")!;

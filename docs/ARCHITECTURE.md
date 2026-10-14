@@ -52,6 +52,9 @@
    внутрипроцессный флаг `globalThis.__entRadarRunning` → DB-лок (см. §4) → строка `fetch_runs(status=running)`.
    Если лок занят — `skipped`, второй запуск не создаётся.
 2. **Сбор.** Адаптеры опрашиваются параллельно по каждой включённой теме (`topics.query*`).
+   PubMed получает запрос темы как есть; Europe PMC — его перевод `pubmedToEpmcQuery()` (`src/lib/sources/epmc-query.ts`:
+   AST запроса, теги полей → поля Europe PMC, невыразимое отбрасывается только в сторону расширения выборки, иначе
+   страховочный запрос `EPMC_FALLBACK_QUERY`). ClinicalTrials.gov и medRxiv — по общему ЛОР-фильтру без тем.
    Ошибка одного источника не роняет запуск: статус пишется в `sources.last_status/last_error`,
    запуск получает `partial`. HTTP-слой: таймаут, до 3 повторов с экспоненциальной паузой,
    уважение `Retry-After`, лимит NCBI 3 (10 с `NCBI_API_KEY`) запросов/с.

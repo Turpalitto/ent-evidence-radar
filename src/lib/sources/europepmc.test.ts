@@ -6,7 +6,7 @@ vi.mock("./http", async (importOriginal) => {
   return { ...actual, fetchJson: (...a: unknown[]) => fetchJson(...a) };
 });
 
-import { fetchEuropePmc } from "./europepmc";
+import { EPMC_FALLBACK_QUERY, fetchEuropePmc, fetchEuropePmcQuery } from "./europepmc";
 
 /** Фрагмент реального ответа Europe PMC REST (resultType=core), сокращённый до значимых полей. */
 const FIXTURE = {
@@ -108,6 +108,17 @@ describe("fetchEuropePmc — разбор реального формата от
 
     await fetchEuropePmc(7, 50, true);
     expect(new URL(String(fetchJson.mock.calls[1][0])).searchParams.get("query")).toContain("(SRC:MED OR SRC:PPR)");
+  });
+
+  it("fetchEuropePmcQuery (I-06): тематический запрос оборачивается в скобки, страховочный запрос — тот же путь", async () => {
+    fetchJson.mockResolvedValue({ hitCount: 0, resultList: { result: [] } });
+    await fetchEuropePmcQuery('MESH:"Tinnitus" OR TITLE:tinnitus', 14, 60, true);
+    const q = new URL(String(fetchJson.mock.calls[0][0])).searchParams.get("query")!;
+    expect(q.startsWith('(MESH:"Tinnitus" OR TITLE:tinnitus) AND (SRC:MED OR SRC:PPR) AND FIRST_PDATE:[')).toBe(true);
+    expect(new URL(String(fetchJson.mock.calls[0][0])).searchParams.get("pageSize")).toBe("60");
+
+    await fetchEuropePmc(14, 60, true);
+    expect(new URL(String(fetchJson.mock.calls[1][0])).searchParams.get("query")).toContain(`(${EPMC_FALLBACK_QUERY}) AND`);
   });
 
   it("пустой ответ без resultList — пустой список, а не исключение", async () => {

@@ -123,7 +123,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export const DEFAULT_SOURCES = [
   { key: "pubmed", name: "PubMed / MEDLINE", description: "NCBI E-utilities. MeSH-фильтрация, типы публикаций, Cochrane через журнал CDSR." },
-  { key: "europepmc", name: "Europe PMC", description: "REST API. Дублирующий канал MEDLINE + препринты (SRC:PPR) с пометкой." },
+  { key: "europepmc", name: "Europe PMC", description: "REST API. Опрашивается по тем же темам, что и PubMed (запрос переводится автоматически), плюс препринты (SRC:PPR) с пометкой." },
   { key: "clinicaltrials", name: "ClinicalTrials.gov", description: "API v2. Интервенционные исследования по ЛОР-состояниям, наличие результатов." },
   { key: "medrxiv", name: "medRxiv", description: "Препринты категории Otolaryngology. Не рецензированы — штраф к индексу доверия." },
 ];

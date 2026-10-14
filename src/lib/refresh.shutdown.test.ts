@@ -11,7 +11,7 @@ vi.mock("@/lib/sources/pubmed", () => ({
   pubmedRetractedSet: vi.fn(async () => new Set<string>()),
   pubmedRetractionMap: vi.fn(async () => new Map<string, boolean>()),
 }));
-vi.mock("@/lib/sources/europepmc", () => ({ fetchEuropePmc: vi.fn(() => hang) }));
+vi.mock("@/lib/sources/europepmc", () => ({ fetchEuropePmc: vi.fn(() => hang), fetchEuropePmcQuery: vi.fn(() => hang) }));
 vi.mock("@/lib/sources/clinicaltrials", () => ({ fetchClinicalTrials: vi.fn(() => hang) }));
 vi.mock("@/lib/sources/medrxiv", () => ({ fetchMedrxiv: vi.fn(() => hang) }));
 
