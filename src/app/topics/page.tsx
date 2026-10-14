@@ -17,13 +17,17 @@ interface Topic {
 
 const empty = { name: "", query: "", subspecialty: "general", lookbackDays: "" };
 
+/** Запрос к API: при ошибке — текст сервера (`{error}` на языке интерфейса), иначе «HTTP <код>». */
 async function api(path: string, init?: RequestInit): Promise<unknown> {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...(init?.body ? { body: init.body } : {}),
     method: init?.method ?? (init?.body ? "POST" : "GET"),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const j = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(j?.error || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
@@ -33,7 +37,8 @@ export default function TopicsPage() {
   const { t } = useI18n();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [form, setForm] = useState(empty);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // загрузка списка и действия над темами
+  const [formError, setFormError] = useState<string | null>(null); // форма «Новая тема»
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -56,7 +61,7 @@ export default function TopicsPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.query.trim()) {
-      setError(t("Укажите название и поисковый запрос"));
+      setFormError(t("Укажите название и поисковый запрос"));
       return;
     }
     try {
@@ -70,6 +75,17 @@ export default function TopicsPage() {
         }),
       });
       setForm(empty);
+      setFormError(null);
+      await load();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /** Действие над темой: ошибка (нет входа, сеть) показывается над списком, а не теряется в консоли. */
+  async function act(fn: () => Promise<unknown>) {
+    try {
+      await fn();
       setError(null);
       await load();
     } catch (e) {
@@ -77,22 +93,17 @@ export default function TopicsPage() {
     }
   }
 
-  async function toggle(tp: Topic) {
-    await api(`/api/topics/${tp.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !tp.enabled }) });
-    await load();
-  }
+  const toggle = (tp: Topic) => act(() => api(`/api/topics/${tp.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !tp.enabled }) }));
 
-  async function remove(tp: Topic) {
-    if (!confirm(t("Удалить тему «{name}»?", { name: t(tp.name) }))) return;
-    await api(`/api/topics/${tp.id}`, { method: "DELETE" });
-    await load();
-  }
+  const remove = (tp: Topic) => {
+    if (!confirm(t("Удалить тему «{name}»?", { name: t(tp.name) }))) return Promise.resolve();
+    return act(() => api(`/api/topics/${tp.id}`, { method: "DELETE" }));
+  };
 
-  async function updateQuery(tp: Topic, query: string) {
-    if (!query.trim() || query === tp.query) return;
-    await api(`/api/topics/${tp.id}`, { method: "PATCH", body: JSON.stringify({ query: query.trim() }) });
-    await load();
-  }
+  const updateQuery = (tp: Topic, query: string) => {
+    if (!query.trim() || query === tp.query) return Promise.resolve();
+    return act(() => api(`/api/topics/${tp.id}`, { method: "PATCH", body: JSON.stringify({ query: query.trim() }) }));
+  };
 
   const enabledCount = topics.filter((tp) => tp.enabled).length;
 
@@ -158,13 +169,18 @@ export default function TopicsPage() {
             className={FIELD}
           />
         </div>
-        {error && <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+        {formError && <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">{formError}</p>}
         <button type="submit" className="btn-brand rounded-xl px-4 py-2.5 text-sm font-semibold text-white">
           {t("Добавить тему")}
         </button>
       </form>
 
       <div className="card overflow-hidden rounded-2xl">
+        {error && !loading && (
+          <p className="border-b border-[color:var(--hairline)] px-4 py-2.5 text-sm text-rose-600 dark:text-rose-400" role="alert">
+            {error}
+          </p>
+        )}
         {loading ? (
           <div className="space-y-2 p-5">
             <div className="skeleton h-5 w-2/3" />
