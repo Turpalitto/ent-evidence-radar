@@ -19,6 +19,7 @@
 - Перепроверка отзывов (retractions) в PubMed батчами и версия классификатора с автоматической переразметкой (F-15, I-04).
 - Корреляция запросов `x-request-id` в ответах, логах и ошибках 500 (I-07).
 - Штатная остановка по SIGTERM/SIGINT: health 503 на время дренажа, прерывание идущего обновления со снятием блокировки, корректное закрытие PGlite; `NEXT_MANUAL_SIG_HANDLE=true` в Docker-образе; тики планировщика больше не накладываются.
+- Компонентные тесты UI (jsdom + Testing Library) для ленты, карточки статьи и настроек; fixture-тесты адаптеров Europe PMC / ClinicalTrials.gov; сквозной тест раннера миграций (I-09).
 - CI (lint, typecheck, drizzle check, тесты, build, docker smoke), Dependabot, `npm run db:migrate` с advisory-lock (I-10, I-15).
 - Atom-лента с фильтрами — подписка на сохранённый поиск (`/feed.xml?subspecialty=…&design=…&minTrust=…`, `?topicId=`, `?q=`), ссылка «RSS для этого фильтра» в боковой панели.
 - Документация: `docs/ARCHITECTURE.md`, `SECURITY.md`, `docs/openapi.yaml`, этот CHANGELOG (I-16, A-14).
