@@ -66,6 +66,7 @@ export function tidyFragment(s: string | undefined | null): string | undefined {
     .replace(/\s+/g, " ")
     .replace(/^(?:the|a|an|either|both)\s+/i, "")
     .replace(/[\s,;:(\-–—]+$/g, "")
+    .replace(/\s+(?:who|whose|which|that|and|or|but|whom)$/i, "")
     .trim();
   // Незакрытая скобка в обрезанном фрагменте
   if ((t.match(/\(/g)?.length ?? 0) > (t.match(/\)/g)?.length ?? 0)) t = t.replace(/\s*\([^)]*$/, "");
@@ -117,13 +118,40 @@ export function splitLabeledSections(raw: string): LabeledSection[] {
   return out;
 }
 
+/** Секция «Design, Setting, and Participants» начинается с дизайна; берём фрагмент, где названа выборка. */
+function participantsSegment(text: string): string {
+  const segments = text.split(/;\s+|(?<=\.)\s+(?=[A-Z])/);
+  if (segments.length < 2) return text;
+  const re = new RegExp(String.raw`\b\d[\d,]*\s+(?:\w+\s+){0,3}${P_NOUNS}\b`, "i");
+  return segments.find((seg) => re.test(seg)) ?? text;
+}
+
+/** «Dupilumab 300 mg or placebo», «Coblation vs cold steel» внутри секции INTERVENTIONS → пара I/C. */
+const SECTION_IC_SPLIT: RegExp[] = [
+  /^(.{3,150}?)\s+(?:versus|vs\.?)\s+(.{3,150}?)\.?$/i,
+  /^(.{3,150}?)\s+or\s+((?:placebo|sham|no (?:treatment|intervention|surgery)|usual care|standard(?: of)? care|standard (?:therapy|treatment)|control|observation|watchful waiting|saline|conventional|open)\b.{0,120}?)\.?$/i,
+];
+
 function fromSections(raw: string): Partial<Record<Slot, string>> {
   const found: Partial<Record<Slot, string>> = {};
   for (const s of splitLabeledSections(raw)) {
-    const slot = SECTION_SLOTS[normalizeLabel(s.label)];
+    const label = normalizeLabel(s.label);
+    const slot = SECTION_SLOTS[label];
     if (!slot || found[slot]) continue;
-    const text = tidyFragment(s.text);
+    const text = tidyFragment(slot === "population" && /DESIGN/.test(label) ? participantsSegment(s.text) : s.text);
     if (text) found[slot] = text;
+  }
+  if (found.intervention && !found.comparator) {
+    for (const re of SECTION_IC_SPLIT) {
+      const m = found.intervention.match(re);
+      const intervention = tidyFragment(m?.[1]);
+      const comparator = tidyFragment(m?.[2]);
+      if (intervention && comparator) {
+        found.intervention = intervention;
+        found.comparator = comparator;
+        break;
+      }
+    }
   }
   return found;
 }
@@ -137,14 +165,14 @@ const IC_PATTERNS: RegExp[] = [
   // compared X with/to Y; comparison of X and Y
   new RegExp(String.raw`\b(?:compar(?:ed|ing)|comparison of|efficacy of)\s+${PHRASE}\s+(?:with|to|and|versus|vs\.?)\s+${PHRASE}${STOP_AFTER}`, "i"),
   // X versus Y (обычно в заголовке)
-  new RegExp(String.raw`^(?:effects? of\s+|efficacy of\s+|comparison of\s+)?${PHRASE}\s+(?:versus|vs\.?)\s+${PHRASE}(?=\s+(?:in|for|among|after|during|on)\b|:|\s*[-–—]|$)`, "i"),
+  new RegExp(String.raw`^(?:effects? of\s+|efficacy of\s+|comparison of\s+)?${PHRASE}\s+(?:versus|vs\.?)\s+${PHRASE}(?=\s+(?:in|for|among|after|during|on)\b|:|\s+[-–—]\s|$)`, "i"),
 ];
 
 const P_NOUNS = String.raw`(?:patients|participants|children|adults|subjects|women|men|infants|neonates|individuals|cases|ears)`;
 const P_PATTERNS: RegExp[] = [
   // «120 consecutive adult patients with chronic rhinosinusitis undergoing FESS» — до глагола-сказуемого
   new RegExp(
-    String.raw`\b(\d[\d,]*\s+(?:consecutive\s+|adult\s+|pediatric\s+|paediatric\s+|elderly\s+|healthy\s+)?${P_NOUNS}\b(?:\s+(?:with|who|whose|aged|undergoing|scheduled|presenting|diagnosed|suffering|requiring|referred)\b[^.;]{0,100}?)?)(?=\s+(?:were|was|underwent|received|had|completed|participated|randomi[sz]ed|enrolled)\b|\s*[.;,(]|$)`,
+    String.raw`\b(\d[\d,]*\s+(?:consecutive\s+|adult\s+|pediatric\s+|paediatric\s+|elderly\s+|healthy\s+)?${P_NOUNS}\b(?:\s+(?:with|who|whose|aged|undergoing|scheduled|presenting|diagnosed|suffering|requiring|referred)\b[^.;]{0,100}?)?)(?=\s+(?:were|was|underwent|received|had|completed|participated|randomi[sz]ed|enrolled)\b|\s*[.;,()]|$)`,
     "i",
   ),
   // «… in children with otitis media» — хвост заголовка до двоеточия/конца

@@ -68,6 +68,11 @@
 - medRxiv: расширен словарь ЛОР-терминов для отбора из смежных категорий (pharyn/trache/deaf/audiolog/
   Ménière/cholesteatoma/tympan/parotid/snoring/facial nerve…), теги в заголовке и аннотации снимаются,
   авторы «Last, F. M.» приводятся к «Last FM» (как у PubMed) — единообразные цитаты и экспорт.
+- PICO: секция INTERVENTIONS «Dupilumab 300 mg or placebo for 24 weeks» / «Bimodal neuromodulation vs sham
+  device» делится на пару «вмешательство / сравнение» (раньше компаратор терялся, если его не было в заголовке);
+  из «Design, Setting, and Participants» берётся фрагмент с выборкой («276 adults with severe CRSwNP»), а не
+  описание дизайна; дефис внутри слова («versus non-surgical treatment») больше не обрывает компаратор на «non»;
+  хвостовые «who/which» и закрывающая скобка «(n = 456 patients)» очищаются (3 теста).
 - Классификатор дизайна v7 (`CLASSIFIER_VERSION = 7`, записи переразмечаются автоматически): доклинические
   работы — животные (guinea pigs / mice / rats / chinchillas…), in vitro / ex vivo, клеточные линии, органоиды,
   кадаверные и ксенографты — распознаются по заголовку, аннотации («Adult male Wistar rats were…»), MeSH

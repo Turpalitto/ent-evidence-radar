@@ -16,10 +16,10 @@ describe("PICO: структурированные аннотации", () => {
     const p = extractPico(abs, "Dupilumab versus placebo in CRSwNP");
     expect(p?.source).toBe("structured");
     expect(p?.population).toBe("120 adults with chronic rhinosinusitis with nasal polyps refractory to intranasal steroids.");
-    expect(p?.intervention).toBe("Dupilumab 300 mg every 2 weeks or placebo for 24 weeks.");
+    // Секция INTERVENTIONS «X or placebo …» делится на пару I/C
+    expect(p?.intervention).toBe("Dupilumab 300 mg every 2 weeks");
+    expect(p?.comparator).toBe("placebo for 24 weeks");
     expect(p?.outcome).toBe("Change in nasal polyp score and SNOT-22 at week 24.");
-    // Компаратор секцией не задан — берётся из заголовка «X versus Y»
-    expect(p?.comparator).toBe("placebo");
   });
 
   it("JAMA-стиль: Design, Setting, and Participants / Interventions / Main Outcomes and Measures в одной строке", () => {
@@ -29,8 +29,19 @@ describe("PICO: структурированные аннотации", () => {
     const p = extractPico(abs, "Bimodal neuromodulation for tinnitus");
     expect(p?.source).toBe("structured");
     expect(p?.population).toBe("Multicenter trial of 326 adults with chronic tinnitus.");
-    expect(p?.intervention).toBe("Bimodal neuromodulation vs sham device.");
+    expect(p?.intervention).toBe("Bimodal neuromodulation");
+    expect(p?.comparator).toBe("sham device");
     expect(p?.outcome).toBe("Tinnitus Handicap Inventory at 12 weeks.");
+  });
+
+  it("«Design, Setting, and Participants» с дизайном в начале → фрагмент с выборкой; «X or Y» без ключевого компаратора не делится", () => {
+    const abs =
+      "DESIGN, SETTING, AND PARTICIPANTS: Randomized, double-blind, placebo-controlled trial at 56 sites; 276 adults with severe CRSwNP. " +
+      "INTERVENTIONS: Amoxicillin for 10 days or until resolution of symptoms. MAIN OUTCOMES AND MEASURES: Nasal polyp score at week 24.";
+    const p = extractPico(abs, "Effect of dupilumab on nasal polyp score");
+    expect(p?.population).toBe("276 adults with severe CRSwNP.");
+    expect(p?.intervention).toBe("Amoxicillin for 10 days or until resolution of symptoms.");
+    expect(p?.comparator).toBeUndefined();
   });
 
   it("splitLabeledSections игнорирует внутритекстовые двоеточия вроде «Group A: 12%»", () => {
@@ -62,6 +73,26 @@ describe("PICO: эвристики по тексту", () => {
     expect(p?.comparator).toBe("cold steel tonsillectomy");
     expect(p?.population).toBe("children");
     expect(p?.outcome).toBe("pain score");
+  });
+
+  it("дефис внутри слова не обрывает компаратор; хвостовые «who/which» и скобки «(n = 456 patients)» чистятся", () => {
+    const p = extractPico(
+      "We included seven trials with 987 participants. The primary outcome was number of sore throat episodes.",
+      "Tonsillectomy or adenotonsillectomy versus non-surgical treatment for chronic/recurrent acute tonsillitis",
+    );
+    expect(p?.intervention).toBe("Tonsillectomy or adenotonsillectomy");
+    expect(p?.comparator).toBe("non-surgical treatment");
+    expect(p?.population).toBe("987 participants");
+
+    const cohort = extractPico(
+      "We prospectively enrolled 48 children aged 4-12 years with persistent otitis media with effusion who underwent balloon dilation. Outcomes assessed included tympanometry type and ETDQ-7 score at 12 months.",
+      "Balloon dilation of the Eustachian tube in children",
+    );
+    expect(cohort?.population).toBe("48 children aged 4-12 years with persistent otitis media with effusion");
+    expect(cohort?.outcome).toBe("tympanometry type and ETDQ-7 score at 12 months");
+
+    const meta = extractPico("Twenty-three studies (n = 456 patients) were included. The primary outcome was speech perception in noise.", "Cochlear implantation in single-sided deafness");
+    expect(meta?.population).toBe("456 patients");
   });
 
   it("меньше двух элементов — null; пустой вход — null", () => {
