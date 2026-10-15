@@ -17,7 +17,24 @@ describe("цитирование (A-13)", () => {
       "Smith JA, Doe B, Иванов ИИ, A B, C D, E F, et al. Tympanostomy tubes in children: a randomized trial. The Laryngoscope. 2024. doi:10.1002/lary.123 PMID: 12345",
     );
     expect(citeVancouver({ ...a, authors: [], journal: null, publishedAt: null, doi: null, pmid: null })).toBe("Tympanostomy tubes in children: a randomized trial.");
-    expect(citeVancouver({ ...a, isPreprint: true })).toContain("Препринт.");
+    // Препринт — по NLM: журнал [Preprint]; без журнала — просто [Preprint]
+    expect(citeVancouver({ ...a, isPreprint: true, journal: "medRxiv" })).toContain(" medRxiv [Preprint]. 2024.");
+    expect(citeVancouver({ ...a, isPreprint: true, journal: null, pmid: null })).toBe(
+      "Smith JA, Doe B, Иванов ИИ, A B, C D, E F, et al. Tympanostomy tubes in children: a randomized trial. [Preprint]. 2024. doi:10.1002/lary.123",
+    );
+  });
+
+  it("запись ClinicalTrials.gov: реестр вместо журнала, идентификатор NCT вместо PMID, BibTeX @misc", () => {
+    const reg = { ...a, authors: ["Sanofi"], journal: "ClinicalTrials.gov (реестр)", doi: null, pmid: null, nctId: "NCT05512345", url: "https://clinicaltrials.gov/study/NCT05512345" };
+    expect(citeVancouver(reg)).toBe("Sanofi. Tympanostomy tubes in children: a randomized trial. ClinicalTrials.gov. 2024. Identifier: NCT05512345");
+    const bib = citeBibtex(reg);
+    expect(bib.startsWith("@misc{sanofi2024tympanostomy,")).toBe(true);
+    expect(bib).toContain("howpublished = {ClinicalTrials.gov}");
+    expect(bib).toContain("note = {ClinicalTrials.gov Identifier: NCT05512345}");
+    expect(bib).not.toContain("journal =");
+    // Опубликованная статья с NCT в аннотации — обычная журнальная ссылка
+    expect(citeVancouver({ ...a, nctId: "NCT05512345" })).not.toContain("Identifier");
+    expect(citeGost(reg)).toBe("Sanofi. Tympanostomy tubes in children: a randomized trial // ClinicalTrials.gov (реестр). 2024. URL: https://clinicaltrials.gov/study/NCT05512345.");
   });
 
   it("ГОСТ Р 7.0.5: сведения об ответственности, журнал, год, DOI либо URL", () => {

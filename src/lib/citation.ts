@@ -11,6 +11,13 @@ export interface CitableArticle {
   pmid: string | null;
   url: string;
   isPreprint?: boolean;
+  /** Записи реестра (журнал «ClinicalTrials.gov (реестр)») цитируются по идентификатору NCT. */
+  nctId?: string | null;
+}
+
+/** Запись ClinicalTrials.gov: вместо журнала — название реестра, вместо PMID — идентификатор NCT. */
+function registryId(a: CitableArticle): string | null {
+  return a.nctId && /^ClinicalTrials\.gov/i.test(a.journal ?? "") ? a.nctId : null;
 }
 
 function year(a: CitableArticle): string {
@@ -35,16 +42,19 @@ function cleanTitle(t: string): string {
 /**
  * Vancouver: Авторы (до 6, затем «et al.»). Заголовок. Журнал. Год. doi:… PMID: ….
  * Пример: Smith J, Doe A. Title. Laryngoscope. 2024. doi:10.1002/lary.1 PMID: 12345
+ * Препринты — по NLM: «medRxiv [Preprint]. 2024.»; записи реестра — «ClinicalTrials.gov. 2026. Identifier: NCT…».
  */
 export function citeVancouver(a: CitableArticle): string {
   const authors = a.authors.length ? a.authors.slice(0, 6).map(vancouverAuthor).join(", ") + (a.authors.length > 6 ? ", et al" : "") : "";
   const parts = [authors ? `${authors}.` : "", `${cleanTitle(a.title)}.`];
-  if (a.journal) parts.push(`${a.journal.replace(/\.+$/, "")}.`);
+  const nct = registryId(a);
+  const journal = nct ? "ClinicalTrials.gov" : a.journal?.replace(/\.+$/, "");
+  if (journal || a.isPreprint) parts.push(`${[journal, a.isPreprint ? "[Preprint]" : ""].filter(Boolean).join(" ")}.`);
   const y = year(a);
   if (y) parts.push(`${y}.`);
-  if (a.isPreprint) parts.push("Препринт.");
   if (a.doi) parts.push(`doi:${a.doi}`);
   if (a.pmid) parts.push(`PMID: ${a.pmid}`);
+  if (nct) parts.push(`Identifier: ${nct}`);
   return parts.filter(Boolean).join(" ");
 }
 
@@ -79,19 +89,25 @@ function bibEscape(s: string): string {
   return s.replace(/[{}]/g, "").replace(/([&%$#_])/g, "\\$1");
 }
 
-/** BibTeX @article; препринты — @unpublished с note. Заголовок в двойных фигурных скобках сохраняет регистр. */
+/**
+ * BibTeX @article; препринты — @unpublished с note; записи реестра — @misc с howpublished и NCT в note.
+ * Заголовок в двойных фигурных скобках сохраняет регистр.
+ */
 export function citeBibtex(a: CitableArticle): string {
+  const nct = registryId(a);
   const fields: [string, string][] = [
     ["title", `{${bibEscape(cleanTitle(a.title))}}`],
     ["author", bibEscape(a.authors.join(" and "))],
   ];
-  if (a.journal) fields.push(["journal", bibEscape(a.journal)]);
+  if (nct) fields.push(["howpublished", "ClinicalTrials.gov"]);
+  else if (a.journal) fields.push(["journal", bibEscape(a.journal)]);
   const y = year(a);
   if (y) fields.push(["year", y]);
   if (a.doi) fields.push(["doi", a.doi]);
   if (a.pmid) fields.push(["pmid", a.pmid]);
   fields.push(["url", a.url]);
-  if (a.isPreprint) fields.push(["note", "Preprint"]);
+  if (nct) fields.push(["note", `ClinicalTrials.gov Identifier: ${nct}`]);
+  else if (a.isPreprint) fields.push(["note", "Preprint"]);
   const body = fields.filter(([, v]) => v).map(([k, v]) => `  ${k} = {${v}}`).join(",\n");
-  return `@${a.isPreprint ? "unpublished" : "article"}{${bibKey(a)},\n${body}\n}`;
+  return `@${nct ? "misc" : a.isPreprint ? "unpublished" : "article"}{${bibKey(a)},\n${body}\n}`;
 }
