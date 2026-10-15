@@ -79,6 +79,9 @@
   вместо «HTTP 401»); ошибка формы отделена от ошибки списка.
 
 ### Changed
+- Бейдж дизайна в ленте и карточке помечается «?» (с подсказкой), если дизайн определён с низкой
+  уверенностью — по аннотации или перекрёстному заголовку без слова «рандомизированный»; раньше это было видно
+  только в раскрытой секции «Почему такой дизайн».
 - Старт БД и общий rate-limit пишут структурированные JSON-события вместо текстовых `console.*`
   (`db.migrations_pending`, `db.pre_migration_backup_failed`, `db.migrate_on_start_skipped`,
   `db.pglite_in_production`, `db.pglite_open_failed`, `db.pglite_quarantined`, `ratelimit.shared_unavailable`) —

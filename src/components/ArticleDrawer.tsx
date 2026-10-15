@@ -212,7 +212,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
         <TrustScore score={a.trustScore} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-            <DesignBadge design={a.studyDesign} reason={a.designReason} />
+            <DesignBadge design={a.studyDesign} reason={a.designReason} confidence={a.designConfidence} />
             <LevelBadge level={a.evidenceLevel} />
             <TierBadge tier={a.journalTier} />
             <IssuerBadge issuer={a.guidelineIssuer} />

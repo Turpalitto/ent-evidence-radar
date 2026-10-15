@@ -61,11 +61,16 @@ describe("<ArticleDrawer />", () => {
     expect(reason).toHaveTextContent("Почему такой дизайн: аннотация: «randomly assigned»");
     expect(reason).toHaveTextContent("уверенность низкая");
     expect(reason).toHaveTextContent(/поправить вручную/);
+    // Бейдж дизайна помечен «?» с подсказкой — заметно и без раскрытия секции
+    const marks = screen.getAllByLabelText("уверенность низкая");
+    expect(marks.length).toBeGreaterThan(0);
+    expect(marks.at(-1)!.closest("span[title]")!.getAttribute("title")).toMatch(/уверенность низкая — определено по аннотации/);
   });
 
-  it("объяснение дизайна скрыто у записей без него (до переклассификации)", () => {
+  it("объяснение дизайна скрыто у записей без него (до переклассификации); бейдж без «?» при средней уверенности", () => {
     setup(makeArticle({ id: 7, designReason: null, designConfidence: null }));
     expect(screen.queryAllByTestId("design-reason")).toHaveLength(0);
+    expect(screen.queryAllByLabelText("уверенность низкая")).toHaveLength(0);
   });
 
   it("закладка, Escape и кнопка «Закрыть»", async () => {

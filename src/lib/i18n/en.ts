@@ -256,6 +256,8 @@ export const EN: Record<string, string> = {
   "Страницу прочитано": "Page read",
   "{n} ст.": "{n} items",
   "Везде": "Everywhere",
+  "уверенность низкая — определено по аннотации, стоит проверить": "low confidence — inferred from the abstract, worth checking",
+  "уверенность низкая": "low confidence",
   "{n} за 30 дн.": "{n} in the last 30 days",
   "{n} статей": "{n} articles",
   "{n} статьи": "{n} articles",

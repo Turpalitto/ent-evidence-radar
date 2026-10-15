@@ -37,15 +37,22 @@ const LEVEL_STYLES: Record<number, string> = {
   5: "bg-gradient-to-br from-slate-500 to-slate-600 shadow-slate-600/25",
 };
 
-export function DesignBadge({ design, reason }: { design: StudyDesign; reason?: string | null }) {
+export function DesignBadge({ design, reason, confidence }: { design: StudyDesign; reason?: string | null; confidence?: string | null }) {
   const { t, stored } = useI18n();
   const label = t(DESIGN_LABELS[design]);
+  const uncertain = confidence === "low";
+  const hint = uncertain ? ` (${t("уверенность низкая — определено по аннотации, стоит проверить")})` : "";
   return (
     <span
-      title={reason ? `${label} — ${stored(reason)}` : label}
-      className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${DESIGN_STYLES[design]}`}
+      title={`${reason ? `${label} — ${stored(reason)}` : label}${hint}`}
+      className={`inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${DESIGN_STYLES[design]}`}
     >
       {t(DESIGN_SHORT[design])}
+      {uncertain && (
+        <span role="img" aria-label={t("уверенность низкая")} className="opacity-70">
+          ?
+        </span>
+      )}
     </span>
   );
 }
