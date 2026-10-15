@@ -45,7 +45,7 @@
 - Тесты: «золотые» случаи классификатора (erratum, single-arm/before-after/ITS, crossover, pooled analysis,
   ML-валидация, Delphi, числительные словами, «in adults»), `htmlAbstractToText`/`repairGluedAbstract`,
   секции JAMA/Lancet, издатель AAO-HNS по журналу, хуки ленты (Permissions API, online/offline),
-  HTTP-клиент (таймаут, сеть, 4xx/5xx, штраф 429). Всего 77 файлов / 555 тестов.
+  HTTP-клиент (таймаут, сеть, 4xx/5xx, штраф 429), medRxiv-отбор, перевод записей реестра. Всего 77 файлов / 559 тестов.
 
 ### Fixed
 - **Europe PMC: структурированные аннотации склеивались.** `<h4>Methods</h4>text` после снятия тегов превращалось
