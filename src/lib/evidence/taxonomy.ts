@@ -32,7 +32,7 @@ export const SUBSPECIALTIES: { key: string; label: string; short: string; patter
       /rhinosinusitis/i, /\bsinusitis/i, /nasal polyp/i, /\brhinitis/i, /\bseptoplast/i, /septal deviation/i,
       /turbinate/i, /\bepistaxis/i, /endoscopic sinus surgery/i, /\bFESS\b/, /\bolfact/i, /\banosmia/i,
       /\bsmell\b/i, /skull base/i, /\brhinolog/i, /paranasal/i, /\bnasal\b/i, /dupilumab/i, /\bsinonasal/i,
-      /allergic rhin/i, /immunotherapy.*allerg/i, /CRSwNP/i,
+      /allergic rhin/i, /immunotherapy.*allerg/i, /CRSwNP/i, /angiofibroma/i, /\bnasopharyn(x|geal)\b(?! carcinoma)/i,
     ],
   },
   {
@@ -51,7 +51,7 @@ export const SUBSPECIALTIES: { key: string; label: string; short: string; patter
     short: "Онко ГиШ",
     patterns: [
       /head and neck (cancer|squamous|carcinoma|neoplasm|tumou?r|oncolog)/i, /\bHNSCC\b/, /oropharyn(x|geal)/i,
-      /\bnasopharyn(x|geal) carcinoma/i, /laryngeal (cancer|carcinoma)/i, /thyroid (cancer|carcinoma|nodule|ectomy)/i,
+      /\bnasopharyn(x|geal) carcinoma/i, /laryngeal (cancer|carcinoma)/i, /thyroid(ectomy| (cancer|carcinoma|nodule|surgery))/i,
       /\bparotid/i, /salivary gland/i, /\bneck dissection/i, /\bHPV\b/i,
       // «immunotherapy» само по себе — ещё и аллерген-специфическая иммунотерапия (ринология):
       // в онкологию относим только противоопухолевую.

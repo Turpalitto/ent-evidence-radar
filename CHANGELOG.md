@@ -55,6 +55,10 @@
   «development and (external) validation», «deep learning for detection», CNN → диагностическая точность;
   Delphi / экспертный консенсус → руководство. Europe PMC больше не отдаёт служебные уведомления (опечатки,
   отзывы, expression of concern) — та же фильтрация по типу публикации, что и у PubMed.
+- Размер выборки: распознаются числительные словами («Forty-eight children», «Two hundred and six patients»)
+  и пробел как разделитель тысяч («12 345 adults», раньше читалось как 345). Субспециальности: `thyroidectomy`
+  → опухоли головы и шеи (паттерн требовал пробел), ангиофиброма/носоглотка → ринология, «… in adults» без
+  детских терминов больше не помечается как детская ЛОР из-за слова «tonsillectomy».
 - Лента: подписка на `Notification.permission` через Permissions API больше не вешает слушатель `change`,
   если компонент размонтировался до резолва `permissions.query()` (утечка слушателя). Новые тесты
   `feed/hooks.test.tsx` (5): Permissions API, отписка при unmount, поздний резолв, отказ API, online/offline.

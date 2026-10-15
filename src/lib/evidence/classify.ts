@@ -321,7 +321,34 @@ export function evidenceLevel(design: StudyDesign, sampleSize: number | null): n
 const YEAR_CONTEXT_BEFORE_RE =
   /(?:\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?|\b(?:and|to|until|till|through|since|in|from|by|between|of)|[–—-]|\d{4},?)\s*$/i;
 
-export function extractSampleSize(text: string): number | null {
+/** Числительные словами («Forty-eight children», «Two hundred and six patients») — частое начало предложения в аннотациях. */
+const SMALL_NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+const NUMBER_WORD = `(?:${Object.keys(SMALL_NUMBER_WORDS).join("|")}|hundred|thousand)`;
+const SAMPLE_NOUNS = "(?:consecutive\\s+|eligible\\s+|adult\\s+|p(?:a)?ediatric\\s+)?(?:patients|participants|subjects|cases|children|adults|individuals|women|men|ears|eyes|studies|trials|RCTs)";
+const WORD_NUMBER_RE = new RegExp(`\\b${NUMBER_WORD}(?:[- ]+(?:and[- ]+)?${NUMBER_WORD})*(?=\\s+${SAMPLE_NOUNS}\\b)`, "gi");
+/** «12 345 adults» — пробел (в т. ч. неразрывный/тонкий) как разделитель тысяч в европейских журналах. */
+const SPACED_THOUSANDS_RE = /\b(\d{1,3})[ \u00a0\u202f\u2009](\d{3})\b(?![.,]\d)/g;
+
+function wordsToNumber(words: string): number {
+  let total = 0;
+  let current = 0;
+  for (const w of words.toLowerCase().split(/[- ]+/)) {
+    if (w === "and") continue;
+    if (w === "hundred") current = (current || 1) * 100;
+    else if (w === "thousand") {
+      total += (current || 1) * 1000;
+      current = 0;
+    } else current += SMALL_NUMBER_WORDS[w] ?? 0;
+  }
+  return total + current;
+}
+
+export function extractSampleSize(input: string): number | null {
+  const text = input.replace(WORD_NUMBER_RE, (m) => String(wordsToNumber(m))).replace(SPACED_THOUSANDS_RE, "$1$2");
   // 1. Приоритетные паттерны: явно включённые, рандомизированные или завершившие пациенты
   const priorityCandidates: number[] = [];
   const priorityPatterns = [
@@ -401,10 +428,19 @@ export function detectSubspecialties(a: RawArticle): string[] {
     }
     if (score > 0) scores.push({ key: s.key, score });
   }
+  // «Tonsillectomy in adults»: процедурные термины (тонзиллэктомия, аденоиды, шунты) тянут в детскую ЛОР,
+  // но если заголовок прямо говорит о взрослых и детских терминов нет — это не педиатрия.
+  if (ADULTS_ONLY_RE.test(a.title) && !CHILD_TERMS_RE.test(`${a.title} ${a.abstract ?? ""}`)) {
+    const i = scores.findIndex((s) => s.key === "pediatric");
+    if (i >= 0) scores.splice(i, 1);
+  }
   scores.sort((x, y) => y.score - x.score);
   const top = scores.filter((s) => s.score >= 2).slice(0, 3).map((s) => s.key);
   return top.length ? top : scores.slice(0, 1).map((s) => s.key);
 }
+
+const ADULTS_ONLY_RE = /\b(in|among|of|for) adults?\b|\badult (patients|population|cohort|subjects|participants)\b/i;
+const CHILD_TERMS_RE = /\bchild|\bp(a)?ediatric|\binfant|\bneonat|\badolescen|\bnewborn|\bschool[- ]age|\byears? old\b.*\b(younger|under)\b/i;
 
 const DESIGN_KEYS = new Set<string>([
   "systematic_review", "guideline", "rct", "cohort", "case_control", "cross_sectional", "case_series", "narrative", "trial_registry", "preprint",

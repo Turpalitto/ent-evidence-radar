@@ -136,6 +136,19 @@ describe("extractSampleSize", () => {
     expect(extractSampleSize("Overall, 2021 patients were analyzed")).toBe(2021);
     expect(extractSampleSize("A total of 1,250 patients were included")).toBe(1250);
   });
+
+  it("числительные словами и пробел как разделитель тысяч", () => {
+    expect(extractSampleSize("Forty-eight children were enrolled.")).toBe(48);
+    expect(extractSampleSize("Two hundred and six patients underwent surgery.")).toBe(206);
+    expect(extractSampleSize("One thousand two hundred participants were randomised.")).toBe(1200);
+    expect(extractSampleSize("Sixty consecutive patients (60 ears) were included.")).toBe(60);
+    expect(extractSampleSize("Twenty-two RCTs (n=2,310) were included.")).toBe(2310);
+    expect(extractSampleSize("The cohort comprised 12 345 adults.")).toBe(12345);
+    expect(extractSampleSize("The cohort comprised 12\u00a0345 adults.")).toBe(12345);
+    // «two patients» — слишком мало, как и «2 patients»; десятичные дроби не склеиваются
+    expect(extractSampleSize("Two patients developed meningitis.")).toBeNull();
+    expect(extractSampleSize("Mean dose 1 500.5 mg in 40 patients")).toBe(40);
+  });
 });
 
 describe("detectSubspecialties", () => {
@@ -160,6 +173,17 @@ describe("detectSubspecialties", () => {
 
     expect(detectSubspecialties(base({ title: "Adenoidectomy for otitis media with effusion in children" }))).toContain("pediatric");
     expect(detectSubspecialties(base({ title: "Pembrolizumab immunotherapy for recurrent head and neck squamous cell carcinoma" }))).toContain("head_neck_oncology");
+  });
+
+  it("тиреоидэктомия и ангиофиброма носоглотки распознаются; «in adults» без детских терминов убирает педиатрию", () => {
+    expect(detectSubspecialties(base({ title: "Thyroidectomy complications: a national registry study" }))).toContain("head_neck_oncology");
+    expect(detectSubspecialties(base({ title: "Juvenile nasopharyngeal angiofibroma: endoscopic resection" }))).toContain("rhinology");
+    const adults = detectSubspecialties(base({ title: "Tonsillectomy versus watchful waiting for recurrent tonsillitis in adults" }));
+    expect(adults).not.toContain("pediatric");
+    expect(adults).toContain("infection");
+    // А с детьми в аннотации — педиатрия остаётся, даже если в заголовке «adults» (сравнение групп)
+    expect(detectSubspecialties(base({ title: "Post-tonsillectomy haemorrhage in adults", abstract: "We compared adults with children aged 3–12 years." }))).toContain("pediatric");
+    expect(detectSubspecialties(base({ title: "Tonsillectomy in children" }))).toContain("pediatric");
   });
 
   it("is consistent across multiple calls without regex state leak", () => {
