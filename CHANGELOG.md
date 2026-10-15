@@ -75,7 +75,9 @@
   pigs were randomised» раньше становилось РКИ уровня 2 с доверием 56); человеческие слова в заголовке
   (patients, children…) и «canine fossa» срабатывание снимают, «in vivo» — только низкая уверенность.
   Scoping-обзор остаётся систематическим обзором, но уровень 2 и −12 к доверию (картирование литературы без
-  оценки качества включённых исследований).
+  оценки качества включённых исследований). Размер выборки: «Sixty consecutive patients … were enrolled»,
+  «recruited 48 eligible adults», «Of 5,000 screened, 312 were enrolled», «reviewed 150 charts» и «2,019 patients»
+  (разделитель тысяч — не год) теперь распознаются.
 - Классификатор дизайна (`CLASSIFIER_VERSION = 6`, существующие записи переразмечаются автоматически):
   исправления к статьям (`Published Erratum`, `Erratum to: …`, `Correction: …`, `Expression of concern`) больше
   не наследуют дизайн оригинала («Erratum to: Randomized trial…» получал РКИ уровня 2); нерандомизированные и

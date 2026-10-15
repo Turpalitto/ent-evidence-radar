@@ -149,6 +149,15 @@ describe("extractSampleSize", () => {
     expect(extractSampleSize("Two patients developed meningitis.")).toBeNull();
     expect(extractSampleSize("Mean dose 1 500.5 mg in 40 patients")).toBe(40);
   });
+
+  it("прилагательное между числом и существительным, «312 were enrolled» без существительного, «2,019 patients» с разделителем — не год", () => {
+    expect(extractSampleSize("Sixty consecutive patients undergoing septoplasty were enrolled.")).toBe(60);
+    expect(extractSampleSize("We recruited 48 eligible adults with CRSwNP.")).toBe(48);
+    expect(extractSampleSize("Of 5,000 screened individuals, 312 were enrolled and randomised.")).toBe(312);
+    expect(extractSampleSize("Among 2,019 patients treated between 2015 and 2019, 42% had recurrence.")).toBe(2019);
+    expect(extractSampleSize("This retrospective study reviewed 150 charts.")).toBe(150);
+    expect(extractSampleSize("Between 2015 and 2019 patients were included consecutively.")).toBeNull();
+  });
 });
 
 describe("detectSubspecialties", () => {

@@ -386,13 +386,20 @@ function wordsToNumber(words: string): number {
   return total + current;
 }
 
+/** Прилагательные между числом и существительным: «60 consecutive patients», «48 eligible adults». */
+const SAMPLE_ADJ = "(?:(?:consecutive|eligible|adult|p(?:a)?ediatric|healthy|elderly|hospitali[sz]ed|unique|newly diagnosed|treatment[- ]na[iï]ve|evaluable)\\s+)?";
+const SAMPLE_UNITS = "(?:patients|participants|subjects|cases|children|adults|individuals|women|men|eyes|ears|records|charts|procedures)";
+const PRIORITY_VERBS = "(?:enrolled|included|randomi[sz]ed|allocated|assigned|completed|evaluated|recruited|treated|reviewed|identified|analy[sz]ed)";
+
 export function extractSampleSize(input: string): number | null {
   const text = input.replace(WORD_NUMBER_RE, (m) => String(wordsToNumber(m))).replace(SPACED_THOUSANDS_RE, "$1$2");
   // 1. Приоритетные паттерны: явно включённые, рандомизированные или завершившие пациенты
   const priorityCandidates: number[] = [];
   const priorityPatterns = [
-    /\b(?:enrolled|included|randomized|randomised|allocated|assigned|completed|evaluated)\s+([\d,]{2,7})\s+(?:patients|participants|subjects|cases|children|adults|individuals)/gi,
-    /\b([\d,]{2,7})\s+(?:patients|participants|subjects|cases|children|adults|individuals)\s+(?:were|was)\s+(?:enrolled|included|randomized|randomised|analyzed|analysed)/gi,
+    new RegExp(`\\b${PRIORITY_VERBS}\\s+([\\d,]{2,7})\\s+${SAMPLE_ADJ}${SAMPLE_UNITS}`, "gi"),
+    new RegExp(`\\b([\\d,]{2,7})\\s+${SAMPLE_ADJ}${SAMPLE_UNITS}\\s+(?:[a-z-]+\\s+){0,3}(?:were|was)\\s+${PRIORITY_VERBS}`, "gi"),
+    // «Of 5,000 screened, 312 were enrolled» — число без существительного прямо перед глаголом включения
+    /\b([\d,]{2,7})\s+(?:were|was)\s+(?:enrolled|included|randomi[sz]ed|recruited|allocated)\b/gi,
     /\bn\s*=\s*([\d,]{2,7})\b/gi,
     /sample\s+size\s+(?:of\s+|was\s+|:?\s*)([\d,]{2,7})\b/gi,
   ];
@@ -400,13 +407,15 @@ export function extractSampleSize(input: string): number | null {
   for (const p of priorityPatterns) {
     let m: RegExpExecArray | null;
     while ((m = p.exec(text)) !== null) {
-      const n = parseInt((m[1] ?? "").replace(/,/g, ""), 10);
+      const raw = m[1] ?? "";
+      const n = parseInt(raw.replace(/,/g, ""), 10);
       if (Number.isNaN(n) || n < 5 || n > 5_000_000) continue;
       // «n = 2020» или «enrolled 2021 patients» — это выборка, а не год: явный контекст
       // (n =, enrolled/included … patients) исключает прочтение как даты. Исключение —
       // число перед существительным, которому предшествует дата/диапазон:
       // «from 2015 to 2019 patients were included», «in 2023, 2024 subjects were analyzed».
-      if (n >= 1990 && n <= 2099 && m[0].search(/^[\d,]/) === 0) {
+      // Разделитель тысяч («2,019 patients») годом быть не может.
+      if (n >= 1990 && n <= 2099 && !raw.includes(",") && m[0].search(/^[\d,]/) === 0) {
         const before = text.slice(Math.max(0, m.index - 24), m.index);
         if (YEAR_CONTEXT_BEFORE_RE.test(before)) continue;
       }
@@ -420,16 +429,17 @@ export function extractSampleSize(input: string): number | null {
   // 2. Общие паттерны
   const candidates: number[] = [];
   const patterns = [
-    /\b([\d,]{2,7})\s+(?:patients|participants|subjects|children|adults|individuals|cases|women|men|eyes|ears|studies were included|studies)\b/gi,
-    /(?:total of|comprising|involving)\s+([\d,]{2,7})\s+(?:patients|participants|subjects|children|adults|individuals|studies|trials|articles)/gi,
+    new RegExp(`\\b([\\d,]{2,7})\\s+${SAMPLE_ADJ}(?:${SAMPLE_UNITS}|studies were included|studies)\\b`, "gi"),
+    /(?:total of|comprising|involving|among)\s+([\d,]{2,7})\s+(?:patients|participants|subjects|children|adults|individuals|studies|trials|articles)/gi,
   ];
   for (const p of patterns) {
     let m: RegExpExecArray | null;
     while ((m = p.exec(text)) !== null) {
-      const n = parseInt((m[1] ?? "").replace(/,/g, ""), 10);
-      // Отсеиваем: NaN, слишком мелкие (<5), годы (2019-2099), слишком большие (>5M)
+      const raw = m[1] ?? "";
+      const n = parseInt(raw.replace(/,/g, ""), 10);
+      // Отсеиваем: NaN, слишком мелкие (<5), годы (2019-2099, кроме «2,019» с разделителем), слишком большие (>5M)
       if (Number.isNaN(n) || n < 5 || n > 5_000_000) continue;
-      if (n >= 2019 && n <= 2099) continue; // вероятно, год
+      if (n >= 2019 && n <= 2099 && !raw.includes(",")) continue; // вероятно, год
       candidates.push(n);
     }
   }
