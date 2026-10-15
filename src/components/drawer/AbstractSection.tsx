@@ -89,11 +89,13 @@ export function AbstractSection({ a, ai, showTranslate, onTranslate, onSummary }
 }
 
 function StructuredAbstract({ abstract }: { abstract: string }) {
-  const { t, locale } = useI18n();
+  const { t, locale, stored } = useI18n();
   const sections = parseStructuredAbstract(abstract);
   if (sections.length <= 1) {
+    // `stored` переводит сгенерированные абзацы записей ClinicalTrials.gov («Статус: …», «В реестре опубликованы
+    // результаты.»); настоящий текст аннотации возвращается как есть.
     return abstract.split("\n").filter(Boolean).map((p, i) => (
-      <p key={i} className="text-slate-700 dark:text-slate-300">{p}</p>
+      <p key={i} className="text-slate-700 dark:text-slate-300">{stored(p)}</p>
     ));
   }
   return sections.map((sec, i) => {

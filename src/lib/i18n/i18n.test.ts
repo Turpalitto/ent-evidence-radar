@@ -115,6 +115,18 @@ describe("translateStored: хранимые тексты классификат�
     expect(translateStored("en", "")).toBe("");
   });
 
+  it("аннотация записи реестра: первый абзац — пофразно (спонсор с точкой не ломает), остальные — словарь", () => {
+    expect(translateStored("en", "Статус: COMPLETED. Нерандомизированное интервенционное исследование. Маскирование: не указано. Спонсор: не указан.")).toBe(
+      "Status: COMPLETED. Non-randomised interventional study. Masking: not specified. Sponsor: not specified.",
+    );
+    expect(translateStored("en", "Статус: RECRUITING. Рандомизированное интервенционное исследование, фаза PHASE2/PHASE3, планируемая/фактическая выборка n=120. Маскирование: NONE. Спонсор: Acme Ltd. Страны: Germany.")).toBe(
+      "Status: RECRUITING. Randomised interventional study, phase PHASE2/PHASE3, planned/actual enrolment n=120. Masking: NONE. Sponsor: Acme Ltd. Countries: Germany.",
+    );
+    expect(translateStored("en", "В реестре опубликованы результаты.")).toBe("Results have been posted in the registry.");
+    expect(translateStored("ru", "В реестре опубликованы результаты.")).toBe("В реестре опубликованы результаты.");
+    expect(translateStored("en", "Plain English abstract text.")).toBe("Plain English abstract text.");
+  });
+
   it("параметризованные подписи переводятся по шаблонам", () => {
     expect(translateStored("en", "Журнал уровня Tier 2")).toBe("Tier 2 journal");
     expect(translateStored("en", "Размер выборки n≈240")).toBe("Sample size n≈240");

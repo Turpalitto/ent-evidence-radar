@@ -18,6 +18,20 @@ describe("/feed.xml с фильтрами (подписка на сохранё�
       { dedupKey: "feed-2", title: "Feed otology cohort", sourceKey: "pubmed", sourceKeys: ["pubmed"], url: "https://e.org/2", pmid: "80000002", subspecialties: ["otology"], studyDesign: "cohort", evidenceLevel: 3, trustScore: 40 },
       { dedupKey: "feed-3", title: "Feed hidden rhinology", sourceKey: "pubmed", sourceKeys: ["pubmed"], url: "https://e.org/3", pmid: "80000003", subspecialties: ["rhinology"], studyDesign: "rct", trustScore: 90, isHidden: true },
       { dedupKey: "feed-4", title: "Feed bookmarked otology", sourceKey: "pubmed", sourceKeys: ["pubmed"], url: "https://e.org/4", pmid: "80000004", subspecialties: ["otology"], studyDesign: "rct", trustScore: 70, isBookmarked: true },
+      {
+        dedupKey: "feed-5",
+        title: "Feed registry trial",
+        sourceKey: "clinicaltrials",
+        sourceKeys: ["clinicaltrials"],
+        url: "https://clinicaltrials.gov/study/NCT08000005",
+        nctId: "NCT08000005",
+        journal: "ClinicalTrials.gov (реестр)",
+        abstract: "Статус: RECRUITING. Рандомизированное интервенционное исследование, фаза PHASE3. Маскирование: NONE. Спонсор: Acme Ltd.\n\nРезультаты в реестре пока не опубликованы.\n\nDupilumab in CRSwNP.",
+        subspecialties: ["rhinology"],
+        studyDesign: "trial_registry",
+        evidenceLevel: 4,
+        trustScore: 30,
+      },
     ]);
   });
 
@@ -51,7 +65,12 @@ describe("/feed.xml с фильтрами (подписка на сохранё�
     expect(xml).toMatch(/<link href="[^"]*\/feed\.xml\?subspecialty=rhinology&amp;design=rct&amp;minTrust=70&amp;lang=en" rel="self"/);
     expect(xml).toMatch(/<link href="[^"]*\/\?subspecialty=rhinology&amp;design=rct&amp;minTrust=70" rel="alternate"/);
     // Без параметра — общий заголовок на английском
-    expect(await (await get("?lang=en")).text()).toContain("<title>ENT Evidence Radar — evidence-based publications feed</title>");
+    const all = await (await get("?lang=en")).text();
+    expect(all).toContain("<title>ENT Evidence Radar — evidence-based publications feed</title>");
+    // Сгенерированная аннотация и журнал записи реестра — тоже на английском; настоящий текст не тронут
+    expect(all).toContain("ClinicalTrials.gov (registry). Trust index 30/100");
+    expect(all).toContain("Status: RECRUITING. Randomised interventional study, phase PHASE3. Masking: NONE. Sponsor: Acme Ltd. No results posted in the registry yet. Dupilumab in CRSwNP.");
+    expect(await (await get("?source=clinicaltrials")).text()).toContain("ClinicalTrials.gov (реестр). Индекс доверия 30/100");
   });
 
   it("персональные флаги игнорируются: bookmarked/unread/hidden не влияют на публичную ленту", async () => {

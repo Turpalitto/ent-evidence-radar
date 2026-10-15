@@ -76,6 +76,41 @@ describe("английский интерфейс", () => {
     await waitFor(() => expect(screen.getAllByRole("dialog").at(-1)!.textContent).not.toMatch(CYRILLIC));
   });
 
+  it("<ArticleDrawer />: сгенерированная аннотация и журнал записи ClinicalTrials.gov переводятся при показе", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({
+        "^GET /api/articles/\\d+/related$": () => ({ items: [] }),
+        "^PATCH /api/articles/\\d+$": () => ({ ok: true }),
+      }).fn,
+    );
+    en(
+      <ArticleDrawer
+        article={makeArticle({
+          id: 2,
+          isRead: true,
+          sourceKey: "clinicaltrials",
+          sourceKeys: ["clinicaltrials"],
+          journal: "ClinicalTrials.gov (реестр)",
+          studyDesign: "trial_registry",
+          designReason: "запись реестра клинических исследований",
+          designConfidence: "high",
+          trustBreakdown: [{ label: "Дизайн исследования", points: 12 }],
+          abstract:
+            "Статус: RECRUITING. Рандомизированное интервенционное исследование, фаза PHASE3, планируемая/фактическая выборка n=450. Маскирование: DOUBLE. Спонсор: Sanofi Inc. Страны: France, United States.\n\nРезультаты в реестре пока не опубликованы.\n\nDupilumab versus placebo in adults with CRSwNP.",
+        })}
+        onClose={() => {}}
+        onUpdate={() => {}}
+        onSelectArticle={() => {}}
+      />,
+    );
+    const dialog = screen.getAllByRole("dialog").at(-1)!;
+    expect(dialog.textContent).toContain("Status: RECRUITING. Randomised interventional study, phase PHASE3, planned/actual enrolment n=450. Masking: DOUBLE. Sponsor: Sanofi Inc. Countries: France, United States.");
+    expect(dialog.textContent).toContain("No results posted in the registry yet.");
+    expect(dialog.textContent).toContain("ClinicalTrials.gov (registry)");
+    await waitFor(() => expect(screen.getAllByRole("dialog").at(-1)!.textContent).not.toMatch(CYRILLIC));
+  });
+
   it("<Feed />: пресеты, фильтры и подписи карточек на английском", async () => {
     vi.stubGlobal(
       "fetch",

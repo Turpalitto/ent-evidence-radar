@@ -55,6 +55,9 @@
   Парсер секций понимает JAMA- и Lancet-стиль (Importance, Design/Setting/Participants, Main Outcomes and Measures,
   Conclusions and Relevance, Findings, Interpretation, Trial Registration, Funding…), «Interpretation» считается
   выводом; русские подписи для новых секций.
+- Английский интерфейс: сгенерированная аннотация записи ClinicalTrials.gov («Статус: …», «Результаты в реестре
+  пока не опубликованы») и журнал «ClinicalTrials.gov (реестр)» переводятся при показе — в карточке, превью ленты,
+  Atom-ленте `?lang=en` и дайджесте (формат хранения не меняется, `trials.ts` по-прежнему читает русские фразы).
 - medRxiv: расширен словарь ЛОР-терминов для отбора из смежных категорий (pharyn/trache/deaf/audiolog/
   Ménière/cholesteatoma/tympan/parotid/snoring/facial nerve…), теги в заголовке и аннотации снимаются,
   авторы «Last, F. M.» приводятся к «Last FM» (как у PubMed) — единообразные цитаты и экспорт.

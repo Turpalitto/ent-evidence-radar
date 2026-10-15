@@ -24,6 +24,24 @@ function translateSuffix(suffix: string): string {
   return suffix;
 }
 
+/**
+ * Первый абзац аннотации записи реестра собирается в `clinicaltrials.ts` из фиксированных фраз; названия
+ * спонсоров и стран могут содержать точки, поэтому переводим фразу за фразой, а не одной регуляркой.
+ */
+function translateRegistryLine(line: string): string {
+  return line
+    .replace(/^Статус: /, "Status: ")
+    .replace(/\. Рандомизированное интервенционное исследование/, ". Randomised interventional study")
+    .replace(/\. Нерандомизированное интервенционное исследование/, ". Non-randomised interventional study")
+    .replace(/, фаза /, ", phase ")
+    .replace(/, планируемая\/фактическая выборка n=/, ", planned/actual enrolment n=")
+    .replace(/\. Маскирование: не указано\./, ". Masking: not specified.")
+    .replace(/\. Маскирование: /, ". Masking: ")
+    .replace(/\. Спонсор: не указан\./, ". Sponsor: not specified.")
+    .replace(/\. Спонсор: /, ". Sponsor: ")
+    .replace(/ Страны: /, " Countries: ");
+}
+
 interface Rule {
   re: RegExp;
   to: (m: RegExpMatchArray) => string;
@@ -39,6 +57,8 @@ const RULES: readonly Rule[] = [
   { re: /^тип публикации PubMed: «([\s\S]*)»([\s\S]*)$/, to: (m) => `PubMed publication type: “${m[1]}”${translateSuffix(m[2] ?? "")}` },
   { re: /^заголовок: «([\s\S]*)»([\s\S]*)$/, to: (m) => `title: “${m[1]}”${translateSuffix(m[2] ?? "")}` },
   { re: /^аннотация: «([\s\S]*)»([\s\S]*)$/, to: (m) => `abstract: “${m[1]}”${translateSuffix(m[2] ?? "")}` },
+  // ── сгенерированная аннотация записи ClinicalTrials.gov (первый абзац) ──
+  { re: /^Статус: [\s\S]+$/, to: (m) => translateRegistryLine(m[0]) },
   // ── trust_breakdown[].label ──
   { re: /^Источник: (.+)$/, to: (m) => `Source: ${m[1]}` },
   { re: /^Журнал уровня Tier (\d)$/, to: (m) => `Tier ${m[1]} journal` },

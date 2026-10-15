@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   await ensureSeeded();
   const base = siteBaseUrl();
   const i18n = i18nOf(req);
-  const { t, locale } = i18n;
+  const { t, locale, stored } = i18n;
 
   const sp = new URLSearchParams();
   for (const k of FEED_PARAMS) {
@@ -62,12 +62,14 @@ export async function GET(req: NextRequest) {
       const design = t(DESIGN_LABELS[a.studyDesign] ?? a.studyDesign);
       const source = t(SOURCE_LABELS[a.sourceKey] ?? a.sourceKey);
       const meta = [
-        a.journal ? `${a.journal}.` : "",
+        a.journal ? `${stored(a.journal)}.` : "",
         t("Индекс доверия {trust}/100 · {design} · уровень доказательности {level} · {source}.", { trust: a.trustScore, design, level: a.evidenceLevel, source }),
       ]
         .filter(Boolean)
         .join(" ");
-      const summary = `${meta}${a.abstract ? ` ${a.abstract}` : ""}`.trim();
+      // Сгенерированные абзацы записей реестра («Статус: …») переводятся при показе, настоящий текст — как есть.
+      const abstract = a.abstract ? a.abstract.split("\n").filter(Boolean).map(stored).join(" ") : "";
+      const summary = `${meta}${abstract ? ` ${abstract}` : ""}`.trim();
       // Постоянный идентификатор (RFC 4287 требует IRI): DOI → https://doi.org/…, PMID → ссылка
       // на PubMed, иначе tag: URI сайта. `urn:doi:` — незарегистрированная схема (аудит F-27).
       const id = a.doi

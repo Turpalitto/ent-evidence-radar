@@ -145,7 +145,7 @@ function safeHref(url: string): string {
 }
 
 export function renderDigest(data: DigestData, i18n: I18n = digestI18n()): { html: string; text: string } {
-  const { t, locale } = i18n;
+  const { t, locale, stored } = i18n;
   const date = (d: Date | null) => formatDate(d, locale);
   const top = data.highTrust.length
     ? data.highTrust.map((a) => `• ${a.title} — ${t("индекс доверия {n}", { n: a.trustScore })} (${link(a)})`).join("\n")
@@ -154,7 +154,7 @@ export function renderDigest(data: DigestData, i18n: I18n = digestI18n()): { htm
   const list = data.articles.length
     ? data.articles
         .slice(0, 15)
-        .map((a) => `${a.trustScore} | ${a.title} | ${a.journal || "—"} | ${date(a.publishedAt)} | ${link(a)}`)
+        .map((a) => `${a.trustScore} | ${a.title} | ${stored(a.journal ?? "") || "—"} | ${date(a.publishedAt)} | ${link(a)}`)
         .join("\n")
     : t("— нет новых статей —");
 
@@ -178,7 +178,7 @@ export function renderDigest(data: DigestData, i18n: I18n = digestI18n()): { htm
   const rowsHtml = data.articles
     .slice(0, 15)
     .map(
-      (a) => `<li>${a.trustScore}| ${a.isPreprint ? `${t("Препринт")} ` : ""}${a.isRetracted ? `${t("Отозвана")} ` : ""}<a href="${escapeHtml(safeHref(link(a)))}">${escapeHtml(a.title)}</a> — ${escapeHtml(a.journal || "—")} — ${date(a.publishedAt)}</li>`,
+      (a) => `<li>${a.trustScore}| ${a.isPreprint ? `${t("Препринт")} ` : ""}${a.isRetracted ? `${t("Отозвана")} ` : ""}<a href="${escapeHtml(safeHref(link(a)))}">${escapeHtml(a.title)}</a> — ${escapeHtml(stored(a.journal ?? "") || "—")} — ${date(a.publishedAt)}</li>`,
     )
     .join("");
 

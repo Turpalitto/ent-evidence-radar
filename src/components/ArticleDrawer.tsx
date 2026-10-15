@@ -51,7 +51,7 @@ function useBodyScrollLock(active: boolean) {
  */
 export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: Props) {
   const i18n = useI18n();
-  const { t, locale, date } = i18n;
+  const { t, locale, date, stored } = i18n;
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [editOverrides, setEditOverrides] = useState(false);
@@ -226,7 +226,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
           </div>
           <h2 className="text-sm font-semibold leading-snug text-[color:var(--ink)] md:text-base">{a.title}</h2>
           <p className="mt-1 text-xs text-[color:var(--ink-muted)]">
-            {a.journal || "—"} · {date(a.publishedAt)}
+            {stored(a.journal) || "—"} · {date(a.publishedAt)}
             {a.sampleSize ? ` · n≈${a.sampleSize}` : ""}
           </p>
         </div>

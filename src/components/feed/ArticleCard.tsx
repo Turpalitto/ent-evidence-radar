@@ -22,8 +22,10 @@ interface Props {
  * карточку, быстрые действия «избранное»/«прочитано» не всплывают до открытия.
  */
 export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOpen, onToggle }: Props) {
-  const { t, date } = useI18n();
+  const { t, date, stored } = useI18n();
   const conclusion = extractConclusion(a.abstract);
+  // Превью — первый абзац; для записей реестра он сгенерирован («Статус: …») и переводится при показе.
+  const preview = a.abstract ? stored(a.abstract.split("\n").find(Boolean) ?? "") : "";
   return (
     <li
       tabIndex={0}
@@ -78,7 +80,7 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
               </p>
             </div>
           ) : (
-            <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-[color:var(--ink-muted)]">{a.abstract || t("Аннотация недоступна")}</p>
+            <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-[color:var(--ink-muted)]">{preview || t("Аннотация недоступна")}</p>
           )}
           {a.notes && (
             <p className="mt-1.5 line-clamp-1 text-[12.5px] leading-relaxed text-amber-800 dark:text-amber-300" title={a.notes}>
@@ -87,7 +89,7 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
             </p>
           )}
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--ink-muted)]">
-            <span className="font-medium text-[color:var(--ink-soft)]">{a.journal || "—"}</span>
+            <span className="font-medium text-[color:var(--ink-soft)]">{stored(a.journal) || "—"}</span>
             <span>{date(a.publishedAt)}</span>
             {a.authors.length > 0 && <span className="truncate">{a.authors.slice(0, 3).join(", ")}{a.authors.length > 3 ? ` ${t("и др.")}` : ""}</span>}
             {a.sampleSize && <span>n≈{a.sampleSize}</span>}
@@ -144,7 +146,7 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
           </p>
         )}
         <div className="mt-1.5 flex items-center gap-2 text-[12px] text-[color:var(--ink-muted)]">
-          <span className="min-w-0 truncate font-medium text-[color:var(--ink-soft)]">{a.journal || "—"}</span>
+          <span className="min-w-0 truncate font-medium text-[color:var(--ink-soft)]">{stored(a.journal) || "—"}</span>
           <span className="shrink-0">{date(a.publishedAt)}</span>
           {a.isRead && <span className="ml-auto shrink-0 text-[color:var(--brand-ink)]">✓</span>}
         </div>
