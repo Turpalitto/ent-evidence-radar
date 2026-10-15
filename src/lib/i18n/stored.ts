@@ -16,6 +16,7 @@ const REASON_SUFFIXES: readonly (readonly [ru: string, en: string])[] = [
   [" — нерандомизированное", " — non-randomised"],
   [" — исправление к ранее опубликованной статье, не исследование", " — correction to a previously published article, not a study"],
   [" — перекрёстный дизайн, рандомизация в заголовке не указана", " — crossover design, randomisation not stated in the title"],
+  [" — доклиническое исследование (животные / in vitro), не клинические данные", " — preclinical study (animals / in vitro), not clinical data"],
 ];
 
 function translateSuffix(suffix: string): string {

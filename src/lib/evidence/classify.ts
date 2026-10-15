@@ -25,7 +25,7 @@ import { SUBSPECIALTIES } from "./taxonomy";
  *      объяснение «почему такой дизайн» и уверенность (`designReason`, `designConfidence`);
  *      ISSN в белом списке журналов (I-05).
  */
-export const CLASSIFIER_VERSION = 6;
+export const CLASSIFIER_VERSION = 7;
 
 export interface RawArticle {
   pmid?: string | null;
@@ -131,6 +131,21 @@ const CROSSOVER_RE = /\bcross[- ]?over (trial|study|design|comparison)\b/i;
  * Исправления к ранее опубликованным статьям (PT «Published Erratum», заголовки «Erratum to: …»,
  * «Correction: …»): не самостоятельное исследование — иначе «Erratum to: Randomized trial…» получал РКИ.
  */
+/**
+ * Доклинические работы (животные, in vitro / ex vivo, клеточные и кадаверные модели): «Thirty guinea pigs
+ * were randomised» иначе становится РКИ уровня 2. В заголовке человеческие слова (patients, children…)
+ * снимают срабатывание — «in vivo confocal microscopy in patients» остаётся клиническим исследованием.
+ */
+const PRECLINICAL_TITLE_RE =
+  /\b(in vitro|ex vivo|animal (model|study|experiment)s?|guinea[- ]pigs?|mice|mouse|murine|rats?|rabbits?|chinchillas?|gerbils?|zebrafish|porcine|piglets?|ovine|sheep|dogs?|cell lines?|organoids?|cadaver(ic|s)?|xenografts?)\b/i;
+/** «in vivo» бывает и в клинических заголовках (in vivo microscopy) — только низкая уверенность. */
+const IN_VIVO_RE = /\bin vivo\b/i;
+const PRECLINICAL_ABSTRACT_RE = /\b(?:\d+|[a-z]+(?:[- ][a-z]+)?)\s+(?:mice|rats|guinea pigs|chinchillas|gerbils|rabbits|piglets|animals)\s+(?:were|was)\b|\bcell lines? (?:were|was)\b/i;
+const HUMAN_SUBJECTS_RE = /\b(patients?|participants?|children|adults|volunteers|infants|women|men)\b/i;
+const PRECLINICAL_NOTE = " — доклиническое исследование (животные / in vitro), не клинические данные";
+/** Scoping-обзор картирует литературу без оценки качества включённых работ — не уровень 1. */
+const SCOPING_REVIEW_RE = /scoping review/i;
+
 const ERRATUM_PT_RE = /erratum|corrigendum|expression of concern|corrected and republished/i;
 const ERRATUM_TITLE_RE = /^(erratum|errata|corrigendum|corrigenda)\b|^(author |publisher )?correction\s*(to\b|:)|^expression of concern\b/i;
 /** Объединённый анализ нескольких РКИ, названных акронимами («SINUS-24 and SINUS-52») — вторичный анализ. */
@@ -150,6 +165,26 @@ const DIAGNOSTIC_ABSTRACT_RE = /sensitivity (and|,) specificity|area under the (
  * Уверенность: high — структурированный признак (PT, реестр, журнал, явный протокол);
  * medium — регулярка по заголовку; low — только по аннотации либо признаков нет.
  */
+function detectPreclinical(a: RawArticle): DesignDetection | null {
+  const types = a.publicationTypes ?? [];
+  const vet = PT_FIND(types, /veterinary/i);
+  if (vet) return { design: "other", confidence: "high", reason: `тип публикации PubMed: «${vet}»${PRECLINICAL_NOTE}` };
+  const mesh = a.meshTerms ?? [];
+  if (mesh.some((m) => /^animals$/i.test(m)) && !mesh.some((m) => /^humans$/i.test(m))) {
+    return { design: "other", confidence: "high", reason: `MeSH «Animals» без «Humans»${PRECLINICAL_NOTE}` };
+  }
+  if (!HUMAN_SUBJECTS_RE.test(a.title)) {
+    const t = a.title.match(PRECLINICAL_TITLE_RE);
+    if (t) return { design: "other", confidence: "medium", reason: `заголовок: «${snippet(t)}»${PRECLINICAL_NOTE}` };
+    const vivo = a.title.match(IN_VIVO_RE);
+    if (vivo) return { design: "other", confidence: "low", reason: `заголовок: «${snippet(vivo)}»${PRECLINICAL_NOTE}` };
+  }
+  const abstract = a.abstract ?? "";
+  const ab = abstract.match(PRECLINICAL_ABSTRACT_RE);
+  if (ab && !HUMAN_SUBJECTS_RE.test(abstract)) return { design: "other", confidence: "low", reason: `аннотация: «${snippet(ab)}»${PRECLINICAL_NOTE}` };
+  return null;
+}
+
 export function detectDesignDetailed(a: RawArticle): DesignDetection {
   const types = a.publicationTypes ?? [];
   const title = a.title;
@@ -172,6 +207,10 @@ export function detectDesignDetailed(a: RawArticle): DesignDetection {
   if (erratumPT) return byPT("other", erratumPT, " — исправление к ранее опубликованной статье, не исследование");
   const erratumTitle = title.match(ERRATUM_TITLE_RE);
   if (erratumTitle) return byTitle("other", erratumTitle, "high", " — исправление к ранее опубликованной статье, не исследование");
+
+  // Доклинические работы — до всех правил про РКИ/когорты: рандомизация животных не делает исследование клиническим.
+  const preclinical = detectPreclinical(a);
+  if (preclinical) return preclinical;
 
   // Протоколы незавершённых исследований — отдельный дизайн без результатов.
   const protocolPT = PT_FIND(types, /protocol/i);
@@ -201,7 +240,7 @@ export function detectDesignDetailed(a: RawArticle): DesignDetection {
     if (adherence) return byTitle("cohort", adherence, "medium", " — аудит приверженности руководству, не само руководство");
     return byPT("guideline", guidelinePT);
   }
-  const rctPT = PT_FIND(types, /randomized controlled trial/i) ?? PT_FIND(types, /clinical trial, phase (ii|iii|iv)/i);
+  const rctPT = PT_FIND(types, /^randomized controlled trial$/i) ?? PT_FIND(types, /^clinical trial, phase (ii|iii|iv)$/i);
   if (rctPT) return byPT("rct", rctPT);
   const cohortPT = PT_FIND(types, /observational study|cohort/i);
   if (cohortPT) return byPT("cohort", cohortPT);
@@ -480,7 +519,8 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
     noticeType === "retraction" ||
     noticeType === "withdrawal" ||
     (a.publicationTypes ?? []).some((t) => /retracted publication/i.test(t));
-  const level = evidenceLevel(design, sampleSize);
+  const isScoping = design === "systematic_review" && SCOPING_REVIEW_RE.test(a.title);
+  const level = isScoping ? Math.max(2, evidenceLevel(design, sampleSize)) : evidenceLevel(design, sampleSize);
 
   const b: TrustBreakdownItem[] = [];
   const designPts: Record<StudyDesign, number> = {
@@ -553,6 +593,7 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
   if (!a.abstract || a.abstract.length < 200) b.push({ label: "Нет / короткая аннотация", points: -4 });
   if (a.sourceKey === "clinicaltrials" && a.hasResults) b.push({ label: "Опубликованы результаты в реестре", points: 8 });
   if (/pilot|preliminary|feasibility/i.test(a.title)) b.push({ label: "Пилотное / предварительное", points: -5 });
+  if (isScoping) b.push({ label: "Scoping-обзор: картирование литературы без оценки качества исследований", points: -12 });
   if (/in vitro|animal model|\brats?\b|\bmice\b|murine|guinea pig/i.test(text) && !/patients|participants/i.test(text)) {
     b.push({ label: "Доклиническое (животные / in vitro)", points: -10 });
   }

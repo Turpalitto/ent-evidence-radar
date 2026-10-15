@@ -432,3 +432,46 @@ describe("I-03: новые дизайны и объяснение «почему
     expect(pts("A prospective cohort of X")).toBe(22);
   });
 });
+
+describe("v7: доклинические работы и scoping-обзоры", () => {
+  const note = " — доклиническое исследование (животные / in vitro), не клинические данные";
+
+  it("животные / in vitro / кадаверные — «другое», а не РКИ: по заголовку (medium), по аннотации (low), по MeSH и ветеринарному типу публикации (high)", () => {
+    const guinea = detectDesignDetailed(base({ title: "Cisplatin ototoxicity in guinea pigs is attenuated by intratympanic dexamethasone", abstract: "Thirty guinea pigs were randomised to two groups." }));
+    expect(guinea).toEqual({ design: "other", confidence: "medium", reason: `заголовок: «guinea pigs»${note}` });
+    expect(detectDesign(base({ title: "A mouse model of otitis media with effusion" }))).toBe("other");
+    expect(detectDesign(base({ title: "In vitro effects of N-acetylcysteine on Pseudomonas biofilm from chronic otitis media" }))).toBe("other");
+    expect(detectDesign(base({ title: "Endoscopic ear surgery on cadaveric temporal bones: a feasibility study" }))).toBe("other");
+    const rats = detectDesignDetailed(base({ title: "Noise-induced hearing loss: efficacy of N-acetylcysteine", abstract: "Adult male Wistar rats were exposed to noise and randomly assigned to treatment." }));
+    expect(rats).toEqual({ design: "other", confidence: "low", reason: `аннотация: «male Wistar rats were»${note}` });
+    const mesh = detectDesignDetailed(base({ title: "Cochlear synaptopathy after noise exposure: a randomized study", meshTerms: ["Animals", "Mice", "Cochlea"] }));
+    expect(mesh).toEqual({ design: "other", confidence: "high", reason: `MeSH «Animals» без «Humans»${note}` });
+    const vet = detectDesignDetailed(base({ title: "Dexamethasone-eluting cochlear implant electrodes", publicationTypes: ["Randomized Controlled Trial, Veterinary"] }));
+    expect(vet).toEqual({ design: "other", confidence: "high", reason: `тип публикации PubMed: «Randomized Controlled Trial, Veterinary»${note}` });
+    // Уровень 5, штраф «доклиническое» в разборе доверия
+    const c = classify(base({ title: "Cisplatin ototoxicity in guinea pigs", abstract: "Thirty guinea pigs were randomised." }));
+    expect(c.evidenceLevel).toBe(5);
+    expect(c.trustBreakdown.some((x) => x.label === "Доклиническое (животные / in vitro)")).toBe(true);
+  });
+
+  it("клинические работы не задеваются: «in patients» в заголовке, canine fossa, MeSH Humans+Animals, обзор про животные модели", () => {
+    expect(detectDesignDetailed(base({ title: "In vivo confocal microscopy of the nasal mucosa in patients with allergic rhinitis", abstract: "Forty patients were examined." })).reason).not.toContain("доклиническое");
+    expect(detectDesign(base({ title: "Canine fossa puncture versus middle meatal antrostomy: a randomised comparison", abstract: "Sixty patients were randomised." }))).toBe("rct");
+    expect(detectDesign(base({ title: "Intratympanic gentamicin for Meniere disease: a randomized trial", meshTerms: ["Humans", "Animals"] }))).toBe("rct");
+    expect(detectDesign(base({ title: "Ototoxicity of cisplatin: mechanisms and otoprotection", abstract: "Animal models have shown protection.", publicationTypes: ["Review"] }))).toBe("narrative");
+    // «in vivo» без человеческих слов — лишь низкая уверенность
+    expect(detectDesignDetailed(base({ title: "In vivo measurement of middle ear pressure during flight" })).confidence).toBe("low");
+    // Веткоды типа публикации не считаются РКИ/фазой, обычные — считаются
+    expect(detectDesign(base({ publicationTypes: ["Clinical Trial, Phase III"] }))).toBe("rct");
+  });
+
+  it("scoping review: систематический обзор, но уровень 2 и штраф за отсутствие оценки качества", () => {
+    const c = classify(base({ title: "Scoping review of patient-reported outcome measures in head and neck cancer", journal: "The Laryngoscope" }));
+    expect(c.studyDesign).toBe("systematic_review");
+    expect(c.evidenceLevel).toBe(2);
+    expect(c.trustBreakdown.find((x) => x.label.startsWith("Scoping-обзор"))?.points).toBe(-12);
+    const sr = classify(base({ title: "Systematic review and meta-analysis of biologics in CRSwNP", journal: "The Laryngoscope" }));
+    expect(sr.evidenceLevel).toBe(1);
+    expect(sr.trustScore).toBeGreaterThan(c.trustScore);
+  });
+});

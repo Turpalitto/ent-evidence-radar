@@ -149,6 +149,13 @@ describe("translateStored: хранимые тексты классификат�
     expect(translateStored("en", "заголовок: «Crossover trial» — перекрёстный дизайн, рандомизация в заголовке не указана")).toBe(
       "title: “Crossover trial” — crossover design, randomisation not stated in the title",
     );
+    expect(translateStored("en", "заголовок: «guinea pigs» — доклиническое исследование (животные / in vitro), не клинические данные")).toBe(
+      "title: “guinea pigs” — preclinical study (animals / in vitro), not clinical data",
+    );
+    expect(translateStored("en", "MeSH «Animals» без «Humans» — доклиническое исследование (животные / in vitro), не клинические данные")).toBe(
+      "MeSH “Animals” without “Humans” — preclinical study (animals / in vitro), not clinical data",
+    );
+    expect(translateStored("en", "Scoping-обзор: картирование литературы без оценки качества исследований")).toBe("Scoping review: maps the literature without appraising study quality");
     expect(translateStored("en", "аннотация: «randomly assigned»")).toBe("abstract: “randomly assigned”");
     expect(translateStored("en", "препринт; заголовок: «meta-analysis»")).toBe("preprint; title: “meta-analysis”");
     expect(translateStored("en", "задан вручную (автоматически: rct — аннотация: «randomized»)")).toBe("set manually (automatic: rct — abstract: “randomized”)");

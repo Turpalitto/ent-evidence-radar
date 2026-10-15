@@ -259,6 +259,8 @@ export const EN: Record<string, string> = {
   "В реестре опубликованы результаты.": "Results have been posted in the registry.",
   "Результаты в реестре пока не опубликованы.": "No results posted in the registry yet.",
   "ClinicalTrials.gov (реестр)": "ClinicalTrials.gov (registry)",
+  "MeSH «Animals» без «Humans» — доклиническое исследование (животные / in vitro), не клинические данные": "MeSH “Animals” without “Humans” — preclinical study (animals / in vitro), not clinical data",
+  "Scoping-обзор: картирование литературы без оценки качества исследований": "Scoping review: maps the literature without appraising study quality",
   "открытое (без маскирования)": "open label (no masking)",
   "одинарное": "single",
   "двойное": "double",
