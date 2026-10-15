@@ -302,6 +302,14 @@ type ExistingRef = {
  * какие строки вставить, а какие обновить (с дедупликацией по dedupKey → DOI → PMID и
  * слиянием тем/источников). Вынесена из doRefresh, чтобы покрывать логику тестами без БД.
  */
+/**
+ * Невалидная дата из источника (`new Date("garbage")`) при сериализации в pg превращается в ошибку
+ * запроса и откатывает всю транзакцию пакетной записи — такие даты сбрасываем в null.
+ */
+function validDate(d: Date | null | undefined): Date | null {
+  return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+}
+
 export function planWrites(
   candidates: Map<string, Candidate>,
   sourceKeysByDedup: Map<string, Set<string>>,
@@ -393,7 +401,7 @@ export function planWrites(
       journal: raw.journal ?? "",
       issns: raw.issns ?? [],
       authors: raw.authors ?? [],
-      publishedAt: raw.publishedAt ?? null,
+      publishedAt: validDate(raw.publishedAt),
       publicationTypes: raw.publicationTypes ?? [],
       meshTerms: raw.meshTerms ?? [],
       keywords: raw.keywords ?? [],

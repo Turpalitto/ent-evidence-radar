@@ -59,6 +59,12 @@ describe("planWrites", () => {
     expect(plan.toInsert[0].values.dedupKey).toBe("doi:10.1/new");
   });
 
+  it("невалидная дата источника не попадает в запись (иначе откатится вся пакетная транзакция)", () => {
+    const cands = candidatesOf([raw({ doi: "10.1/bad-date", publishedAt: new Date("garbage") }), raw({ doi: "10.1/ok", publishedAt: new Date("2025-03-04T00:00:00Z") })]);
+    const plan = planWrites(cands, new Map(), new Map(), new Map(), new Map(), 0);
+    expect(plan.toInsert.map((i) => i.values.publishedAt)).toEqual([null, new Date("2025-03-04T00:00:00Z")]);
+  });
+
   it("updates an existing row by dedupKey and merges topics/sources", () => {
     const a = raw({ doi: "10.1/x" });
     const key = dedupKeyFor(a);

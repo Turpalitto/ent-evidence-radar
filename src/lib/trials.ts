@@ -126,7 +126,7 @@ export async function recheckTrials(opts: { limit?: number; fetch?: NonNullable<
         .set({
           title: f.title,
           abstract: f.abstract ?? "",
-          publishedAt: f.publishedAt ?? null,
+          publishedAt: f.publishedAt instanceof Date && !Number.isNaN(f.publishedAt.getTime()) ? f.publishedAt : null,
           keywords: f.keywords ?? [],
           publicationTypes: f.publicationTypes ?? [],
           studyDesign: c.studyDesign,
