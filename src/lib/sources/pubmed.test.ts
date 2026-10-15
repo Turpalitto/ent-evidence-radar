@@ -133,10 +133,20 @@ describe("parsePubmedArticlesXml", () => {
   it("handles plain abstracts, MedlineDate, NCT extraction and retracted publication type", () => {
     expect(b.abstract).toBe("Plain abstract without sections. Trial NCT04567890 enrolled 120 participants.");
     expect(b.nctId).toBe("NCT04567890");
-    expect(b.publishedAt?.toISOString()).toBe("2024-01-01T00:00:00.000Z");
+    expect(b.publishedAt?.toISOString()).toBe("2024-11-01T00:00:00.000Z"); // MedlineDate «2024 Nov-Dec» → первый месяц диапазона
     expect(b.isRetracted).toBe(true);
     expect(b.doi).toBeNull();
     expect(b.authors).toEqual(["Lee K"]);
+  });
+
+  it("MedlineDate без структуры: год + первый месяц диапазона, сезон → январь", () => {
+    const xmlFor = (medline: string) =>
+      `<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><Journal><JournalIssue><PubDate><MedlineDate>${medline}</MedlineDate></PubDate></JournalIssue><Title>J</Title></Journal><ArticleTitle>T</ArticleTitle></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>`;
+    const at = (medline: string) => parsePubmedArticlesXml(xmlFor(medline))[0]?.publishedAt?.toISOString();
+    expect(at("2023 Dec 15-31")).toBe("2023-12-01T00:00:00.000Z");
+    expect(at("Winter 2025")).toBe("2025-01-01T00:00:00.000Z");
+    expect(at("2022 Sep-Oct")).toBe("2022-09-01T00:00:00.000Z");
+    expect(at("2021")).toBe("2021-01-01T00:00:00.000Z");
   });
 
   it("returns an empty list for an empty or foreign document", () => {

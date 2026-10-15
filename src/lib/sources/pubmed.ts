@@ -93,9 +93,13 @@ function parseDate(article: AnyObj): Date | null {
     const d = parseInt(textOf(cand?.Day), 10);
     return new Date(Date.UTC(y, m, Number.isNaN(d) ? 1 : d));
   }
+  // MedlineDate — свободный текст («2024 Nov-Dec», «Winter 2025», «2023 Dec 15-31»): берём год и первый месяц.
   const medline = textOf(pubDate?.MedlineDate);
   const my = medline.match(/\d{4}/);
-  if (my) return new Date(Date.UTC(parseInt(my[0], 10), 0, 1));
+  if (my) {
+    const mm = medline.match(/\b([A-Za-z]{3})[a-z]*\b/);
+    return new Date(Date.UTC(parseInt(my[0], 10), MONTHS[mm?.[1]?.toLowerCase() ?? ""] ?? 0, 1));
+  }
   return null;
 }
 
