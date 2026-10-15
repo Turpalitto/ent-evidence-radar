@@ -53,6 +53,14 @@ describe("detectGuidelineIssuer (A-06)", () => {
     expect(unknown.guidelineIssuer).toBeNull();
   });
 
+  it("серия «Clinical Practice Guideline: …» в Otolaryngol Head Neck Surg → AAO-HNS без коллективного автора; WHO world report → WHO", () => {
+    expect(detectGuidelineIssuer({ title: "Clinical Practice Guideline: Sudden Hearing Loss (Update)", journal: "Otolaryngology–Head and Neck Surgery" })).toBe("aao-hns");
+    expect(detectGuidelineIssuer({ title: "Clinical practice guideline (update): earwax (cerumen impaction)", journal: "Otolaryngol Head Neck Surg" })).toBe("aao-hns");
+    // Тот же заголовок в другом журнале — издатель неизвестен
+    expect(detectGuidelineIssuer({ title: "Clinical practice guideline: sudden hearing loss", journal: "The Laryngoscope" })).toBeNull();
+    expect(detectGuidelineIssuer({ title: "WHO world report on hearing", journal: "Lancet" })).toBe("who");
+  });
+
   it("таксономия согласована: уникальные ключи, метки, подписи", () => {
     const keys = GUIDELINE_ISSUERS.map((g) => g.key);
     expect(new Set(keys).size).toBe(keys.length);

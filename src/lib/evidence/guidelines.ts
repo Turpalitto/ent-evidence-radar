@@ -44,7 +44,7 @@ export const GUIDELINE_ISSUERS: GuidelineIssuer[] = [
   { key: "asha-aaa", label: "ASHA / AAA", name: "American Speech-Language-Hearing Association / American Academy of Audiology", patterns: [/american speech-language-hearing association/i, /american academy of audiology/i, /\bASHA\b.*(guideline|practice)/i] },
   { key: "jcih", label: "JCIH", name: "Joint Committee on Infant Hearing", patterns: [/joint committee on infant hearing/i, /\bJCIH\b/] },
   { key: "ifos", label: "IFOS", name: "International Federation of Oto-Rhino-Laryngological Societies", patterns: [/\bIFOS\b/, /international federation of oto-?rhino-?laryngological societies/i] },
-  { key: "who", label: "WHO", name: "World Health Organization", patterns: [/world health organi[sz]ation/i, /\bWHO\b.*(guideline|recommendation|classification)/] },
+  { key: "who", label: "WHO", name: "World Health Organization", patterns: [/world health organi[sz]ation/i, /\bWHO\b.*(guideline|recommendation|classification|world report|global (report|standard))/] },
   { key: "cdc", label: "CDC", name: "Centers for Disease Control and Prevention (US)", patterns: [/centers for disease control/i, /\bCDC\b.*(guideline|recommendation)/] },
   { key: "sign", label: "SIGN", name: "Scottish Intercollegiate Guidelines Network", patterns: [/scottish intercollegiate guidelines network/i, /\bSIGN\s*\d{2,3}\b/] },
   { key: "sfor", label: "SFORL", name: "Société française d'ORL et de chirurgie cervico-faciale", patterns: [/\bSFORL\b/, /french society of (ent|otorhinolaryngology)/i, /soci[eé]t[eé] fran[cç]aise d'?orl/i] },
@@ -81,6 +81,11 @@ export function detectGuidelineIssuer(a: IssuerInput): string | null {
   }
   for (const g of GUIDELINE_ISSUERS) {
     if (g.patterns.some((re) => re.test(lead))) return g.key;
+  }
+  // Серия «Clinical Practice Guideline: …» в официальном журнале AAO-HNSF — издатель не всегда назван в заголовке
+  // и коллективных авторах (PubMed отдаёт их не для всех записей).
+  if (/^clinical practice guideline(\s*\(update\))?:/i.test(a.title.trim()) && /^otolaryngology[-–\s]*head (and|&) neck surgery$|^otolaryngol head neck surg$/i.test((a.journal ?? "").trim())) {
+    return "aao-hns";
   }
   return null;
 }
