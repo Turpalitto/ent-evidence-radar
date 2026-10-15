@@ -37,7 +37,7 @@ const FIXTURE = {
         source: "PPR",
         doi: "10.1101/2026.09.20.26012345",
         title: "Balloon sinuplasty vs FESS for chronic rhinosinusitis: randomized trial",
-        authorString: "Chen L, Garcia M",
+        authorString: "Chen L, Garcia M, et al.",
         firstPublicationDate: "2026-09-21",
         abstractText: "Randomised, 120 participants.",
         pubTypeList: { pubType: ["Preprint"] },
@@ -78,7 +78,7 @@ describe("fetchEuropePmc — разбор реального формата от
     expect(med.pmcid).toBe("PMC11223344");
     expect(med.journal).toBe("The Laryngoscope");
     expect(med.issns).toEqual(["0023-852X", "1531-4995"]);
-    expect(med.authors).toEqual(["Smith J", "Ivanova A", "Lee K", "Müller R."]);
+    expect(med.authors).toEqual(["Smith J", "Ivanova A", "Lee K", "Müller R"]);
     expect(med.publishedAt?.toISOString().slice(0, 10)).toBe("2026-09-18");
     expect(med.publicationTypes).toContain("Systematic Review");
     expect(med.meshTerms).toEqual(["Hearing Loss, Sudden", "Adrenal Cortex Hormones"]);
@@ -100,6 +100,7 @@ describe("fetchEuropePmc — разбор реального формата от
     expect(ppr.journal).toBe("Preprint (Europe PMC)");
     expect(ppr.issns).toEqual([]);
     expect(ppr.url).toBe("https://doi.org/10.1101/2026.09.20.26012345");
+    expect(ppr.authors).toEqual(["Chen L", "Garcia M"]); // «et al.» — не автор, точка строки снята
     const bare = items.find((a) => a.title === "Entry without identifiers")!;
     expect(bare.url).toBe("https://europepmc.org/article/CBA/CBA7777");
     expect(bare.publishedAt?.getUTCFullYear()).toBe(2025);

@@ -85,7 +85,14 @@ export async function fetchEuropePmcQuery(topicQuery: string, days: number, maxR
         abstract,
         journal,
         issns,
-        authors: (r.authorString ?? "").split(/,\s*/).filter(Boolean).slice(0, 30),
+        // authorString: «Smith J, Ivanova A, Müller R.» — завершающая точка относится ко всей строке, не к инициалу;
+        // «et al.» (встречается в урезанных записях) — не автор.
+        authors: (r.authorString ?? "")
+          .replace(/\.\s*$/, "")
+          .split(/,\s*/)
+          .map((x) => x.trim())
+          .filter((x) => x && !/^et al\.?$/i.test(x))
+          .slice(0, 30),
         publishedAt: r.firstPublicationDate ? new Date(r.firstPublicationDate) : r.pubYear ? new Date(`${r.pubYear}-01-01`) : null,
         publicationTypes: r.pubTypeList?.pubType ?? [],
         meshTerms: (r.meshHeadingList?.meshHeading ?? []).map((m) => m.descriptorName ?? "").filter(Boolean),
