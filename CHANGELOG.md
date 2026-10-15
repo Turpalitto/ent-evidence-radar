@@ -45,7 +45,11 @@
 - Тесты: «золотые» случаи классификатора (erratum, single-arm/before-after/ITS, crossover, pooled analysis,
   ML-валидация, Delphi, числительные словами, «in adults»), `htmlAbstractToText`/`repairGluedAbstract`,
   секции JAMA/Lancet, издатель AAO-HNS по журналу, хуки ленты (Permissions API, online/offline),
-  HTTP-клиент (таймаут, сеть, 4xx/5xx, штраф 429), medRxiv-отбор, перевод записей реестра. Всего 77 файлов / 559 тестов.
+  HTTP-клиент (таймаут, сеть, 4xx/5xx, штраф 429), medRxiv-отбор, перевод записей реестра.
+- Тесты (продолжение): контракт `GET/PATCH/DELETE /api/articles/:id` и валидация/удаление тем, метрики, стражи
+  `proxy.ts` (CSP/nonce/`x-request-id`/matcher) и `instrumentation.register`, доклинические работы и scoping
+  review (v7), размер выборки, новые термины субспециальностей, национальные издатели руководств, новые журналы,
+  PICO из секций, хвосты вывода и кокрейновские секции, расширенный словарь MeSH. Всего 81 файл / 595 тестов.
 
 ### Fixed
 - **Europe PMC: структурированные аннотации склеивались.** `<h4>Methods</h4>text` после снятия тегов превращалось
