@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { decodeEntities, fetchWithRetry, retryAfterMs, stripTags } from "@/lib/sources/http";
+import { decodeEntities, fetchJson, fetchText, fetchWithRetry, retryAfterMs, stripTags } from "@/lib/sources/http";
 
 describe("decodeEntities", () => {
   it("decodes named and numeric entities", () => {
@@ -60,6 +60,68 @@ describe("fetchWithRetry уважает Retry-After и выстраивает к
       expect(res.status).toBe(200);
       expect(calls).toHaveLength(2);
       expect(calls[1] - calls[0]).toBeGreaterThanOrEqual(280);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("5xx: повтор с backoff, после последней попытки — ошибка без лишнего ожидания; 4xx не повторяется", async () => {
+    let n = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => { n++; return new Response("down", { status: 503, headers: { "retry-after": n === 1 ? "0.2" : "20" } }); }));
+    try {
+      const t0 = Date.now();
+      await expect(fetchJson("https://api.example.org/x", { retries: 1 })).rejects.toThrow(/HTTP 503 from api.example.org/);
+      expect(n).toBe(2);
+      const spent = Date.now() - t0;
+      expect(spent).toBeGreaterThanOrEqual(180); // Retry-After между попытками учтён…
+      // …но Retry-After: 20 с последнего ответа не ждём — иначе каждый сбой источника держал бы refresh лишние десятки секунд.
+      expect(spent).toBeLessThan(3_000);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    n = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => { n++; return new Response("nope", { status: 404, statusText: "Not Found" }); }));
+    try {
+      await expect(fetchText("https://api.example.org/missing", { retries: 2 })).rejects.toThrow(/HTTP 404 Not Found \(api.example.org\)/);
+      expect(n).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("таймаут прерывает запрос через AbortController и считается как timeout; сетевая ошибка повторяется", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+      })),
+    );
+    try {
+      await expect(fetchWithRetry("https://slow.example.org/", { timeoutMs: 30, retries: 0 })).rejects.toMatchObject({ name: "AbortError" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    let n = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => { n++; if (n === 1) throw new TypeError("fetch failed"); return new Response("ok", { status: 200 }); }));
+    try {
+      const res = await fetchWithRetry("https://flaky.example.org/", { retries: 1 });
+      expect(res.status).toBe(200);
+      expect(n).toBe(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("429 с throttleKey штрафует очередь: следующий вызов с тем же ключом ждёт Retry-After", async () => {
+    const stamps: number[] = [];
+    let n = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => { n++; stamps.push(Date.now()); return n === 1 ? new Response("slow", { status: 429, headers: { "retry-after": "0.25" } }) : new Response("ok", { status: 200 }); }));
+    try {
+      await expect(fetchWithRetry("https://eutils.ncbi.nlm.nih.gov/a", { throttleKey: "penalty-test", retries: 0 })).rejects.toThrow(/HTTP 429/);
+      const t0 = Date.now();
+      await fetchWithRetry("https://eutils.ncbi.nlm.nih.gov/b", { throttleKey: "penalty-test", retries: 0 });
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(200);
+      expect(stamps[1] - stamps[0]).toBeGreaterThanOrEqual(200);
     } finally {
       vi.unstubAllGlobals();
     }

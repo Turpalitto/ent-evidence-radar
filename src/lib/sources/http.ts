@@ -68,7 +68,8 @@ export async function fetchWithRetry(url: string, opts: FetchOpts = {}): Promise
         // Уважаем Retry-After (NCBI и CT.gov его присылают), иначе линейный backoff.
         const wait = retryAfterMs(res) ?? 800 * (attempt + 1);
         if (throttleKey && res.status === 429) penalizeThrottle(throttleKey, wait);
-        await new Promise((r) => setTimeout(r, wait));
+        // После последней попытки ждать незачем — сразу отдаём ошибку (Retry-After может быть до 60 с).
+        if (attempt < retries) await new Promise((r) => setTimeout(r, wait));
         continue;
       }
       return res;
@@ -76,7 +77,7 @@ export async function fetchWithRetry(url: string, opts: FetchOpts = {}): Promise
       clearTimeout(timer);
       metrics.inc("http.errors", { host, status: e instanceof Error && e.name === "AbortError" ? "timeout" : "network" });
       lastErr = e;
-      await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+      if (attempt < retries) await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
