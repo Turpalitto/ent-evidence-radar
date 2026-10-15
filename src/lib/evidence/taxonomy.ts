@@ -10,6 +10,8 @@ export const SUBSPECIALTIES: { key: string; label: string; short: string; patter
       /sensorineural/i, /\bdeaf/i, /otosclerosis/i, /\bmastoid/i, /\bossicul/i, /\btinnitus/i,
       /presbycusis/i, /\botolog/i, /\baudiolog/i, /audiometr/i, /\bear\b/i, /eustachian/i,
       /sudden.*hearing/i, /ototox/i, /middle ear/i, /inner ear/i, /cochlea(?!r implant)/i,
+      /\botalgia/i, /\bearache/i, /\botorrh/i, /staped(otomy|ectomy)/i, /myringo/i, /hyperacusis/i, /temporal bone/i,
+      /vestibular schwannoma/i, /acoustic neuroma/i, /\bglomus (tympanicum|jugulare)/i, /\bmicrotia/i, /aural atresia/i,
     ],
   },
   {
@@ -22,7 +24,7 @@ export const SUBSPECIALTIES: { key: string; label: string; short: string; patter
     key: "vestibular",
     label: "Вестибулология",
     short: "Вестибул.",
-    patterns: [/vestibul/i, /\bvertigo/i, /\bbppv\b/i, /m[eé]ni[eè]re/i, /\bdizziness/i, /labyrinth/i, /nystagmus/i, /canal dehiscence/i],
+    patterns: [/vestibul/i, /\bvertigo/i, /\bbppv\b/i, /m[eé]ni[eè]re/i, /\bdizziness/i, /labyrinth/i, /nystagmus/i, /canal dehiscence/i, /\bPPPD\b/, /\bimbalance\b/i],
   },
   {
     key: "rhinology",
@@ -33,6 +35,7 @@ export const SUBSPECIALTIES: { key: string; label: string; short: string; patter
       /turbinate/i, /\bepistaxis/i, /endoscopic sinus surgery/i, /\bFESS\b/, /\bolfact/i, /\banosmia/i,
       /\bsmell\b/i, /skull base/i, /\brhinolog/i, /paranasal/i, /\bnasal\b/i, /dupilumab/i, /\bsinonasal/i,
       /allergic rhin/i, /immunotherapy.*allerg/i, /CRSwNP/i, /angiofibroma/i, /\bnasopharyn(x|geal)\b(?! carcinoma)/i,
+      /\bchoanal/i, /inverted papilloma/i, /\bmucocele/i, /CSF (leak|rhinorrh)/i, /\brhinorrh/i, /septorhinoplasty/i,
     ],
   },
   {
@@ -43,6 +46,8 @@ export const SUBSPECIALTIES: { key: string; label: string; short: string; patter
       /\blaryn(x|geal|gitis|goscop)/i, /vocal (fold|cord)/i, /\bdysphonia/i, /\bvoice\b/i, /\bphonosurg/i,
       /\bdysphagia/i, /\bswallow/i, /laryngopharyngeal reflux/i, /\bstenosis\b.*(airway|subglottic|tracheal)/i,
       /subglottic/i, /\btracheost/i, /\bairway\b/i, /papillomatosis/i, /spasmodic dysphonia/i,
+      /\bzenker/i, /hypopharyn/i, /pharyngeal pouch/i, /cricopharyng/i, /\bstridor/i, /laryngomalacia/i, /\bcroup\b/i,
+      /\bglottic/i, /\bphonation/i, /\bsingers?\b/i, /epiglottitis/i,
     ],
   },
   {
@@ -58,7 +63,8 @@ export const SUBSPECIALTIES: { key: string; label: string; short: string; patter
       /(cancer|tumou?r|checkpoint|immune checkpoint|anti-PD-?1|PD-L1|CTLA-4)\W+immunotherap/i, /immunotherapy\W+(for|in)\W+(head and neck|HNSCC|carcinoma|cancer|melanoma)/i,
       /pembrolizumab/i, /nivolumab/i, /cemiplimab/i, /cetuximab/i, /adenoid cystic carcinoma/i,
       /\boral (cavity|cancer|squamous)/i, /\bchemoradi/i, /\bradiotherapy/i, /\bcarcinoma/i, /\bmelanoma\b/i,
-      /\bparathyroid/i, /\bmalignan/i, /\bmetasta/i,
+      /\bparathyroid/i, /\bmalignan/i, /\bmetasta/i, /\bchordoma/i, /chondrosarcoma/i, /paraganglioma/i,
+      /\blymphoma\b/i, /\bsarcoma\b/i, /esthesioneuroblastoma/i,
     ],
   },
   {
@@ -70,25 +76,27 @@ export const SUBSPECIALTIES: { key: string; label: string; short: string; patter
       // «adenoid cystic carcinoma» — опухоль слюнных желёз, не детская ЛОР.
       /\badenoid(s|al|ectomy|itis)?\b(?!\s+cystic)/i, /adenoid (hypertrophy|vegetation|regrowth)/i,
       /\btonsillectomy/i, /\badenotonsil/i, /\botitis media with effusion/i, /tympanostomy/i, /\bgrommet/i, /newborn hearing/i,
+      /laryngomalacia/i, /\bcroup\b/i, /choanal atresia/i, /branchial (cleft|cyst|anomal)/i, /thyroglossal/i, /\bmicrotia/i,
+      /\badolescen/i, /school[- ]age/i,
     ],
   },
   {
     key: "sleep",
     label: "Сомнология / СОАС",
     short: "СОАС",
-    patterns: [/sleep apn(o)?ea/i, /\bOSA\b/, /\bsnoring/i, /hypoglossal nerve stimulation/i, /\bCPAP\b/i, /uvulopalato/i, /sleep[- ]disordered breathing/i, /drug[- ]induced sleep endoscopy/i],
+    patterns: [/sleep apn(o)?ea/i, /\bOSA\b/, /\bsnoring/i, /hypoglossal nerve stimulation/i, /\bCPAP\b/i, /uvulopalato/i, /sleep[- ]disordered breathing/i, /drug[- ]induced sleep endoscopy/i, /polysomnograph/i, /apn(o)?ea[- ]hypopn(o)?ea index/i],
   },
   {
     key: "facial_plastic",
     label: "Лицевая пластика / реконструкция",
     short: "Пластика",
-    patterns: [/rhinoplasty/i, /facial (plastic|reconstruct|nerve|palsy|paralysis)/i, /bell'?s palsy/i, /\bfree flap/i, /microvascular reconstruct/i, /\botoplasty/i, /facelift|rhytidectomy/i, /blepharoplasty/i, /\bscar\b/i],
+    patterns: [/rhinoplasty/i, /facial (plastic|reconstruct|nerve|palsy|paralysis)/i, /bell'?s palsy/i, /\bfree flap/i, /microvascular reconstruct/i, /\botoplasty/i, /facelift|rhytidectomy/i, /blepharoplasty/i, /\bscar\b/i, /\bmicrotia/i, /facial (trauma|fracture)/i, /mandibular fracture/i, /nasal (bone )?fracture/i, /auricular (reconstruct|h(a)?ematoma)/i],
   },
   {
     key: "infection",
     label: "Инфекции / антибиотикотерапия",
     short: "Инфекции",
-    patterns: [/\bantibiotic/i, /antimicrobial/i, /\btonsillitis/i, /pharyngitis/i, /peritonsillar abscess/i, /\bstreptococc/i, /deep neck (space )?infection/i, /\bfungal/i, /mucormycosis/i, /\bcovid|sars-cov-2/i, /\bvaccin/i],
+    patterns: [/\bantibiotic/i, /antimicrobial/i, /\btonsillitis/i, /pharyngitis/i, /peritonsillar abscess/i, /\bstreptococc/i, /deep neck (space )?infection/i, /\bfungal/i, /mucormycosis/i, /\bcovid|sars-cov-2/i, /\bvaccin/i, /\bmastoiditis/i, /otitis externa/i, /\bsialadenitis/i, /epiglottitis/i, /\babscess\b/i, /\bcellulitis/i, /ludwig'?s angina/i],
   },
 ];
 

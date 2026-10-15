@@ -195,6 +195,18 @@ describe("detectSubspecialties", () => {
     expect(detectSubspecialties(base({ title: "Tonsillectomy in children" }))).toContain("pediatric");
   });
 
+  it("v7: оталгия, Zenker/гипофаринкс, хордома, ларингомаляция, мастоидит, стапедотомия, бранхиогенные аномалии", () => {
+    const sub = (title: string) => detectSubspecialties(base({ title }));
+    expect(sub("Temporomandibular disorders presenting as otalgia")).toEqual(["otology"]);
+    expect(sub("Zenker diverticulum: endoscopic stapling versus open approach")).toEqual(["laryngology"]);
+    expect(sub("Skull base chordoma: endoscopic endonasal approach")).toEqual(expect.arrayContaining(["rhinology", "head_neck_oncology"]));
+    expect(sub("Laryngomalacia and supraglottoplasty in infants")).toEqual(expect.arrayContaining(["pediatric", "laryngology"]));
+    expect(sub("Acute mastoiditis in the era of pneumococcal vaccination")).toEqual(expect.arrayContaining(["infection", "otology"]));
+    expect(sub("Stapedotomy for otosclerosis: laser versus microdrill")).toEqual(["otology"]);
+    expect(sub("Branchial cleft anomalies: a 20-year experience")).toEqual(["pediatric"]);
+    expect(sub("Polysomnography-guided adenotonsillectomy")).toEqual(expect.arrayContaining(["pediatric", "sleep"]));
+  });
+
   it("is consistent across multiple calls without regex state leak", () => {
     const a = base({ title: "Endoscopic sinus surgery for rhinosinusitis" });
     const first = detectSubspecialties(a);
