@@ -135,4 +135,20 @@ describe("translateMesh", () => {
     expect(translateMesh("Tinnitus")).toBe("Тиннитус (шум в ушах)");
     expect(translateMesh("Unknown Mesh Term")).toBeNull();
   });
+
+  it("расширенный словарь: субспециальности, фармакотерапия, методология; квалификаторы и «*» снимаются", async () => {
+    const { translateMesh, COMMON_MESH_RU } = await import("./abstract");
+    expect(translateMesh("Hearing Loss, Sudden")).toBe("Внезапная тугоухость");
+    expect(translateMesh("Neuroma, Acoustic")).toBe("Вестибулярная шваннома");
+    expect(translateMesh("Sinusitis, Chronic")).toBe("Хронический риносинусит");
+    expect(translateMesh("Deglutition Disorders")).toBe("Дисфагия (нарушения глотания)");
+    expect(translateMesh("Oropharyngeal Neoplasms")).toBe("Опухоли ротоглотки");
+    expect(translateMesh("Amoxicillin-Potassium Clavulanate Combination")).toBe("Амоксициллин/клавуланат");
+    expect(translateMesh("Double-Blind Method")).toBe("Двойной слепой метод");
+    expect(translateMesh("*Sinusitis/surgery")).toBe("Синусит");
+    expect(translateMesh("Child, Preschool")).toBe("Дети дошкольного возраста");
+    expect(Object.keys(COMMON_MESH_RU).length).toBeGreaterThanOrEqual(280);
+    // Ключи — в нижнем регистре, без дублей по смыслу
+    for (const k of Object.keys(COMMON_MESH_RU)) expect(k).toBe(k.toLowerCase().trim());
+  });
 });
