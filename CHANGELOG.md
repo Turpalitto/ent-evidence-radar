@@ -59,6 +59,10 @@
   вместо «HTTP 401»); ошибка формы отделена от ошибки списка.
 
 ### Changed
+- Старт БД и общий rate-limit пишут структурированные JSON-события вместо текстовых `console.*`
+  (`db.migrations_pending`, `db.pre_migration_backup_failed`, `db.migrate_on_start_skipped`,
+  `db.pglite_in_production`, `db.pglite_open_failed`, `db.pglite_quarantined`, `ratelimit.shared_unavailable`) —
+  единый формат логов для агрегаторов; в тестах логгер по-прежнему молчит.
 - Планировщик вынесен из `src/instrumentation.ts` в чистую фабрику `src/lib/scheduler.ts`
   (`createScheduler(deps)`, `parseAutoBackupHours`, `isRefreshDue`) с инъекцией зависимостей и часов;
   `instrumentation.ts` только связывает зависимости и таймер (интервал теперь `unref`, как и описано в

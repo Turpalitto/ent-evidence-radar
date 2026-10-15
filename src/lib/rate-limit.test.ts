@@ -33,13 +33,19 @@ describe("checkRateLimitShared", () => {
     expect(again.remaining).toBe(0);
   });
 
-  it("при ошибке БД не падает, а откатывается на in-memory лимитер с предупреждением", async () => {
+  it("при ошибке БД не падает, а откатывается на in-memory лимитер со структурированным предупреждением", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.LOG_IN_TESTS = "1"; // логгер в тестах молчит без этого флага
     vi.spyOn(db, "execute").mockRejectedValue(new Error("connection refused"));
-    const key = `t:${Date.now()}:fallback`;
-    expect(await checkRateLimitShared(key, 2, 60_000)).toMatchObject({ allowed: true, remaining: 1 });
-    expect(await checkRateLimitShared(key, 2, 60_000)).toMatchObject({ allowed: true, remaining: 0 });
-    expect((await checkRateLimitShared(key, 2, 60_000)).allowed).toBe(false);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("in-memory"), "connection refused");
+    try {
+      const key = `t:${Date.now()}:fallback`;
+      expect(await checkRateLimitShared(key, 2, 60_000)).toMatchObject({ allowed: true, remaining: 1 });
+      expect(await checkRateLimitShared(key, 2, 60_000)).toMatchObject({ allowed: true, remaining: 0 });
+      expect((await checkRateLimitShared(key, 2, 60_000)).allowed).toBe(false);
+      const line = JSON.parse(String(warn.mock.calls[0]?.[0]));
+      expect(line).toMatchObject({ level: "warn", event: "ratelimit.shared_unavailable", error: "connection refused", fallback: "in-memory" });
+    } finally {
+      delete process.env.LOG_IN_TESTS;
+    }
   });
 });

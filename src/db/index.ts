@@ -9,6 +9,7 @@ import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import { MIGRATION_LOCK_KEY, pendingMigrations, preMigrationBackup, shouldMigrateOnStart } from "./migrate-guard";
 import { onShutdown, SHUTDOWN_ORDER } from "@/lib/shutdown";
+import { log } from "@/lib/log";
 
 /** Закрыть соединения с БД (PGlite — обязательно, иначе возможна порча каталога; pg — освобождает пул). */
 export async function closeDb(): Promise<void> {
@@ -37,9 +38,10 @@ async function backupBeforeMigrate(runner: { query(sql: string): Promise<{ rows:
     const pending = await pendingMigrations(runner, migrationsFolder);
     if (!pending) return;
     const file = await preMigrationBackup(runner);
-    console.log(`[ent-radar] ${label}: ${pending} новых миграций; снимок пользовательских данных: ${file ?? "не требуется (пустая база)"}`);
+    // file === null — пустая база, снимок не нужен.
+    log.info("db.migrations_pending", { engine: label, pending, backup: file ?? null });
   } catch (e) {
-    console.warn("[ent-radar] бэкап перед миграцией не удался:", e instanceof Error ? e.message : e);
+    log.warn("db.pre_migration_backup_failed", { engine: label, error: e instanceof Error ? e.message : String(e) });
   }
 }
 
@@ -52,7 +54,7 @@ async function openPglite(dataDir?: string) {
   const db = drizzlePglite(pglite);
   if (dataDir) await backupBeforeMigrate(pglite as unknown as { query(sql: string): Promise<{ rows: Record<string, unknown>[] }> }, "PGlite");
   if (!dataDir || shouldMigrateOnStart()) await migratePglite(db, { migrationsFolder });
-  else console.warn("[ent-radar] MIGRATE_ON_START=0 — миграции при старте пропущены; выполните `npm run db:migrate`.");
+  else log.warn("db.migrate_on_start_skipped", { engine: "PGlite", hint: "MIGRATE_ON_START=0 — выполните `npm run db:migrate`" });
   return db;
 }
 
@@ -74,7 +76,7 @@ async function initDb() {
         client.release();
       }
     } else {
-      console.warn("[ent-radar] MIGRATE_ON_START=0 — миграции при старте пропущены; выполните `npm run db:migrate`.");
+      log.warn("db.migrate_on_start_skipped", { engine: "PostgreSQL", hint: "MIGRATE_ON_START=0 — выполните `npm run db:migrate`" });
     }
     return db;
   }
@@ -103,11 +105,12 @@ async function initDb() {
   // Явно предупреждаем: файловый PGlite в продакшене — риск потери данных
   // (при OOM/kill каталог может повредиться, включая закладки и заметки).
   if (process.env.NODE_ENV === "production") {
-    console.warn(
-      "[ent-radar] DATABASE_URL не задан — используется файловый PGlite (./.pglite). " +
-        "При аварийном завершении процесса каталог может повредиться, и пользовательские данные (закладки, заметки) будут потеряны. " +
-        "Для продакшена задайте DATABASE_URL с внешним PostgreSQL.",
-    );
+    log.warn("db.pglite_in_production", {
+      dataDir,
+      hint:
+        "DATABASE_URL не задан — используется файловый PGlite. При аварийном завершении процесса каталог может повредиться, " +
+        "и пользовательские данные (закладки, заметки) будут потеряны. Для продакшена задайте DATABASE_URL с внешним PostgreSQL.",
+    });
   }
 
   // Удаляем stale postmaster.pid если процесс был прерван жестко
@@ -148,7 +151,7 @@ async function initDb() {
     const resetAllowed = /^(1|true|yes|on)$/i.test(process.env.PGLITE_RESET_ON_FAILURE ?? "");
 
     if (!hasData || !resetAllowed) {
-      console.error(`[ent-radar] Не удалось открыть или мигрировать базу PGlite в ${dataDir}: ${reason}`);
+      log.error("db.pglite_open_failed", { dataDir, reason, hasData, resetAllowed });
       throw new Error(
         `Не удалось открыть базу PGlite (${dataDir}): ${reason}. ` +
           "Данные НЕ тронуты. Проверьте свободное место и версию @electric-sql/pglite; " +
@@ -159,9 +162,7 @@ async function initDb() {
 
     const quarantine = `${dataDir}.broken-${new Date().toISOString().replace(/[:.]/g, "-")}`;
     fs.renameSync(dataDir, quarantine);
-    console.error(
-      `[ent-radar] База PGlite не открылась (${reason}). Каталог перемещён в ${quarantine} (PGLITE_RESET_ON_FAILURE=1); создаю новую пустую базу.`,
-    );
+    log.error("db.pglite_quarantined", { dataDir, quarantine, reason, hint: "PGLITE_RESET_ON_FAILURE=1 — создаю новую пустую базу" });
     return await open();
   }
 }
