@@ -122,6 +122,13 @@ describe("translateStored: хранимые тексты классификат�
     expect(translateStored("en", "Статус: RECRUITING. Рандомизированное интервенционное исследование, фаза PHASE2/PHASE3, планируемая/фактическая выборка n=120. Маскирование: NONE. Спонсор: Acme Ltd. Страны: Germany.")).toBe(
       "Status: RECRUITING. Randomised interventional study, phase PHASE2/PHASE3, planned/actual enrolment n=120. Masking: NONE. Sponsor: Acme Ltd. Countries: Germany.",
     );
+    // Новый формат: статус и маскирование — подписями из trial-status.ts, фаза «1 (ранняя)/2»
+    expect(translateStored("en", "Статус: идёт набор. Рандомизированное интервенционное исследование, фаза 1 (ранняя)/2, планируемая/фактическая выборка n=60. Маскирование: двойное. Спонсор: Acme Inc. Страны: Japan, U.S.")).toBe(
+      "Status: recruiting. Randomised interventional study, phase 1 (early)/2, planned/actual enrolment n=60. Masking: double. Sponsor: Acme Inc. Countries: Japan, U.S.",
+    );
+    expect(translateStored("en", "Статус: идёт, набор закрыт. Нерандомизированное интервенционное исследование. Маскирование: открытое (без маскирования). Спонсор: не указан.")).toBe(
+      "Status: active, not recruiting. Non-randomised interventional study. Masking: open label (no masking). Sponsor: not specified.",
+    );
     expect(translateStored("en", "В реестре опубликованы результаты.")).toBe("Results have been posted in the registry.");
     expect(translateStored("ru", "В реестре опубликованы результаты.")).toBe("В реестре опубликованы результаты.");
     expect(translateStored("en", "Plain English abstract text.")).toBe("Plain English abstract text.");

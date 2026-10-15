@@ -1,5 +1,6 @@
 import { fetchJson } from "./http";
 import type { RawArticle } from "@/lib/evidence/classify";
+import { maskingLabel, phaseLabel, trialStatusLabel } from "@/lib/evidence/trial-status";
 
 export interface CtStudy {
   protocolSection?: {
@@ -96,8 +97,11 @@ export function studyToRaw(s: CtStudy): RawArticle | null {
     ps.statusModule?.studyFirstPostDateStruct?.date ??
     ps.statusModule?.lastUpdatePostDateStruct?.date;
 
+  // Первый абзац — человекочитаемая сводка; EN-версия собирается при показе пофразно (`i18n/stored.ts`),
+  // а `trials.ts` читает из него статус и факт публикации результатов у записей без `trial_info`.
+  const phase = phaseLabel(phases);
   const abstractParts = [
-    `Статус: ${status}. ${isRandomized ? "Рандомизированное" : "Нерандомизированное"} интервенционное исследование${phases.length ? `, фаза ${phases.join("/")}` : ""}${enrollment ? `, планируемая/фактическая выборка n=${enrollment}` : ""}. Маскирование: ${design?.designInfo?.maskingInfo?.masking ?? "не указано"}. Спонсор: ${ps.sponsorCollaboratorsModule?.leadSponsor?.name ?? "не указан"}.${countries.length ? ` Страны: ${countries.slice(0, 8).join(", ")}${countries.length > 8 ? "…" : ""}.` : ""}`,
+    `Статус: ${trialStatusLabel(status)}. ${isRandomized ? "Рандомизированное" : "Нерандомизированное"} интервенционное исследование${phase ? `, фаза ${phase}` : ""}${enrollment ? `, планируемая/фактическая выборка n=${enrollment}` : ""}. Маскирование: ${maskingLabel(design?.designInfo?.maskingInfo?.masking)}. Спонсор: ${ps.sponsorCollaboratorsModule?.leadSponsor?.name ?? "не указан"}.${countries.length ? ` Страны: ${countries.slice(0, 8).join(", ")}${countries.length > 8 ? "…" : ""}.` : ""}`,
     s.hasResults ? "В реестре опубликованы результаты." : "Результаты в реестре пока не опубликованы.",
     ps.descriptionModule?.briefSummary ?? "",
   ];

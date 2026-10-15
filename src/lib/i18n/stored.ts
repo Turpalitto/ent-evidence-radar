@@ -29,14 +29,16 @@ function translateSuffix(suffix: string): string {
  * спонсоров и стран могут содержать точки, поэтому переводим фразу за фразой, а не одной регуляркой.
  */
 function translateRegistryLine(line: string): string {
+  // Статус и маскирование хранятся подписями из `trial-status.ts` (старые записи — кодами реестра,
+  // которые словарь не знает и оставляет как есть).
+  const term = (v: string) => (v === "не указано" || v === "не указан" ? "not specified" : (EN[v] ?? v));
   return line
-    .replace(/^Статус: /, "Status: ")
+    .replace(/^Статус: ([^.]+)\./, (_, v: string) => `Status: ${term(v)}.`)
     .replace(/\. Рандомизированное интервенционное исследование/, ". Randomised interventional study")
     .replace(/\. Нерандомизированное интервенционное исследование/, ". Non-randomised interventional study")
-    .replace(/, фаза /, ", phase ")
+    .replace(/, фаза ([^,.]+)/, (_, v: string) => `, phase ${v.replace(" (ранняя)", " (early)")}`)
     .replace(/, планируемая\/фактическая выборка n=/, ", planned/actual enrolment n=")
-    .replace(/\. Маскирование: не указано\./, ". Masking: not specified.")
-    .replace(/\. Маскирование: /, ". Masking: ")
+    .replace(/\. Маскирование: ([^.]+)\./, (_, v: string) => `. Masking: ${term(v)}.`)
     .replace(/\. Спонсор: не указан\./, ". Sponsor: not specified.")
     .replace(/\. Спонсор: /, ". Sponsor: ")
     .replace(/ Страны: /, " Countries: ");

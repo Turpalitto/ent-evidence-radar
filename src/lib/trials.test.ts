@@ -59,6 +59,9 @@ describe("trials: чистые функции (A-08)", () => {
   it("previousTrialState читает trial_info, а для старых записей — статус из сгенерированной аннотации", () => {
     expect(previousTrialState({ abstract: "Статус: RECRUITING. Рандомизированное…", trustBreakdown: [], trialInfo: null })).toEqual({ status: "RECRUITING", hasResults: false, known: true });
     expect(previousTrialState({ abstract: "Статус: COMPLETED. …\n\nВ реестре опубликованы результаты.", trustBreakdown: [], trialInfo: null })).toEqual({ status: "COMPLETED", hasResults: true, known: true });
+    // Новый формат сводки — подписью; неизвестная подпись → состояние неизвестно (без ложного события «статус изменился»)
+    expect(previousTrialState({ abstract: "Статус: идёт, набор закрыт. Рандомизированное…", trustBreakdown: [], trialInfo: null })).toEqual({ status: "ACTIVE_NOT_RECRUITING", hasResults: false, known: true });
+    expect(previousTrialState({ abstract: "Статус: что-то странное. …", trustBreakdown: [], trialInfo: null })).toEqual({ status: null, hasResults: false, known: false });
     expect(previousTrialState({ abstract: "no status here", trustBreakdown: [{ label: "Опубликованы результаты в реестре", points: 8 }], trialInfo: null })).toEqual({ status: null, hasResults: true, known: false });
     expect(previousTrialState({ abstract: "", trustBreakdown: [], trialInfo: { status: "TERMINATED", hasResults: false, checkedAt: "x", events: [] } })).toEqual({ status: "TERMINATED", hasResults: false, known: true });
   });
@@ -127,7 +130,7 @@ describe("recheckTrials (PGlite + мок ClinicalTrials.gov)", () => {
     expect(done.trialInfo).toMatchObject({ status: "COMPLETED", hasResults: true, resultsFirstPosted: "2026-09-30", enrollment: 118 });
     expect(done.trialInfo!.events.map((e) => e.kind)).toEqual(["status", "results"]);
     expect(done.studyDesign).toBe("rct"); // с результатами запись реестра классифицируется как РКИ
-    expect(done.abstract).toContain("Статус: COMPLETED");
+    expect(done.abstract).toContain("Статус: завершено.");
     expect(done.abstract).toContain("В реестре опубликованы результаты");
     expect(done.sampleSize).toBe(118);
     expect(done.fetchedAt.toISOString()).toBe(now.toISOString());

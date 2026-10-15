@@ -86,10 +86,11 @@ describe("fetchClinicalTrials — разбор ответа API v2", () => {
     expect(rct.keywords).toEqual(["Chronic Rhinosinusitis With Nasal Polyps", "dupilumab", "FESS"]);
     expect(rct.url).toBe("https://clinicaltrials.gov/study/NCT05512345");
     expect(rct.sourceKey).toBe("clinicaltrials");
-    expect(rct.abstract).toContain("Статус: COMPLETED");
-    expect(rct.abstract).toContain("фаза PHASE3");
+    // Сводка — подписями, а не кодами реестра: читателю «завершено», «фаза 3», «четверное»
+    expect(rct.abstract).toContain("Статус: завершено.");
+    expect(rct.abstract).toContain("фаза 3,");
     expect(rct.abstract).toContain("n=240");
-    expect(rct.abstract).toContain("Маскирование: QUADRUPLE");
+    expect(rct.abstract).toContain("Маскирование: четверное.");
     expect(rct.abstract).toContain("Спонсор: Sanofi");
     // страны дедуплицируются, показываются первые 8, хвост помечается многоточием
     expect(rct.abstract).toMatch(/Страны: United States, Germany, France, Spain, Italy, Japan, Canada, Poland…/);

@@ -2,6 +2,7 @@ import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { articles, settings, type TrialEvent, type TrialInfo } from "@/db/schema";
 import { CLASSIFIER_VERSION, classify, normalizeNct, type RawArticle } from "@/lib/evidence/classify";
+import { trialStatusCode } from "@/lib/evidence/trial-status";
 import { fetchClinicalTrialsByIds } from "@/lib/sources/clinicaltrials";
 import { log } from "@/lib/log";
 
@@ -41,9 +42,11 @@ type TrackedRow = {
 /** Состояние «до»: из trial_info, а для записей, сохранённых до A-08, — из сгенерированной аннотации. */
 export function previousTrialState(row: Pick<TrackedRow, "abstract" | "trustBreakdown" | "trialInfo">): { status: string | null; hasResults: boolean; known: boolean } {
   if (row.trialInfo) return { status: row.trialInfo.status, hasResults: row.trialInfo.hasResults, known: true };
-  const m = /Статус:\s*([A-Z_]+)\./.exec(row.abstract ?? "");
+  // Старый формат — код реестра («Статус: COMPLETED.»), новый — подпись («Статус: завершено.»).
+  const m = /Статус:\s*([^.\n]+)\./.exec(row.abstract ?? "");
+  const status = trialStatusCode(m?.[1]);
   const hasResults = (row.trustBreakdown ?? []).some((b) => /опубликованы результаты/i.test(b.label)) || /В реестре опубликованы результаты/.test(row.abstract ?? "");
-  return { status: m?.[1] ?? null, hasResults, known: !!m };
+  return { status, hasResults, known: status !== null };
 }
 
 /**

@@ -97,7 +97,7 @@ describe("английский интерфейс", () => {
           designConfidence: "high",
           trustBreakdown: [{ label: "Дизайн исследования", points: 12 }],
           abstract:
-            "Статус: RECRUITING. Рандомизированное интервенционное исследование, фаза PHASE3, планируемая/фактическая выборка n=450. Маскирование: DOUBLE. Спонсор: Sanofi Inc. Страны: France, United States.\n\nРезультаты в реестре пока не опубликованы.\n\nDupilumab versus placebo in adults with CRSwNP.",
+            "Статус: идёт набор. Рандомизированное интервенционное исследование, фаза 3, планируемая/фактическая выборка n=450. Маскирование: двойное. Спонсор: Sanofi Inc. Страны: France, United States.\n\nРезультаты в реестре пока не опубликованы.\n\nDupilumab versus placebo in adults with CRSwNP.",
         })}
         onClose={() => {}}
         onUpdate={() => {}}
@@ -105,7 +105,7 @@ describe("английский интерфейс", () => {
       />,
     );
     const dialog = screen.getAllByRole("dialog").at(-1)!;
-    expect(dialog.textContent).toContain("Status: RECRUITING. Randomised interventional study, phase PHASE3, planned/actual enrolment n=450. Masking: DOUBLE. Sponsor: Sanofi Inc. Countries: France, United States.");
+    expect(dialog.textContent).toContain("Status: recruiting. Randomised interventional study, phase 3, planned/actual enrolment n=450. Masking: double. Sponsor: Sanofi Inc. Countries: France, United States.");
     expect(dialog.textContent).toContain("No results posted in the registry yet.");
     expect(dialog.textContent).toContain("ClinicalTrials.gov (registry)");
     await waitFor(() => expect(screen.getAllByRole("dialog").at(-1)!.textContent).not.toMatch(CYRILLIC));
