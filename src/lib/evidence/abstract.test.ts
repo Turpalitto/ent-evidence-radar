@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseStructuredAbstract, extractConclusion, repairGluedAbstract } from "./abstract";
+import { parseStructuredAbstract, extractConclusion, repairGluedAbstract, sectionHeaderRu } from "./abstract";
 
 describe("parseStructuredAbstract", () => {
   it("parses multi-line structured abstracts", () => {
@@ -84,6 +84,30 @@ In conclusion, the Epley maneuver provides immediate symptom resolution in the m
     expect(sectionHeaderRu("Materials and Methods")).toBe("Материалы и методы");
     expect(sectionHeaderRu("TRIAL REGISTRATION")).toBe("Регистрация исследования");
     expect(sectionHeaderRu("SOMETHING ELSE")).toBe("SOMETHING ELSE");
+  });
+
+  it("служебные хвосты (регистрация, Level of Evidence, PROSPERO, Funding) отрезаются; Cochrane «Authors' conclusions»; новые маркеры", () => {
+    expect(extractConclusion("RESULTS: Z. CONCLUSIONS: Intratympanic steroids are non-inferior to oral steroids. TRIAL REGISTRATION: NCT01234567.")).toBe(
+      "Intratympanic steroids are non-inferior to oral steroids.",
+    );
+    expect(extractConclusion("Conclusion: Coblation reduces postoperative pain. Level of Evidence: 1b Laryngoscope, 134:1-7, 2024.")).toBe("Coblation reduces postoperative pain.");
+    expect(extractConclusion("Conclusions and Relevance: Neuromodulation reduced tinnitus severity. Trial Registration: ClinicalTrials.gov Identifier: NCT03530306")).toBe(
+      "Neuromodulation reduced tinnitus severity.",
+    );
+    expect(extractConclusion("MAIN RESULTS: Seven trials.\nAUTHORS' CONCLUSIONS: There is low-certainty evidence that tonsillectomy reduces sore throat episodes. PROSPERO: CRD42020123456")).toBe(
+      "There is low-certainty evidence that tonsillectomy reduces sore throat episodes.",
+    );
+    expect(extractConclusion("Methods and results: Among 300 patients, 20% had recurrence. Interpretation: Recurrence is common after primary surgery. Funding: None.")).toBe(
+      "Recurrence is common after primary surgery.",
+    );
+    expect(extractConclusion("Pooled sensitivity was 0.91. Our findings suggest that narrow-band imaging improves detection of laryngeal lesions. Further studies are warranted.")).toBe(
+      "Our findings suggest that narrow-band imaging improves detection of laryngeal lesions.",
+    );
+    // Кокрейновские секции разбираются и подписываются
+    const sections = parseStructuredAbstract("BACKGROUND: X.\nSEARCH METHODS: We searched CENTRAL.\nSELECTION CRITERIA: RCTs.\nMAIN RESULTS: Seven trials.\nAUTHORS' CONCLUSIONS: Modest benefit.");
+    expect(sections.map((s) => s.label)).toEqual(["BACKGROUND", "SEARCH METHODS", "SELECTION CRITERIA", "MAIN RESULTS", "AUTHORS' CONCLUSIONS"]);
+    expect(sectionHeaderRu("AUTHORS' CONCLUSIONS")).toBe("Выводы авторов");
+    expect(sectionHeaderRu("SEARCH METHODS")).toBe("Стратегия поиска");
   });
 
   it("returns null when no conclusion is found", () => {

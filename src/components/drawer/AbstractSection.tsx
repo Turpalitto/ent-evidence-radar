@@ -99,8 +99,8 @@ function StructuredAbstract({ abstract }: { abstract: string }) {
     ));
   }
   return sections.map((sec, i) => {
-    const isConclusion = /^(CONCLUSIONS?( AND RELEVANCE)?|INTERPRETATION)$/i.test(sec.label);
-    const isResults = /^(RESULTS?|FINDINGS)$/i.test(sec.label);
+    const isConclusion = /^(AUTHORS' CONCLUSIONS|CONCLUSIONS?( AND RELEVANCE)?|INTERPRETATION)$/i.test(sec.label);
+    const isResults = /^(MAIN )?(RESULTS?|FINDINGS)$/i.test(sec.label);
     return (
       <div
         key={i}

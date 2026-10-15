@@ -68,6 +68,11 @@
 - medRxiv: расширен словарь ЛОР-терминов для отбора из смежных категорий (pharyn/trache/deaf/audiolog/
   Ménière/cholesteatoma/tympan/parotid/snoring/facial nerve…), теги в заголовке и аннотации снимаются,
   авторы «Last, F. M.» приводятся к «Last FM» (как у PubMed) — единообразные цитаты и экспорт.
+- Вывод аннотации («💡 Вывод», текст «Для консилиума»): служебные хвосты, которые PubMed подклеивает к последней
+  секции одной строкой («TRIAL REGISTRATION: NCT…», «Level of Evidence: 1b Laryngoscope, 134:1-7, 2024», «PROSPERO:
+  CRD…», «Funding: None»), отрезаются; кокрейновские секции (Search methods, Selection criteria, Main results,
+  Authors' conclusions) разбираются, подписываются по-русски и подсвечиваются как вывод/результаты; новые маркеры
+  вывода в неструктурированном тексте («Our findings suggest that…», «This meta-analysis demonstrates…», «In summary»).
 - PICO: секция INTERVENTIONS «Dupilumab 300 mg or placebo for 24 weeks» / «Bimodal neuromodulation vs sham
   device» делится на пару «вмешательство / сравнение» (раньше компаратор терялся, если его не было в заголовке);
   из «Design, Setting, and Participants» берётся фрагмент с выборкой («276 adults with severe CRSwNP»), а не
