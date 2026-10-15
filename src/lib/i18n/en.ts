@@ -102,6 +102,7 @@ export const EN: Record<string, string> = {
   "Bárány Society (вестибулярные расстройства)": "Bárány Society (vestibular disorders)",
   "Минздрав РФ": "Russian MoH",
   "Клинические рекомендации Минздрава России / НМАО": "Clinical guidelines of the Russian Ministry of Health / NMAO",
+  "Японские ЛОР-общества (Oto-Rhino-Laryngological Society of Japan, Japan Otological Society, Japan Society for Equilibrium Research)": "Japanese ENT societies (Oto-Rhino-Laryngological Society of Japan, Japan Otological Society, Japan Society for Equilibrium Research)",
   "Без издателя": "No issuer",
   "Руководства, у которых орган-издатель не распознан": "Guidelines whose issuing body was not recognised",
   /* ── classify.ts: хранимые подписи индекса доверия (переводятся при показе) ── */

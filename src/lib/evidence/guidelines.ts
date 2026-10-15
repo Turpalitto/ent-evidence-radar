@@ -50,6 +50,10 @@ export const GUIDELINE_ISSUERS: GuidelineIssuer[] = [
   { key: "sfor", label: "SFORL", name: "Société française d'ORL et de chirurgie cervico-faciale", patterns: [/\bSFORL\b/, /french society of (ent|otorhinolaryngology)/i, /soci[eé]t[eé] fran[cç]aise d'?orl/i] },
   { key: "dgh", label: "DGHNO / AWMF", name: "Deutsche Gesellschaft für HNO-Heilkunde / AWMF S2k–S3", patterns: [/\bDGHNO\b/, /\bAWMF\b/, /\bS[123]k?\s*[- ]?(leitlinie|guideline)\b/i, /german society of oto-?rhino-?laryngology/i] },
   { key: "minzdrav", label: "Минздрав РФ", name: "Клинические рекомендации Минздрава России / НМАО", patterns: [/клинические рекомендации/i, /минздрав/i, /national medical association of otorhinolaryngologists/i, /\bNMAO\b/] },
+  // Национальные ЛОР-общества, чьи руководства регулярно индексируются в PubMed (JOHNS, Auris Nasus Larynx, CEO).
+  { key: "cso-hns", label: "CSO-HNS", name: "Canadian Society of Otolaryngology–Head and Neck Surgery", patterns: [/canadian society of otolaryngology/i, /\bCSO[- ]?HNS\b/, /\bcanadian (clinical practice )?guidelines?\b/i] },
+  { key: "jp-orl", label: "Japan ORL", name: "Японские ЛОР-общества (Oto-Rhino-Laryngological Society of Japan, Japan Otological Society, Japan Society for Equilibrium Research)", patterns: [/oto-?rhino-?laryngological society of japan/i, /japan (otological|audiological|rhinologic|laryngological|broncho-?esophagological) society/i, /japan society for equilibrium research/i, /\bjapanese (clinical practice )?guidelines?\b/i] },
+  { key: "korl-hns", label: "KORL-HNS", name: "Korean Society of Otorhinolaryngology–Head and Neck Surgery", patterns: [/korean society of otorhinolaryngology/i, /\bKORL[- ]?HNS\b/, /\bkorean (clinical practice )?guidelines?\b/i] },
 ];
 
 const ISSUER_BY_KEY = new Map(GUIDELINE_ISSUERS.map((g) => [g.key, g]));

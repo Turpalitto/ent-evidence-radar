@@ -61,6 +61,15 @@ describe("detectGuidelineIssuer (A-06)", () => {
     expect(detectGuidelineIssuer({ title: "WHO world report on hearing", journal: "Lancet" })).toBe("who");
   });
 
+  it("национальные ЛОР-общества: канадские, японские и корейские руководства", () => {
+    expect(detectGuidelineIssuer({ title: "Canadian clinical practice guidelines for acute and chronic rhinosinusitis", journal: "J Otolaryngol Head Neck Surg" })).toBe("cso-hns");
+    expect(detectGuidelineIssuer({ title: "Clinical practice guidelines for the diagnosis of vestibular neuritis", journal: "Auris Nasus Larynx", authors: ["Japan Society for Equilibrium Research"] })).toBe("jp-orl");
+    expect(detectGuidelineIssuer({ title: "Japanese clinical practice guidelines for sudden deafness 2024", journal: "Auris Nasus Larynx" })).toBe("jp-orl");
+    expect(detectGuidelineIssuer({ title: "Korean clinical practice guideline for benign paroxysmal positional vertigo", journal: "Clin Exp Otorhinolaryngol" })).toBe("korl-hns");
+    // Страна в заголовке без слова «guideline» — не издатель
+    expect(detectGuidelineIssuer({ title: "Prevalence of hearing loss in Korean adults", journal: "PLoS One" })).toBeNull();
+  });
+
   it("таксономия согласована: уникальные ключи, метки, подписи", () => {
     const keys = GUIDELINE_ISSUERS.map((g) => g.key);
     expect(new Set(keys).size).toBe(keys.length);
