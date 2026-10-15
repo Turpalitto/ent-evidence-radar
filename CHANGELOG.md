@@ -45,6 +45,9 @@
   Всего 76 файлов / 533 теста.
 
 ### Fixed
+- Лента: подписка на `Notification.permission` через Permissions API больше не вешает слушатель `change`,
+  если компонент размонтировался до резолва `permissions.query()` (утечка слушателя). Новые тесты
+  `feed/hooks.test.tsx` (5): Permissions API, отписка при unmount, поздний резолв, отказ API, online/offline.
 - HTTP-клиент источников: после последней неудачной попытки больше не ждёт backoff/`Retry-After` перед тем,
   как отдать ошибку (NCBI присылает `Retry-After` до 60 с — каждый сбой источника держал обновление лишние
   десятки секунд). Тесты `http.test.ts`: 5xx с backoff, 4xx без повтора, таймаут через `AbortController`,

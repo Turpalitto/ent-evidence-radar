@@ -6,15 +6,22 @@ import { useSyncExternalStore } from "react";
 
 function subscribeNotification(callback: () => void) {
   if (typeof window === "undefined" || !("navigator" in window) || !("permissions" in navigator)) return () => {};
-  let cleanup = () => {};
+  // `permissions.query()` асинхронный: если компонент размонтировался раньше, чем он разрешился,
+  // слушатель не вешаем вовсе — иначе он остался бы навсегда (утечка + лишние вызовы после unmount).
+  let disposed = false;
+  let detach = () => {};
   navigator.permissions
     .query({ name: "notifications" as PermissionName })
     .then((status) => {
+      if (disposed) return;
       status.addEventListener("change", callback);
-      cleanup = () => status.removeEventListener("change", callback);
+      detach = () => status.removeEventListener("change", callback);
     })
     .catch(() => {});
-  return () => cleanup();
+  return () => {
+    disposed = true;
+    detach();
+  };
 }
 
 function getNotificationSnapshot(): string {
