@@ -42,7 +42,10 @@
   Чекбоксы и кнопки удаления тем получили доступные имена с названием темы.
 - Тесты адаптера PubMed: контракт E-utilities (`esearch` — `datetype=edat`/`reldate`, `tool`/`email`,
   `api_key` только при ключе, `ERROR` → исключение; `efetch` пачками по 200; резервная карта отзывов).
-  Всего 76 файлов / 533 теста.
+- Тесты: «золотые» случаи классификатора (erratum, single-arm/before-after/ITS, crossover, pooled analysis,
+  ML-валидация, Delphi, числительные словами, «in adults»), `htmlAbstractToText`/`repairGluedAbstract`,
+  секции JAMA/Lancet, издатель AAO-HNS по журналу, хуки ленты (Permissions API, online/offline),
+  HTTP-клиент (таймаут, сеть, 4xx/5xx, штраф 429). Всего 77 файлов / 555 тестов.
 
 ### Fixed
 - **Europe PMC: структурированные аннотации склеивались.** `<h4>Methods</h4>text` после снятия тегов превращалось
