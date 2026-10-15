@@ -125,6 +125,14 @@ describe("journalTier", () => {
     expect(journalTier("Trials")).toBe(3);
     expect(journalTier("Systematic reviews")).toBe(3);
     expect(journalTier("BMJ evidence-based medicine")).toBe(3);
+    expect(journalTier("Current opinion in otolaryngology & head and neck surgery")).toBe(3);
+    expect(journalTier("Curr Opin Otolaryngol Head Neck Surg")).toBe(3);
+    expect(journalTier("Allergy, asthma, and clinical immunology : official journal of the Canadian Society of Allergy and Clinical Immunology")).toBe(3);
+    expect(journalTier("Journal of neurological surgery. Part B, Skull base")).toBe(3);
+    expect(journalTier("JAMA facial plastic surgery")).toBe(3);
+    expect(journalTier("International journal of oral and maxillofacial surgery")).toBe(3);
+    expect(journalTier("Brain : a journal of neurology")).toBe(2);
+    expect(journalTier("J Neurol Neurosurg Psychiatry")).toBe(2);
   });
 
   it("белый список согласован: один нормализованный ключ не встречается в разных tier-ах", () => {

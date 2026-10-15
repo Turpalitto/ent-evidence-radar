@@ -109,6 +109,8 @@ export const JOURNALS: JournalEntry[] = [
   { tier: 2, names: ["Journal of Dental Research"], abbrev: ["J Dent Res"], issn: ["0022-0345", "1544-0591"] },
   { tier: 2, names: ["Journal of Nuclear Medicine"], abbrev: ["J Nucl Med"], issn: ["0161-5505", "1535-5667"] },
   { tier: 2, names: ["Pain"], abbrev: ["Pain"], issn: ["0304-3959", "1872-6623"] },
+  { tier: 2, names: ["Brain"], abbrev: ["Brain"], issn: ["0006-8950", "1460-2156"] },
+  { tier: 2, names: ["Journal of Neurology, Neurosurgery & Psychiatry", "Journal of Neurology, Neurosurgery, and Psychiatry"], abbrev: ["J Neurol Neurosurg Psychiatry"], issn: ["0022-3050", "1468-330X"] },
 
   // ── Tier 3 ───────────────────────────────────────────────────────────────
   { tier: 3, names: ["European Archives of Oto-Rhino-Laryngology"], abbrev: ["Eur Arch Otorhinolaryngol"], issn: ["0937-4477", "1434-4726"] },
@@ -217,6 +219,21 @@ export const JOURNALS: JournalEntry[] = [
   { tier: 3, names: ["Journal of Evidence-Based Medicine"], abbrev: ["J Evid Based Med"], issn: ["1756-5391"] },
   { tier: 3, names: ["Trials"], abbrev: ["Trials"], issn: ["1745-6215"] },
   { tier: 3, names: ["BMJ Evidence-Based Medicine"], abbrev: ["BMJ Evid Based Med"], issn: ["2515-446X", "2515-4478"] },
+  // Обзорные и смежные профильные издания (аллергология, ЧЛХ, основание черепа, пластика, пульмонология)
+  { tier: 3, names: ["Current Opinion in Otolaryngology & Head and Neck Surgery", "Current Opinion in Otolaryngology and Head and Neck Surgery"], abbrev: ["Curr Opin Otolaryngol Head Neck Surg"], issn: ["1068-9508", "1531-6998"] },
+  { tier: 3, names: ["Allergy, Asthma & Clinical Immunology", "Allergy, Asthma, and Clinical Immunology"], abbrev: ["Allergy Asthma Clin Immunol"], issn: ["1710-1484", "1710-1492"] },
+  { tier: 3, names: ["Allergy & Rhinology", "Allergy and Rhinology"], abbrev: ["Allergy Rhinol (Providence)"], issn: ["2152-6567"] },
+  { tier: 3, names: ["Clinical and Translational Allergy"], abbrev: ["Clin Transl Allergy"], issn: ["2045-7022"] },
+  { tier: 3, names: ["International Archives of Allergy and Immunology"], abbrev: ["Int Arch Allergy Immunol"], issn: ["1018-2438", "1423-0097"] },
+  { tier: 3, names: ["Journal of Investigational Allergology and Clinical Immunology", "Journal of Investigational Allergology & Clinical Immunology"], abbrev: ["J Investig Allergol Clin Immunol"], issn: ["1018-9068", "1698-0808"] },
+  { tier: 3, names: ["International Journal of Oral and Maxillofacial Surgery"], abbrev: ["Int J Oral Maxillofac Surg"], issn: ["0901-5027", "1399-0020"] },
+  { tier: 3, names: ["Journal of Neurological Surgery. Part B, Skull Base", "Journal of Neurological Surgery Part B: Skull Base"], abbrev: ["J Neurol Surg B Skull Base"], issn: ["2193-6331", "2193-634X"] },
+  { tier: 3, names: ["JAMA Facial Plastic Surgery"], abbrev: ["JAMA Facial Plast Surg"], issn: ["2168-6076", "2168-6092"] },
+  { tier: 3, names: ["Aesthetic Plastic Surgery"], abbrev: ["Aesthetic Plast Surg"], issn: ["0364-216X", "1432-5241"] },
+  { tier: 3, names: ["European Journal of Surgical Oncology"], abbrev: ["Eur J Surg Oncol"], issn: ["0748-7983", "1532-2157"] },
+  { tier: 3, names: ["Pediatric Pulmonology"], abbrev: ["Pediatr Pulmonol"], issn: ["8755-6863", "1099-0496"] },
+  { tier: 3, names: ["Headache"], abbrev: ["Headache"], issn: ["0017-8748", "1526-4610"] },
+  { tier: 3, names: ["Antimicrobial Agents and Chemotherapy"], abbrev: ["Antimicrob Agents Chemother"], issn: ["0066-4804", "1098-6596"] },
 ];
 
 /** Издательства/журналы с известной репутацией «хищнических». Основан на Beall's List и аналогах. */

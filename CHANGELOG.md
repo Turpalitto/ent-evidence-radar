@@ -83,7 +83,10 @@
   лимфома/саркома (опухоли), бранхиогенные и тиреоглоссальные аномалии/подростки (детская ЛОР), мастоидит/
   наружный отит/абсцессы/целлюлит (инфекции), полисомнография/AHI (сон), переломы лица и носа (пластика).
   Издатели руководств: +CSO-HNS (Канада), японские ЛОР-общества (JOS, Japan Society for Equilibrium Research…),
-  KORL-HNS (Корея).
+  KORL-HNS (Корея). Белый список журналов: +Brain, JNNP (Tier 2); Curr Opin Otolaryngol Head Neck Surg,
+  Allergy Asthma Clin Immunol, Allergy Rhinol, Clin Transl Allergy, Int Arch Allergy Immunol, J Investig Allergol
+  Clin Immunol, Int J Oral Maxillofac Surg, J Neurol Surg B Skull Base, JAMA Facial Plast Surg, Aesthetic Plast Surg,
+  Eur J Surg Oncol, Pediatr Pulmonol, Headache, Antimicrob Agents Chemother (Tier 3).
 - Классификатор дизайна (`CLASSIFIER_VERSION = 6`, существующие записи переразмечаются автоматически):
   исправления к статьям (`Published Erratum`, `Erratum to: …`, `Correction: …`, `Expression of concern`) больше
   не наследуют дизайн оригинала («Erratum to: Randomized trial…» получал РКИ уровня 2); нерандомизированные и
