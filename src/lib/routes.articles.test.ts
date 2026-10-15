@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { articles } from "@/db/schema";
 import { GET as articlesGet } from "@/app/api/articles/route";
 import { GET as relatedGet } from "@/app/api/articles/[id]/related/route";
+import { GET as articleGet, PATCH as articlePatch, DELETE as articleDelete } from "@/app/api/articles/[id]/route";
 import { GET as exportGet } from "@/app/api/export/route";
 
 /**
@@ -79,6 +80,63 @@ describe("GET /api/articles", () => {
     expect(res.total).toBe(2);
     expect(res.searchTerms).toEqual(expect.arrayContaining(["polyps"]));
     expect(res.items.map((a: { dedupKey: string }) => a.dedupKey).sort()).toEqual(["route-a1", "route-a2"]);
+  });
+});
+
+describe("GET/PATCH/DELETE /api/articles/:id", () => {
+  const json = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
+    new NextRequest(`http://localhost${path}`, { method, headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body) });
+
+  it("GET: 400 на мусорный id, 404 на несуществующую, карточка без search_tsv", async () => {
+    expect((await articleGet(get("/api/articles/abc"), params("abc"))).status).toBe(400);
+    expect((await articleGet(get("/api/articles/999999"), params("999999"))).status).toBe(404);
+    const [a1] = await db.select({ id: articles.id }).from(articles).where(eq(articles.dedupKey, "route-a1"));
+    const res = await articleGet(get(`/api/articles/${a1.id}`), params(String(a1.id)));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ id: a1.id, dedupKey: "route-a1", isBookmarked: true });
+    expect(body).not.toHaveProperty("searchTsv");
+  });
+
+  it("PATCH: валидация тела и полей, обрезка заметки, 404; ответ на языке запроса", async () => {
+    const [a3] = await db.select({ id: articles.id }).from(articles).where(eq(articles.dedupKey, "route-a3"));
+    const id = String(a3.id);
+    expect((await articlePatch(json("PATCH", "/api/articles/x", { isRead: true }), params("x"))).status).toBe(400);
+    expect((await articlePatch(json("PATCH", `/api/articles/${id}`, "not json"), params(id))).status).toBe(400);
+    expect((await articlePatch(json("PATCH", `/api/articles/${id}`, [1, 2]), params(id))).status).toBe(400);
+    // Ни одного допустимого поля (isRead строкой игнорируется) — 400 с перечнем полей, по-английски при ?lang=en
+    const empty = await articlePatch(json("PATCH", `/api/articles/${id}?lang=en`, { isRead: "yes", foo: 1 }), params(id));
+    expect(empty.status).toBe(400);
+    expect((await empty.json()).error).toMatch(/^No valid fields/);
+    // overrides массивом — 400
+    expect((await articlePatch(json("PATCH", `/api/articles/${id}`, { overrides: [] }), params(id))).status).toBe(400);
+    // Несуществующая запись — 404 (и с overrides, и без)
+    expect((await articlePatch(json("PATCH", "/api/articles/999999", { isRead: true }), params("999999"))).status).toBe(404);
+    expect((await articlePatch(json("PATCH", "/api/articles/999999", { overrides: null }), params("999999"))).status).toBe(404);
+    // Заметка длиннее лимита обрезается до 5000 символов, флаги применяются
+    const long = "я".repeat(6000);
+    const ok = await articlePatch(json("PATCH", `/api/articles/${id}`, { notes: long, isRead: true, isHidden: false }), params(id));
+    expect(ok.status).toBe(200);
+    const row = await ok.json();
+    expect(row.notes).toHaveLength(5000);
+    expect(row.isRead).toBe(true);
+  });
+
+  it("DELETE: 400/404, под API_SECRET требует ключ; скрытие и ?purge=1 отражены в ответе", async () => {
+    expect((await articleDelete(json("DELETE", "/api/articles/x"), params("x"))).status).toBe(400);
+    expect((await articleDelete(json("DELETE", "/api/articles/999999"), params("999999"))).status).toBe(404);
+    const [{ id }] = await db
+      .insert(articles)
+      .values({ dedupKey: "route-del", title: "To be hidden", sourceKey: "pubmed", sourceKeys: ["pubmed"], url: "https://e.org/del", abstract: "", journal: "", authors: [], publicationTypes: [], meshTerms: [], keywords: [], subspecialties: [] })
+      .returning({ id: articles.id });
+    process.env.API_SECRET = SECRET;
+    expect((await articleDelete(json("DELETE", `/api/articles/${id}`), params(String(id)))).status).toBe(401);
+    expect((await articlePatch(json("PATCH", `/api/articles/${id}`, { isRead: true }), params(String(id)))).status).toBe(401);
+    const hidden = await articleDelete(json("DELETE", `/api/articles/${id}`, undefined, { "x-api-key": SECRET }), params(String(id)));
+    expect(await hidden.json()).toEqual({ ok: true, hidden: true, purged: false });
+    const purged = await articleDelete(json("DELETE", `/api/articles/${id}?purge=1`, undefined, { "x-api-key": SECRET }), params(String(id)));
+    expect(await purged.json()).toEqual({ ok: true, hidden: false, purged: true });
+    expect(await db.select({ id: articles.id }).from(articles).where(eq(articles.id, id))).toEqual([]);
   });
 });
 

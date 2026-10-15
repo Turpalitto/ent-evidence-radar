@@ -1,10 +1,10 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { articles, fetchRuns, sources, topics } from "@/db/schema";
 import { GET as topicsGet, POST as topicsPost } from "@/app/api/topics/route";
-import { PATCH as topicPatch } from "@/app/api/topics/[id]/route";
+import { PATCH as topicPatch, DELETE as topicDelete } from "@/app/api/topics/[id]/route";
 import { GET as sourcesGet } from "@/app/api/sources/route";
 import { PATCH as sourcePatch } from "@/app/api/sources/[key]/route";
 import { GET as settingsGet, PATCH as settingsPatch } from "@/app/api/settings/route";
@@ -123,6 +123,42 @@ describe("PATCH /api/topics/:id", () => {
     const ok = await topicPatch(json("PATCH", `/api/topics/${t.id}`, { name: " Новое имя ", enabled: false, subspecialty: "otology", lookbackDays: null }), params({ id: String(t.id) }));
     expect(ok.status).toBe(200);
     expect(await ok.json()).toMatchObject({ id: t.id, name: "Новое имя", enabled: false, subspecialty: "otology", lookbackDays: null });
+  });
+
+  it("валидация полей: не-JSON, пустой/длинный запрос, длинное имя, неизвестная субспециальность; lookbackDays зажимается", async () => {
+    const [t] = await db.insert(topics).values({ name: "Валидация", query: "q", subspecialty: "general" }).returning();
+    const id = params({ id: String(t.id) });
+    const err = async (body: unknown, lang = "") => {
+      const r = await topicPatch(json("PATCH", `/api/topics/${t.id}${lang}`, body), id);
+      return [r.status, (await r.json()).error as string] as const;
+    };
+    expect((await topicPatch(new NextRequest(`http://localhost/api/topics/${t.id}`, { method: "PATCH", body: "{oops", headers: { "content-type": "application/json" } }), id)).status).toBe(400);
+    expect(await err({ query: "  " })).toEqual([400, "Поисковый запрос не может быть пустым"]);
+    expect(await err({ query: "x".repeat(TOPIC_LIMITS.query + 1) }, "?lang=en")).toEqual([400, `The search query is longer than ${TOPIC_LIMITS.query} characters`]);
+    expect(await err({ name: "n".repeat(TOPIC_LIMITS.name + 1) })).toEqual([400, `Название темы длиннее ${TOPIC_LIMITS.name} символов`]);
+    expect(await err({ subspecialty: "cardiology" })).toEqual([400, "Неизвестная субспециальность"]);
+    const ok = await topicPatch(json("PATCH", `/api/topics/${t.id}`, { query: " otitis media ", lookbackDays: 10_000 }), id);
+    expect(await ok.json()).toMatchObject({ query: "otitis media", lookbackDays: TOPIC_LIMITS.lookbackDaysMax });
+  });
+});
+
+describe("DELETE /api/topics/:id", () => {
+  it("400/404; удаление темы отвязывает её id от статей (F-29), остальные темы в статьях остаются", async () => {
+    expect((await topicDelete(json("DELETE", "/api/topics/abc"), params({ id: "abc" }))).status).toBe(400);
+    expect((await topicDelete(json("DELETE", "/api/topics/999999"), params({ id: "999999" }))).status).toBe(404);
+    const [keep] = await db.insert(topics).values({ name: "Остаётся", query: "q1", subspecialty: "general" }).returning();
+    const [gone] = await db.insert(topics).values({ name: "Удаляется", query: "q2", subspecialty: "general" }).returning();
+    const base = { sourceKey: "pubmed", sourceKeys: ["pubmed"], abstract: "", journal: "", authors: [], publicationTypes: [], meshTerms: [], keywords: [], subspecialties: [] };
+    const [both] = await db.insert(articles).values({ ...base, dedupKey: "topic-del-1", title: "Both topics", url: "https://e.org/t1", topicIds: [keep.id, gone.id] }).returning({ id: articles.id });
+    const [only] = await db.insert(articles).values({ ...base, dedupKey: "topic-del-2", title: "Only deleted topic", url: "https://e.org/t2", topicIds: [gone.id] }).returning({ id: articles.id });
+    const res = await topicDelete(json("DELETE", `/api/topics/${gone.id}`), params({ id: String(gone.id) }));
+    expect(await res.json()).toEqual({ ok: true, detachedArticles: 2 });
+    const rows = await db.select({ id: articles.id, topicIds: articles.topicIds }).from(articles).where(inArray(articles.id, [both.id, only.id])).orderBy(asc(articles.id));
+    expect(rows).toEqual([
+      { id: both.id, topicIds: [keep.id] },
+      { id: only.id, topicIds: [] },
+    ]);
+    expect(await db.select({ id: topics.id }).from(topics).where(eq(topics.id, gone.id))).toEqual([]);
   });
 });
 
