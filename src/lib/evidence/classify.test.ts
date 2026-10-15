@@ -323,6 +323,10 @@ describe("I-03: новые дизайны и объяснение «почему
     ]) {
       expect(detectDesignDetailed(base({ title })), title).toMatchObject({ design: "other", confidence: "high" });
     }
+    // В индексе доверия — штраф, чтобы erratum в журнале Tier 1 не обгонял серии случаев
+    const scored = classify(base({ title: "Erratum to: Randomized trial of intratympanic steroids", journal: "The Laryngoscope", publicationTypes: ["Published Erratum"] }));
+    expect(scored.trustBreakdown.some((x) => x.label.startsWith("Служебное уведомление") && x.points === -30)).toBe(true);
+    expect(scored.trustScore).toBeLessThan(15);
     // Хирургическая «коррекция» — не erratum
     expect(detectDesign(base({ title: "Correction of septal deviation in children: a randomized trial" }))).toBe("rct");
     expect(detectDesign(base({ title: "Surgical correction of nasal valve collapse: a prospective cohort" }))).toBe("cohort");

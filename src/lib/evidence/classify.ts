@@ -542,6 +542,10 @@ export function classify(a: RawArticle, overrides?: ManualOverrides | null): Cla
   if (MULTICENTER_RE.test(text) && design !== "systematic_review") {
     b.push({ label: "Многоцентровое / международное", points: 3 });
   }
+  // Erratum/corrigendum/expression of concern как самостоятельная запись (прошла фильтры источников,
+  // например из Crossref/medRxiv): баллы журнала и источника ей не положены.
+  const isNotice = !manualDesign && ((a.publicationTypes ?? []).some((t) => ERRATUM_PT_RE.test(t)) || ERRATUM_TITLE_RE.test(a.title));
+  if (isNotice) b.push({ label: "Служебное уведомление (исправление к статье), не исследование", points: -30 });
   if (isPreprint) b.push({ label: "Препринт без рецензирования", points: -20 });
   if (isPreprint && a.publishedDoi) b.push({ label: "Есть рецензированная журнальная версия", points: 5 });
   if (isRetracted) b.push({ label: "ОТОЗВАНА (retracted)", points: -60 });

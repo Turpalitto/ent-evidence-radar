@@ -117,6 +117,7 @@ export const EN: Record<string, string> = {
   "Анализ intention-to-treat (ITT)": "Intention-to-treat analysis (ITT)",
   "Многоцентровое / международное": "Multicentre / international",
   "Препринт без рецензирования": "Preprint without peer review",
+  "Служебное уведомление (исправление к статье), не исследование": "Editorial notice (correction to an article), not a study",
   "Есть рецензированная журнальная версия": "Peer-reviewed journal version exists",
   "ОТОЗВАНА (retracted)": "RETRACTED",
   "Expression of concern (редакция выразила сомнения)": "Expression of concern (editors raised doubts)",
