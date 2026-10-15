@@ -1,4 +1,4 @@
-import { fetchJson, stripTags } from "./http";
+import { fetchJson, htmlAbstractToText, stripTags } from "./http";
 import { EDITORIAL_NOTICE_RE } from "./pubmed";
 import type { RawArticle } from "@/lib/evidence/classify";
 
@@ -75,7 +75,7 @@ export async function fetchEuropePmcQuery(topicQuery: string, days: number, maxR
       const isPreprint = r.source === "PPR";
       const journal = r.journalTitle ?? r.journalInfo?.journal?.title ?? (isPreprint ? "Preprint (Europe PMC)" : "");
       const issns = [r.journalInfo?.journal?.issn, r.journalInfo?.journal?.essn].filter((x): x is string => !!x && /^\d{4}-?\d{3}[\dXx]$/.test(x)).map((x) => x.toUpperCase());
-      const abstract = stripTags(r.abstractText);
+      const abstract = htmlAbstractToText(r.abstractText);
       return {
         pmid: r.pmid ?? null,
         doi: r.doi ?? null,

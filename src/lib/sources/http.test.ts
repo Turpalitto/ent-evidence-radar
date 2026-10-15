@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { decodeEntities, fetchJson, fetchText, fetchWithRetry, retryAfterMs, stripTags } from "@/lib/sources/http";
+import { decodeEntities, fetchJson, fetchText, fetchWithRetry, htmlAbstractToText, retryAfterMs, stripTags } from "@/lib/sources/http";
 
 describe("decodeEntities", () => {
   it("decodes named and numeric entities", () => {
@@ -19,6 +19,19 @@ describe("stripTags", () => {
       "Role of Staphylococcus aureus biofilm: a systematic review",
     );
     expect(stripTags("10<sup>6</sup> cells, IL-1<sub>β</sub>, <mml:math><mml:mi>p</mml:mi></mml:math>")).toBe("106 cells, IL-1β, p");
+  });
+
+  it("htmlAbstractToText: заголовки <h4> Europe PMC → «Label: » на отдельной строке, абзацы → строки, инлайн-теги — как stripTags", () => {
+    expect(
+      htmlAbstractToText("<h4>Objective</h4>To compare routes. <h4>Methods</h4>PROSPERO-registered review.<h4>Conclusions:</h4>No difference (OR 1.2, 95% CI 0.9&#x2013;1.5)."),
+    ).toBe("Objective: To compare routes.\nMethods: PROSPERO-registered review.\nConclusions: No difference (OR 1.2, 95% CI 0.9–1.5).");
+    expect(htmlAbstractToText("<p>Background: Sudden hearing loss.</p><p>Methods: We did a trial.</p>")).toBe("Background: Sudden hearing loss.\nMethods: We did a trial.");
+    expect(htmlAbstractToText("Plain abstract with <i>italic</i>, 10<sup>6</sup> cells and 5 &lt; 6.")).toBe("Plain abstract with italic, 106 cells and 5 < 6.");
+    expect(htmlAbstractToText("line one<br/>line two<br>  \n ")).toBe("line one\nline two");
+    // Закодированные теги остаются текстом (как у stripTags)
+    expect(htmlAbstractToText("&lt;h4&gt;Not a heading&lt;/h4&gt; text")).toBe("<h4>Not a heading</h4> text");
+    expect(htmlAbstractToText("")).toBe("");
+    expect(htmlAbstractToText(null)).toBe("");
   });
 
   it("strips tags BEFORE decoding entities, so encoded tags stay inert text", () => {

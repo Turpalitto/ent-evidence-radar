@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { invalidateArticleAggregates } from "@/lib/cache";
 import { articles, type Article, type ManualOverrides } from "@/db/schema";
 import { CLASSIFIER_VERSION, classify, type RawArticle } from "@/lib/evidence/classify";
+import { repairGluedAbstract } from "@/lib/evidence/abstract";
 import { invalidateStatsCache } from "@/lib/stats";
 
 /**
@@ -37,8 +38,8 @@ export interface ReclassifyResult {
   scanned: number;
   /** Сколько записей получили новую версию (все просмотренные). */
   updated: number;
-  /** У скольких изменился дизайн / уровень / trust score / tier. */
-  changed: { studyDesign: number; evidenceLevel: number; trustScore: number; journalTier: number; subspecialties: number };
+  /** У скольких изменился дизайн / уровень / trust score / tier / субспециальности; `abstract` — починенные склеенные аннотации. */
+  changed: { studyDesign: number; evidenceLevel: number; trustScore: number; journalTier: number; subspecialties: number; abstract: number };
   /** Сколько записей ещё ждут переразметки (после этого вызова). */
   remaining: number;
   durationMs: number;
@@ -209,7 +210,7 @@ export async function reclassifyArticles(opts: ReclassifyOptions = {}): Promise<
     version: CLASSIFIER_VERSION,
     scanned: 0,
     updated: 0,
-    changed: { studyDesign: 0, evidenceLevel: 0, trustScore: 0, journalTier: 0, subspecialties: 0 },
+    changed: { studyDesign: 0, evidenceLevel: 0, trustScore: 0, journalTier: 0, subspecialties: 0, abstract: 0 },
     remaining: 0,
     durationMs: 0,
   };
@@ -226,6 +227,13 @@ export async function reclassifyArticles(opts: ReclassifyOptions = {}): Promise<
 
       await db.transaction(async (tx) => {
         for (const row of rows) {
+          // Попутный ремонт данных: аннотации Europe PMC со склеенными заголовками секций (до исправления парсера).
+          const abstract = repairGluedAbstract(row.abstract);
+          const abstractFixed = abstract !== (row.abstract ?? "");
+          if (abstractFixed) {
+            row.abstract = abstract;
+            result.changed.abstract++;
+          }
           const c = classify(rowToRaw(row), row.overrides);
           if (c.studyDesign !== row.studyDesign) result.changed.studyDesign++;
           if (c.evidenceLevel !== row.evidenceLevel) result.changed.evidenceLevel++;
@@ -248,6 +256,7 @@ export async function reclassifyArticles(opts: ReclassifyOptions = {}): Promise<
               designConfidence: c.designConfidence,
               designReason: c.designReason,
               classifierVersion: CLASSIFIER_VERSION,
+              ...(abstractFixed ? { abstract } : {}),
             })
             .where(eq(articles.id, row.id));
           result.updated++;

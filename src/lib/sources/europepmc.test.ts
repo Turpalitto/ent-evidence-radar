@@ -69,6 +69,10 @@ describe("fetchEuropePmc — разбор реального формата от
     expect(med.title).toBe("Intratympanic versus systemic steroids for sudden sensorineural hearing loss: a systematic review and meta-analysis");
     expect(med.abstract).not.toMatch(/<\/?h4>/);
     expect(med.abstract).toContain("PROSPERO-registered");
+    // <h4>-заголовки становятся секциями в формате PubMed-парсера («Label: …» построчно), а не склеиваются со словами
+    expect(med.abstract).toBe(
+      "Objective: To compare intratympanic and systemic corticosteroids.\nMethods: PROSPERO-registered review; trial NCT04567890 contributed 212 patients.\nResults: Pooled OR 1.21 (95% CI 0.98–1.49).",
+    );
     expect(med.nctId).toBe("NCT04567890");
     expect(med.doi).toBe("10.1002/lary.31234");
     expect(med.pmcid).toBe("PMC11223344");

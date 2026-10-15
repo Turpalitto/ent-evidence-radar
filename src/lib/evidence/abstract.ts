@@ -8,7 +8,8 @@ export interface AbstractSection {
   text: string;
 }
 
-const SECTION_HEADERS_RE = /^(OBJECTIVE|BACKGROUND|METHODS?|RESULTS?|CONCLUSIONS?|SIGNIFICANCE|DESIGN|SETTING|PARTICIPANTS|INTERVENTIONS?|MAIN OUTCOMES? AND MEASURES?|RATIONALE)\s*:\s*/i;
+const SECTION_HEADERS_RE =
+  /^(OBJECTIVES?|AIMS?|PURPOSE|IMPORTANCE|INTRODUCTION|BACKGROUND|RATIONALE|STUDY DESIGN|DESIGN, SETTING,? AND PARTICIPANTS|DESIGN|SETTING|PARTICIPANTS|PATIENTS AND METHODS|PATIENTS|SUBJECTS|MATERIALS? AND METHODS|METHODS?|INTERVENTIONS?|EXPOSURES?|MAIN OUTCOMES? AND MEASURES?|OUTCOME MEASURES?|MEASUREMENTS?|OUTCOMES?|RESULTS?|FINDINGS|DISCUSSION|INTERPRETATION|CONCLUSIONS? AND RELEVANCE|CONCLUSIONS?|SIGNIFICANCE|CLINICAL RELEVANCE|LEVEL OF EVIDENCE|TRIAL REGISTRATION|FUNDING|LIMITATIONS)\s*:\s*/i;
 
 /**
  * Разбирает текст аннотации на логические секции, если они присутствуют.
@@ -36,6 +37,29 @@ export function parseStructuredAbstract(raw: string | null | undefined): Abstrac
   return sections;
 }
 
+const GLUED_HEADINGS = "(?:Background|Introduction|Importance|Objectives?|Aims?|Purpose|Methods|Materials and Methods|Patients and Methods|Participants|Interventions?|Results|Findings|Discussion|Interpretation|Conclusions?|Significance)";
+/** «…review.ResultsPooled OR…»: заголовок секции вплотную к следующему слову с заглавной буквы. */
+const GLUED_HEADING_BEFORE_WORD_RE = new RegExp(`\\b${GLUED_HEADINGS}(?=[A-Z])`, "g");
+/** «…loss.Methods: We…»: заголовок секции (с двоеточием) вплотную к точке предыдущего абзаца. */
+const GLUED_HEADING_AFTER_PUNCT_RE = new RegExp(`([.!?)])(?=${GLUED_HEADINGS}:)`, "g");
+
+/**
+ * Восстанавливает аннотации, сохранённые до исправления Europe PMC-парсера: `<h4>Methods</h4>text` после
+ * `stripTags` склеивалось в «Methodstext», а абзацы `<p>` — в «loss.Methods:». Склейка «Заголовок» + слово
+ * с заглавной буквы без пробела («MethodsWe», «ResultsPROSPERO») в нормальном тексте не встречается, поэтому правило безопасно; результат —
+ * формат PubMed-парсера («Label: text» построчно). Неизменённый текст возвращается тем же объектом.
+ */
+export function repairGluedAbstract(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const fixed = raw.replace(GLUED_HEADING_BEFORE_WORD_RE, (m) => `\n${m}: `).replace(GLUED_HEADING_AFTER_PUNCT_RE, "$1\n");
+  if (fixed === raw) return raw;
+  return fixed
+    .split("\n")
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
 /**
  * Извлекает клинический вывод (Conclusion / Conclusions) из аннотации.
  * Если явной секции нет, пытается найти заключительное предложение, содержащее маркеры вывода.
@@ -45,13 +69,14 @@ export function extractConclusion(raw: string | null | undefined): string | null
 
   // 1. Ищем явную секцию CONCLUSION / CONCLUSIONS
   const sections = parseStructuredAbstract(raw);
-  const conclusionSection = sections.find((s) => /^CONCLUSIONS?$/i.test(s.label));
+  // «Interpretation» — вывод в аннотациях Lancet
+  const conclusionSection = sections.find((s) => /^(CONCLUSIONS?( AND RELEVANCE)?|INTERPRETATION)$/i.test(s.label));
   if (conclusionSection && conclusionSection.text.trim().length > 15) {
     return conclusionSection.text.trim();
   }
 
   // 2. Ищем в тексте строку, начинающуюся с Conclusion(s):
-  const inlineMatch = raw.match(/\bCONCLUSIONS?:\s*([^\n]+(?:\n[^\n]+)?)/i);
+  const inlineMatch = raw.match(/\b(?:CONCLUSIONS?(?: AND RELEVANCE)?|INTERPRETATION):\s*([^\n]+(?:\n[^\n]+)?)/i);
   if (inlineMatch && inlineMatch[1] && inlineMatch[1].trim().length > 15) {
     return inlineMatch[1].trim();
   }
@@ -90,7 +115,29 @@ export const SECTION_LABEL_RU: Record<string, string> = {
   MAIN_OUTCOMES_AND_MEASURES: "Основные исходы и показатели",
   CONCLUSIONS: "Клинический вывод",
   CONCLUSION: "Клинический вывод",
+  CONCLUSIONS_AND_RELEVANCE: "Вывод и значимость",
+  INTERPRETATION: "Интерпретация (вывод)",
   SIGNIFICANCE: "Практическая значимость",
+  IMPORTANCE: "Актуальность",
+  PURPOSE: "Цель исследования",
+  INTRODUCTION: "Введение",
+  STUDY_DESIGN: "Дизайн исследования",
+  DESIGN_SETTING_AND_PARTICIPANTS: "Дизайн, база и участники",
+  PATIENTS: "Пациенты",
+  PATIENTS_AND_METHODS: "Пациенты и методы",
+  SUBJECTS: "Участники",
+  MATERIALS_AND_METHODS: "Материалы и методы",
+  MATERIAL_AND_METHODS: "Материалы и методы",
+  EXPOSURES: "Факторы воздействия",
+  EXPOSURE: "Фактор воздействия",
+  OUTCOME_MEASURES: "Показатели исхода",
+  MEASUREMENTS: "Измерения",
+  DISCUSSION: "Обсуждение",
+  CLINICAL_RELEVANCE: "Клиническая значимость",
+  LEVEL_OF_EVIDENCE: "Уровень доказательности",
+  TRIAL_REGISTRATION: "Регистрация исследования",
+  FUNDING: "Финансирование",
+  LIMITATIONS: "Ограничения",
 };
 
 export function sectionHeaderRu(header: string): string {

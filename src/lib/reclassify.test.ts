@@ -77,7 +77,8 @@ describe("reclassifyArticles (PGlite)", () => {
           sourceKey: "europepmc",
           sourceKeys: ["europepmc"],
           title: "Intratympanic steroids for sudden hearing loss: a randomized controlled trial",
-          abstract: "We enrolled 120 patients. The trial was prospectively registered (NCT01234567).",
+          // Склеенная аннотация Europe PMC (до исправления парсера) — чинится попутно
+          abstract: "MethodsWe enrolled 120 patients. The trial was prospectively registered (NCT01234567).ConclusionsIntratympanic steroids improved hearing.",
           journal: "Otolaryngol Head Neck Surg",
           isRetracted: true, // выставлено перепроверкой отзывов — должно сохраниться
         }),
@@ -115,6 +116,8 @@ describe("reclassifyArticles (PGlite)", () => {
     expect(a.sampleSize).toBe(120);
     expect(a.isRetracted).toBe(true);
     expect(a.trustBreakdown.some((b) => b.label.startsWith("ОТОЗВАНА"))).toBe(true);
+    expect(a.abstract).toBe("Methods: We enrolled 120 patients. The trial was prospectively registered (NCT01234567).\nConclusions: Intratympanic steroids improved hearing.");
+    expect(r.changed.abstract).toBe(1);
   });
 
   it("force переразмечает всё, limit ограничивает объём", async () => {

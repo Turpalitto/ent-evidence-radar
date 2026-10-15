@@ -135,3 +135,26 @@ export function stripTags(s: string | undefined | null): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/**
+ * HTML-аннотация (Europe PMC отдаёт структурированные аннотации как `<h4>Methods</h4>text…`,
+ * абзацы — `<p>`) → текст в формате PubMed-парсера: «Label: text» по одной секции на строку.
+ * Простой `stripTags` склеивал слова («MethodsPROSPERO…», «loss.Methods:»), из-за чего секции,
+ * вывод (Conclusions) и PICO не распознавались, а поиск получал мусорные токены.
+ */
+export function htmlAbstractToText(s: string | undefined | null): string {
+  if (!s) return "";
+  const withBreaks = String(s)
+    .replace(/<\s*h[1-6][^>]*>\s*([\s\S]*?)\s*<\s*\/\s*h[1-6]\s*>/gi, (_m, label: string) => {
+      const clean = label.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      return clean ? `\n${clean.replace(/:$/, "")}: ` : "\n";
+    })
+    .replace(/<\s*(br|\/p|\/div|\/li|\/tr)\s*\/?>/gi, "\n")
+    .replace(/<\s*(p|div|li|tr)[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
+  return decodeEntities(withBreaks)
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}

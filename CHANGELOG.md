@@ -45,6 +45,13 @@
   Всего 76 файлов / 533 теста.
 
 ### Fixed
+- **Europe PMC: структурированные аннотации склеивались.** `<h4>Methods</h4>text` после снятия тегов превращалось
+  в «Methodstext», абзацы `<p>` — в «loss.Methods:»; из-за этого секции, вывод (Conclusions), PICO и поиск по
+  таким аннотациям не работали. Новый `htmlAbstractToText` даёт формат PubMed-парсера («Label: text» построчно);
+  уже сохранённые записи чинятся попутно при переклассификации (`repairGluedAbstract`, счётчик `changed.abstract`).
+  Парсер секций понимает JAMA- и Lancet-стиль (Importance, Design/Setting/Participants, Main Outcomes and Measures,
+  Conclusions and Relevance, Findings, Interpretation, Trial Registration, Funding…), «Interpretation» считается
+  выводом; русские подписи для новых секций.
 - Классификатор дизайна (`CLASSIFIER_VERSION = 6`, существующие записи переразмечаются автоматически):
   исправления к статьям (`Published Erratum`, `Erratum to: …`, `Correction: …`, `Expression of concern`) больше
   не наследуют дизайн оригинала («Erratum to: Randomized trial…» получал РКИ уровня 2); нерандомизированные и
