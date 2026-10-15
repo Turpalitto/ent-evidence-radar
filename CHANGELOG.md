@@ -55,6 +55,9 @@
   Парсер секций понимает JAMA- и Lancet-стиль (Importance, Design/Setting/Participants, Main Outcomes and Measures,
   Conclusions and Relevance, Findings, Interpretation, Trial Registration, Funding…), «Interpretation» считается
   выводом; русские подписи для новых секций.
+- medRxiv: расширен словарь ЛОР-терминов для отбора из смежных категорий (pharyn/trache/deaf/audiolog/
+  Ménière/cholesteatoma/tympan/parotid/snoring/facial nerve…), теги в заголовке и аннотации снимаются,
+  авторы «Last, F. M.» приводятся к «Last FM» (как у PubMed) — единообразные цитаты и экспорт.
 - Классификатор дизайна (`CLASSIFIER_VERSION = 6`, существующие записи переразмечаются автоматически):
   исправления к статьям (`Published Erratum`, `Erratum to: …`, `Correction: …`, `Expression of concern`) больше
   не наследуют дизайн оригинала («Erratum to: Randomized trial…» получал РКИ уровня 2); нерандомизированные и

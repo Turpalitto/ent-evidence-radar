@@ -1,4 +1,4 @@
-import { fetchJson } from "./http";
+import { fetchJson, htmlAbstractToText, stripTags } from "./http";
 import type { RawArticle } from "@/lib/evidence/classify";
 
 interface MedrxivItem {
@@ -19,7 +19,22 @@ interface MedrxivResponse {
 }
 
 const ENT_RE =
-  /otolaryng|otorhinolaryng|\bear\b|hearing|tinnitus|vertigo|vestibul|cochlea|sinusitis|rhinitis|nasal|laryn|vocal|dysphonia|tonsil|adenoid|head and neck|sleep apn|otitis|epistaxis|dysphagia|thyroid|salivary|olfact|anosmia/i;
+  /otolaryng|otorhinolaryng|\bears?\b|hearing|\bdeaf|audiolog|tinnitus|vertigo|dizziness|vestibul|cochlea|m[eé]ni[eè]re|cholesteatoma|mastoid|tympan|sinusitis|sinonasal|rhinitis|rhinolog|nasal|septoplast|turbinate|\bsmell\b|olfact|anosmia|parosmia|laryn|pharyn|trache|vocal|dysphonia|tonsil|adenoid|head and neck|sleep apn|obstructive sleep|snor|otitis|epistaxis|dysphagia|thyroid|parathyroid|salivary|parotid|facial (nerve|palsy|paralysis)/i;
+
+/** medRxiv отдаёт «Smith, J. M.»; приводим к формату PubMed «Smith JM», чтобы цитаты и экспорт были единообразны. */
+export function normalizeAuthor(raw: string): string {
+  const s = raw.trim();
+  const i = s.indexOf(",");
+  if (i < 0) return s;
+  const last = s.slice(0, i).trim();
+  const initials = s
+    .slice(i + 1)
+    .split(/[\s.]+/)
+    .filter(Boolean)
+    .map((p) => p[0]!.toUpperCase())
+    .join("");
+  return initials ? `${last} ${initials}` : last;
+}
 
 export interface MedrxivFetchResult {
   items: RawArticle[];
@@ -74,10 +89,10 @@ export async function fetchMedrxiv(days: number, maxResults: number, opts: Medrx
       seen.add(it.doi);
       out.push({
         doi: it.doi,
-        title: it.title,
-        abstract: it.abstract ?? "",
+        title: stripTags(it.title),
+        abstract: htmlAbstractToText(it.abstract),
         journal: `medRxiv preprint (${it.category})`,
-        authors: (it.authors ?? "").split(";").map((s) => s.trim()).filter(Boolean).slice(0, 30),
+        authors: (it.authors ?? "").split(";").map(normalizeAuthor).filter(Boolean).slice(0, 30),
         publishedAt: it.date ? new Date(it.date) : null,
         publicationTypes: ["Preprint", it.published && it.published !== "NA" ? "Later published in journal" : ""].filter(Boolean),
         keywords: [it.category],
