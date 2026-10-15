@@ -1,4 +1,5 @@
 import { fetchJson, stripTags } from "./http";
+import { EDITORIAL_NOTICE_RE } from "./pubmed";
 import type { RawArticle } from "@/lib/evidence/classify";
 
 interface EpmcResult {
@@ -67,6 +68,9 @@ export async function fetchEuropePmcQuery(topicQuery: string, days: number, maxR
   const results = data.resultList?.result ?? [];
   return results
     .filter((r) => r.title)
+    // Служебные уведомления (опечатки, уведомления об отзыве, expression of concern) — не исследования;
+    // PubMed-источник их тоже отбрасывает. Europe PMC использует тот же словарь типов публикаций.
+    .filter((r) => !(r.pubTypeList?.pubType ?? []).some((t) => EDITORIAL_NOTICE_RE.test(t)))
     .map<RawArticle>((r) => {
       const isPreprint = r.source === "PPR";
       const journal = r.journalTitle ?? r.journalInfo?.journal?.title ?? (isPreprint ? "Preprint (Europe PMC)" : "");

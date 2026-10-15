@@ -284,6 +284,81 @@ describe("I-03: новые дизайны и объяснение «почему
     expect(detectDesign(base({ title: "Smoking and chronic rhinosinusitis", abstract: "Two-sample Mendelian randomisation using GWAS summary statistics; alleles are randomly allocated at conception." }))).toBe("mendelian_randomization");
   });
 
+  it("исправления к статьям (erratum/corrigendum/correction, PT «Published Erratum») — «other», а не дизайн из заголовка оригинала", () => {
+    const pt = detectDesignDetailed(base({ title: "Randomized trial of tympanostomy tubes", publicationTypes: ["Published Erratum"] }));
+    expect(pt.design).toBe("other");
+    expect(pt.confidence).toBe("high");
+    expect(pt.reason).toContain("исправление");
+    for (const title of [
+      "Erratum to: Randomized trial of intratympanic steroids",
+      "Erratum",
+      "Corrigendum to 'A randomized trial of X' [Int J Pediatr Otorhinolaryngol 2023]",
+      "Correction to: Tonsillectomy versus watchful waiting: a randomised trial",
+      "Author Correction: Deep learning for otitis media detection",
+      "Expression of concern: Intratympanic steroids for Ménière's disease",
+    ]) {
+      expect(detectDesignDetailed(base({ title })), title).toMatchObject({ design: "other", confidence: "high" });
+    }
+    // Хирургическая «коррекция» — не erratum
+    expect(detectDesign(base({ title: "Correction of septal deviation in children: a randomized trial" }))).toBe("rct");
+    expect(detectDesign(base({ title: "Surgical correction of nasal valve collapse: a prospective cohort" }))).toBe("cohort");
+  });
+
+  it("нерандомизированные и квазиэкспериментальные дизайны → когорта; перекрёстный без слова «рандомизированный» → РКИ с низкой уверенностью", () => {
+    for (const title of [
+      "A single-arm, open-label phase 2 trial of pembrolizumab in head and neck cancer",
+      "Before-and-after study of a day-case tonsillectomy pathway",
+      "Interrupted time series analysis of antibiotic prescribing for acute otitis media",
+      "Quasi-experimental evaluation of a hearing screening programme",
+      "Uncontrolled study of radiofrequency ablation of the inferior turbinates",
+      "A non-randomised crossover comparison of two nasal sprays",
+    ]) {
+      const d = detectDesignDetailed(base({ title }));
+      expect(d.design, title).toBe("cohort");
+      expect(d.reason, title).toContain("нерандомизированное");
+    }
+    const crossover = detectDesignDetailed(base({ title: "Crossover trial of two hearing aid fitting strategies in experienced users" }));
+    expect(crossover).toMatchObject({ design: "rct", confidence: "low" });
+    expect(crossover.reason).toContain("перекрёстный");
+    // Явно рандомизированный перекрёстный — обычный РКИ со средней уверенностью по заголовку
+    expect(detectDesignDetailed(base({ title: "Randomised crossover trial of two CPAP masks" }))).toMatchObject({ design: "rct", confidence: "medium" });
+  });
+
+  it("наблюдательные формулировки: observational study, real-world, propensity score, cohorts (мн. ч.) → когорта", () => {
+    for (const title of [
+      "Observational study of 1,245 patients undergoing thyroidectomy",
+      "Real-world evidence of dupilumab in CRSwNP",
+      "Propensity score-matched analysis of transoral robotic surgery versus radiotherapy",
+      "Pooled analysis of HPV-16 positive oropharyngeal cancer cohorts",
+    ]) {
+      expect(detectDesign(base({ title })), title).toBe("cohort");
+    }
+  });
+
+  it("объединённый анализ РКИ: «pooled analysis of … trials» и акронимы исследований («SINUS-24 and SINUS-52») → вторичный анализ; COVID-19 — не акроним РКИ", () => {
+    expect(detectDesign(base({ title: "Pooled analysis of 3 phase 3 trials of omalizumab in nasal polyps" }))).toBe("secondary_analysis");
+    expect(detectDesign(base({ title: "Efficacy of dupilumab in CRSwNP: pooled analysis of SINUS-24 and SINUS-52" }))).toBe("secondary_analysis");
+    expect(detectDesign(base({ title: "COVID-19 and olfactory dysfunction: pooled analysis of registry data" }))).toBe("cohort");
+  });
+
+  it("модели ИИ и прогноза: «development and external validation», «deep learning for detection», CNN → диагностическая точность; обзор про ML — нет", () => {
+    for (const title of [
+      "Deep learning for detection of otitis media on otoscopic images: development and external validation",
+      "Development and validation of a risk score for post-tonsillectomy haemorrhage",
+      "Deep learning-based segmentation of the cochlea on CT",
+      "Convolutional neural network classification of laryngeal lesions",
+    ]) {
+      expect(detectDesign(base({ title })), title).toBe("diagnostic_accuracy");
+    }
+    expect(detectDesign(base({ title: "Machine learning in otolaryngology: a narrative review" }))).toBe("narrative");
+  });
+
+  it("Delphi / экспертный консенсус → руководство; аудит приверженности консенсусу — когорта", () => {
+    expect(detectDesign(base({ title: "Delphi consensus on the management of paediatric obstructive sleep apnoea" }))).toBe("guideline");
+    expect(detectDesign(base({ title: "Expert consensus on perioperative care in cochlear implantation" }))).toBe("guideline");
+    expect(detectDesign(base({ title: "Adherence to the expert consensus on tonsillectomy: a national audit" }))).toBe("cohort");
+  });
+
   it("структурированные признаки сильнее текстовых: тип публикации РКИ побеждает экономический заголовок, диагностический — не РКИ по аннотации", () => {
     expect(detectDesign(base({ title: "Cost-effectiveness of balloon sinuplasty", publicationTypes: ["Randomized Controlled Trial"] }))).toBe("rct");
     expect(detectDesign(base({ title: "Diagnostic accuracy of a new tuning fork test", abstract: "Patients were randomly assigned to examiner order." }))).toBe("rct");

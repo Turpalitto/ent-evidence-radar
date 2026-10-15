@@ -45,6 +45,16 @@
   Всего 76 файлов / 533 теста.
 
 ### Fixed
+- Классификатор дизайна (`CLASSIFIER_VERSION = 6`, существующие записи переразмечаются автоматически):
+  исправления к статьям (`Published Erratum`, `Erratum to: …`, `Correction: …`, `Expression of concern`) больше
+  не наследуют дизайн оригинала («Erratum to: Randomized trial…» получал РКИ уровня 2); нерандомизированные и
+  квазиэкспериментальные дизайны (single-arm, before-and-after, interrupted time series, quasi-experimental,
+  uncontrolled) → когорта; перекрёстный дизайн без слова «рандомизированный» → РКИ с низкой уверенностью;
+  «observational study», «real-world evidence», «propensity score», «cohorts» (мн. ч.) → когорта;
+  «pooled analysis of … trials» и объединённые анализы РКИ по акронимам (SINUS-24/SINUS-52) → вторичный анализ;
+  «development and (external) validation», «deep learning for detection», CNN → диагностическая точность;
+  Delphi / экспертный консенсус → руководство. Europe PMC больше не отдаёт служебные уведомления (опечатки,
+  отзывы, expression of concern) — та же фильтрация по типу публикации, что и у PubMed.
 - Лента: подписка на `Notification.permission` через Permissions API больше не вешает слушатель `change`,
   если компонент размонтировался до резолва `permissions.query()` (утечка слушателя). Новые тесты
   `feed/hooks.test.tsx` (5): Permissions API, отписка при unmount, поздний резолв, отказ API, online/offline.

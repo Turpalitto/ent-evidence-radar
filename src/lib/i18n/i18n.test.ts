@@ -124,6 +124,12 @@ describe("translateStored: хранимые тексты классификат�
   it("объяснение дизайна: тип публикации, заголовок, аннотация, уточнения, препринт и ручная правка", () => {
     expect(translateStored("en", "тип публикации PubMed: «Randomized Controlled Trial»")).toBe("PubMed publication type: “Randomized Controlled Trial”");
     expect(translateStored("en", "заголовок: «cohort study» — нерандомизированное")).toBe("title: “cohort study” — non-randomised");
+    expect(translateStored("en", "тип публикации PubMed: «Published Erratum» — исправление к ранее опубликованной статье, не исследование")).toBe(
+      "PubMed publication type: “Published Erratum” — correction to a previously published article, not a study",
+    );
+    expect(translateStored("en", "заголовок: «Crossover trial» — перекрёстный дизайн, рандомизация в заголовке не указана")).toBe(
+      "title: “Crossover trial” — crossover design, randomisation not stated in the title",
+    );
     expect(translateStored("en", "аннотация: «randomly assigned»")).toBe("abstract: “randomly assigned”");
     expect(translateStored("en", "препринт; заголовок: «meta-analysis»")).toBe("preprint; title: “meta-analysis”");
     expect(translateStored("en", "задан вручную (автоматически: rct — аннотация: «randomized»)")).toBe("set manually (automatic: rct — abstract: “randomized”)");

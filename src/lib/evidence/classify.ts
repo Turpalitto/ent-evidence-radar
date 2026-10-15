@@ -25,7 +25,7 @@ import { SUBSPECIALTIES } from "./taxonomy";
  *      объяснение «почему такой дизайн» и уверенность (`designReason`, `designConfidence`);
  *      ISSN в белом списке журналов (I-05).
  */
-export const CLASSIFIER_VERSION = 5;
+export const CLASSIFIER_VERSION = 6;
 
 export interface RawArticle {
   pmid?: string | null;
@@ -98,7 +98,7 @@ function isCochraneReviewJournal(journal: string | null | undefined): boolean {
 
 /** Заголовки вторичных анализов данных РКИ. */
 const SECONDARY_ANALYSIS_RE =
-  /\b(secondary|post[- ]?hoc|exploratory|subgroup|pooled|ancillary|follow-up)\s+analys[ie]s\b.*\b(trial|RCT|randomi[sz]ed)\b|\b(long-term|extended) follow-up of (the|a) .*randomi[sz]ed/i;
+  /\b(secondary|post[- ]?hoc|exploratory|subgroup|pooled|ancillary|follow-up)\s+analys[ie]s\b.*\b(trials?|RCTs?|randomi[sz]ed)\b|\b(long-term|extended) follow-up of (the|a) .*randomi[sz]ed/i;
 
 /**
  * Регистрация протокола: только конкретные идентификаторы/реестры или явная фраза
@@ -119,13 +119,29 @@ const snippet = (m: RegExpMatchArray | null | undefined) => (m?.[0] ?? "").repla
 
 const PROTOCOL_TITLE_RE = /^protocol\b|study protocol|protocol for\b|trial protocol|\bprotocol of (a|an|the)\b|: (a |an )?(study )?protocol\b/i;
 const ADHERENCE_RE = /adherence to|compliance with|implementation of|evaluation of|awareness of/i;
-const NON_RANDOMIZED_RE = /non[- ]randomi[sz]ed|quasi[- ]randomi[sz]ed|pseudo[- ]randomi[sz]ed|unrandomi[sz]ed/i;
+/**
+ * Нерандомизированные интервенционные и квазиэкспериментальные дизайны: одногрупповые (single-arm)
+ * исследования, «до/после», прерванные временные ряды — наблюдательный уровень, а не РКИ.
+ */
+const NON_RANDOMIZED_RE =
+  /non[- ]randomi[sz]ed|quasi[- ]randomi[sz]ed|pseudo[- ]randomi[sz]ed|unrandomi[sz]ed|single[- ]arm|one[- ]arm(ed)?|uncontrolled (trial|study)|non[- ]?controlled (trial|study)|historical(ly)?[- ]controlled|before[- ](and[- ])?after (study|design|analysis|comparison)|pre[- ]?(and[- ])?post[- ](intervention )?(study|design|analysis|comparison)|interrupted time[- ]series|quasi[- ]experimental/i;
+/** Перекрёстный дизайн без слова «рандомизированный»: как правило РКИ, но уверенность ниже. */
+const CROSSOVER_RE = /\bcross[- ]?over (trial|study|design|comparison)\b/i;
+/**
+ * Исправления к ранее опубликованным статьям (PT «Published Erratum», заголовки «Erratum to: …»,
+ * «Correction: …»): не самостоятельное исследование — иначе «Erratum to: Randomized trial…» получал РКИ.
+ */
+const ERRATUM_PT_RE = /erratum|corrigendum|expression of concern|corrected and republished/i;
+const ERRATUM_TITLE_RE = /^(erratum|errata|corrigendum|corrigenda)\b|^(author |publisher )?correction\s*(to\b|:)|^expression of concern\b/i;
+/** Объединённый анализ нескольких РКИ, названных акронимами («SINUS-24 and SINUS-52») — вторичный анализ. */
+const POOLED_ANALYSIS_RE = /\b(pooled|integrated|combined) analys[ie]s\b/i;
+const TRIAL_ACRONYM_RE = /\b(?!COVID|SARS|MERS|ICD|CPT|HPV|HIV|HHV|EBV)[A-Z]{3,}[- ]?\d{1,3}\b/;
 const MR_RE = /mendelian randomi[sz]ation|two[- ]sample MR\b/i;
 const ECONOMIC_TITLE_RE = /cost[- ]effective|cost[- ]utility|cost[- ]benefit|cost[- ]minimi[sz]ation|cost analysis|economic (evaluation|analysis|burden|impact)|budget impact|\bQALYs?\b|incremental cost|willingness[- ]to[- ]pay|\bICER\b|health(care)? costs? of/i;
 const ECONOMIC_ABSTRACT_RE = /incremental cost[- ]effectiveness ratio|\bICER\b|\bQALYs?\b|cost per (quality|life)|cost[- ]effectiveness (analysis|plane|acceptability)|willingness[- ]to[- ]pay/i;
 const QUALITATIVE_TITLE_RE = /qualitative (study|research|analysis|exploration|interview|evaluation|insights?)|semi[- ]structured interviews?|focus groups?|thematic analysis|grounded theory|phenomenolog|lived experiences?|patients?'? perspectives?/i;
 const QUALITATIVE_ABSTRACT_RE = /thematic analysis|semi[- ]structured interviews|focus groups? (were|was) (conducted|held)|grounded theory|interpretative phenomenological analysis|qualitative (descriptive|content) analysis/i;
-const DIAGNOSTIC_TITLE_RE = /diagnostic (accuracy|performance|value|utility|yield|test accuracy)|sensitivity and specificity|accuracy of\b|validation (study )?of (a |an |the )?.*(score|scale|questionnaire|tool|index|model|classifier|algorithm|test|criteria)|(prediction|predictive|prognostic|risk) (model|score|nomogram|tool)|nomogram|screening (tool|test|instrument|questionnaire)|receiver operating characteristic|\bSTARD\b|\bTRIPOD\b|machine learning (model|algorithm|classifier)|deep learning (model|algorithm)|artificial intelligence.*(detect|diagnos|classif)/i;
+const DIAGNOSTIC_TITLE_RE = /diagnostic (accuracy|performance|value|utility|yield|test accuracy)|sensitivity and specificity|accuracy of\b|validation (study )?of (a |an |the )?.*(score|scale|questionnaire|tool|index|model|classifier|algorithm|test|criteria)|development and (external |internal |temporal |multicent(er|re) )?validation|external validation|(prediction|predictive|prognostic|risk) (model|score|nomogram|tool)|nomogram|screening (tool|test|instrument|questionnaire)|receiver operating characteristic|\bSTARD\b|\bTRIPOD\b|machine learning (model|algorithm|classifier)|deep learning (model|algorithm)|(deep|machine) learning[- ](based )?(for|to|in)? ?(the )?(automated |automatic )?(detect|diagnos|classif|predict|identif|screen|segment)|convolutional neural network|artificial intelligence.*(detect|diagnos|classif)/i;
 const DIAGNOSTIC_ABSTRACT_RE = /sensitivity (and|,) specificity|area under the (ROC|receiver[- ]operating[- ]characteristic)( curve)?|\bAUROC\b|positive predictive value|negative predictive value|(positive|negative) likelihood ratio|reference standard|index test|diagnostic accuracy|\bC-?statistic\b|calibration (plot|slope)/i;
 
 /**
@@ -152,6 +168,10 @@ export function detectDesignDetailed(a: RawArticle): DesignDetection {
 
   const retracted = PT_FIND(types, /retract/i);
   if (retracted) return byPT("other", retracted);
+  const erratumPT = PT_FIND(types, ERRATUM_PT_RE);
+  if (erratumPT) return byPT("other", erratumPT, " — исправление к ранее опубликованной статье, не исследование");
+  const erratumTitle = title.match(ERRATUM_TITLE_RE);
+  if (erratumTitle) return byTitle("other", erratumTitle, "high", " — исправление к ранее опубликованной статье, не исследование");
 
   // Протоколы незавершённых исследований — отдельный дизайн без результатов.
   const protocolPT = PT_FIND(types, /protocol/i);
@@ -169,7 +189,7 @@ export function detectDesignDetailed(a: RawArticle): DesignDetection {
 
   // Вторичный / post-hoc / подгрупповой анализ РКИ — наблюдательный анализ данных
   // рандомизированного исследования, а не само РКИ (уровень 2 ему не положен).
-  const secondary = title.match(SECONDARY_ANALYSIS_RE);
+  const secondary = title.match(SECONDARY_ANALYSIS_RE) ?? (TRIAL_ACRONYM_RE.test(title) ? title.match(POOLED_ANALYSIS_RE) : null);
   if (secondary && !PT(types, /randomized controlled trial/i)) return byTitle("secondary_analysis", secondary);
 
   const srPT = PT_FIND(types, /systematic review|meta-analysis/i);
@@ -199,7 +219,7 @@ export function detectDesignDetailed(a: RawArticle): DesignDetection {
   // Текстовые эвристики (в первую очередь по заголовку)
   const srTitle = title.match(/systematic review|meta-analys[ie]s|metaanalysis|umbrella review|network meta|scoping review/i);
   if (srTitle) return byTitle("systematic_review", srTitle);
-  const guidelineTitle = title.match(/clinical practice guideline|consensus statement|position (paper|statement)|recommendations? (of|from)|EPOS|international consensus/i);
+  const guidelineTitle = title.match(/clinical practice guideline|consensus statement|position (paper|statement)|recommendations? (of|from)|EPOS|international consensus|expert consensus|consensus (recommendations?|guidelines?|document|report|conference)|delphi (consensus|study|survey|process|panel|method)|best practice (statement|recommendations?)/i);
   if (guidelineTitle) {
     const adherence = title.match(ADHERENCE_RE);
     if (adherence) return byTitle("cohort", adherence, "medium", " — аудит приверженности руководству, не само руководство");
@@ -216,6 +236,8 @@ export function detectDesignDetailed(a: RawArticle): DesignDetection {
   if (rctTitle) return byTitle("rct", rctTitle);
   const rctAbstract = abstract.match(/randomi[sz]ed controlled trial|were randomi[sz]ed|randomly (assigned|allocated)/i);
   if (rctAbstract) return byAbstract("rct", rctAbstract);
+  const crossover = title.match(CROSSOVER_RE);
+  if (crossover) return byTitle("rct", crossover, "low", " — перекрёстный дизайн, рандомизация в заголовке не указана");
 
   // Экономические оценки, качественные и диагностические исследования — до общих
   // «когорта/одномоментное», иначе они растворяются в наблюдательных дизайнах.
@@ -239,7 +261,7 @@ export function detectDesignDetailed(a: RawArticle): DesignDetection {
     return ab ? byAbstract(design, ab) : null;
   };
   return (
-    observational(/\bcohort\b|prospective study|retrospective (study|analysis|review|cohort)|population[- ]based|registry|longitudinal/i, "cohort") ??
+    observational(/\bcohorts?\b|prospective study|retrospective (study|analysis|review|cohort)|population[- ]based|registry|longitudinal|observational (study|analysis)|real[- ]world (study|evidence|data|outcomes)|propensity[- ](score|matched)/i, "cohort") ??
     observational(/case[- ]control/i, "case_control") ??
     observational(/cross[- ]sectional|survey|questionnaire/i, "cross_sectional") ??
     (() => {

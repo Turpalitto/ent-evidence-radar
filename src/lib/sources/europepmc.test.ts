@@ -43,6 +43,14 @@ const FIXTURE = {
         pubTypeList: { pubType: ["Preprint"] },
       },
       { id: "AGR0001", source: "AGR", title: "", abstractText: "no title → отбрасывается" },
+      {
+        id: "39099999",
+        source: "MED",
+        pmid: "39099999",
+        title: "Erratum to: Intratympanic versus systemic steroids for sudden sensorineural hearing loss",
+        pubYear: "2026",
+        pubTypeList: { pubType: ["Published Erratum"] },
+      },
       { id: "CBA7777", source: "CBA", title: "Entry without identifiers", pubYear: "2025" },
     ],
   },
@@ -77,10 +85,11 @@ describe("fetchEuropePmc — разбор реального формата от
     expect(med.url).toBe("https://europepmc.org/abstract/MED/39012345");
   });
 
-  it("препринт (SRC:PPR) помечается, получает журнал-заглушку и ссылку по DOI; записи без заголовка отбрасываются", async () => {
+  it("препринт (SRC:PPR) помечается, получает журнал-заглушку и ссылку по DOI; записи без заголовка и служебные уведомления (Published Erratum) отбрасываются", async () => {
     fetchJson.mockResolvedValue(FIXTURE);
     const items = await fetchEuropePmc(30, 200, true);
     expect(items).toHaveLength(3);
+    expect(items.some((a) => a.pmid === "39099999")).toBe(false);
     const ppr = items.find((a) => a.isPreprint)!;
     expect(ppr.doi).toBe("10.1101/2026.09.20.26012345");
     expect(ppr.pmid).toBeNull();

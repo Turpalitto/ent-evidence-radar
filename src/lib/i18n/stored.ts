@@ -14,6 +14,8 @@ import { EN } from "./en";
 const REASON_SUFFIXES: readonly (readonly [ru: string, en: string])[] = [
   [" — аудит приверженности руководству, не само руководство", " — guideline adherence audit, not the guideline itself"],
   [" — нерандомизированное", " — non-randomised"],
+  [" — исправление к ранее опубликованной статье, не исследование", " — correction to a previously published article, not a study"],
+  [" — перекрёстный дизайн, рандомизация в заголовке не указана", " — crossover design, randomisation not stated in the title"],
 ];
 
 function translateSuffix(suffix: string): string {
