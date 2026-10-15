@@ -39,7 +39,10 @@ export async function register() {
   const tick = () => scheduler.tick();
 
   // Первичная инициализация справочников + первый тик через 20 с после старта, затем каждую минуту проверяем «пора ли».
-  setTimeout(async () => {
+  // Если остановка пришла раньше (быстрый рестарт контейнера, healthcheck-фейл), стартовый таймер снимается —
+  // иначе он попытается сеять справочники и запускать сбор в уже закрытую БД.
+  const boot = setTimeout(async () => {
+    if (isShuttingDown()) return;
     try {
       await ensureSeeded();
     } catch (e) {
@@ -62,6 +65,8 @@ export async function register() {
     timer.unref?.(); // таймер не должен удерживать процесс, если HTTP-сервер уже закрыт
     onShutdown("scheduler", () => clearInterval(timer), SHUTDOWN_ORDER.scheduler);
   }, 20_000);
+  boot.unref?.();
+  onShutdown("scheduler", () => clearTimeout(boot), SHUTDOWN_ORDER.scheduler);
 
   // Штатная остановка: прервать текущий запуск (снять блокировку, пометить failed), закрыть БД.
   onShutdown("refresh", async () => void (await abortCurrentRefresh()), SHUTDOWN_ORDER.refresh);
