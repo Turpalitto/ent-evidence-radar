@@ -59,6 +59,33 @@ describe("<SettingsPanel />", () => {
     await waitFor(() => expect(autoRefresh).not.toBeChecked());
   });
 
+  it("числовые поля: без изменений — без запроса; пусто → прежнее значение; вне диапазона — зажимается и сохраняется", async () => {
+    const user = userEvent.setup();
+    const { calls } = setup();
+    const patches = () => calls.filter((c) => c.init?.method === "PATCH" && c.url.pathname === "/api/settings").map((c) => JSON.parse(String(c.init?.body)) as Record<string, unknown>);
+    const interval = (await screen.findByText("Интервал, мин")).closest("label")!.querySelector("input")!;
+    expect(interval).toHaveValue(DEFAULT_SETTINGS.refreshIntervalMinutes);
+
+    // Просто фокус и уход — ничего не отправляем
+    await user.click(interval);
+    await user.tab();
+    expect(patches()).toEqual([]);
+
+    // Пустое поле — возвращаем прежнее значение, без запроса
+    await user.clear(interval);
+    await user.tab();
+    expect(interval).toHaveValue(DEFAULT_SETTINGS.refreshIntervalMinutes);
+    expect(patches()).toEqual([]);
+
+    // Меньше минимума — зажимаем до 15 и сохраняем один раз
+    await user.clear(interval);
+    await user.type(interval, "3");
+    await user.tab();
+    await waitFor(() => expect(patches()).toEqual([{ refreshIntervalMinutes: 15 }]));
+    expect(interval).toHaveValue(15);
+    expect(await screen.findByText("Настройки сохранены")).toBeInTheDocument();
+  });
+
   it("ошибка сохранения (401) не ломает форму и показывает сообщение (F-30)", async () => {
     const user = userEvent.setup();
     setup({ patchStatus: 401 });

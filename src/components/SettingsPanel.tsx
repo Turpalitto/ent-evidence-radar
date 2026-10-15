@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { Source } from "@/db/schema";
 import type { AppSettings } from "@/lib/defaults";
+
+type NumericSetting = "refreshIntervalMinutes" | "lookbackDays" | "maxPerTopic" | "minTrustToStore";
 import { SOURCE_LABELS } from "@/lib/evidence/taxonomy";
 import { useI18n } from "@/lib/i18n/client";
 import { FIELD as field, INPUT as input, Section } from "./settings/Section";
@@ -38,6 +40,25 @@ export function SettingsPanel() {
   const flash = (m: string) => {
     setToast(m);
     setTimeout(() => setToast(null), 3000);
+  };
+
+  /**
+   * Числовые поля — неконтролируемые (defaultValue), сохраняются по blur. Пустое или нечисловое значение
+   * возвращаем к текущему, выход за диапазон — зажимаем (как сервер), без изменений — не дёргаем API
+   * и не показываем «Настройки сохранены» при простом проходе Tab'ом.
+   */
+  const saveNumber = (key: NumericSetting, el: HTMLInputElement, min: number, max: number) => {
+    if (!cfg) return;
+    const raw = el.value.trim();
+    const n = raw === "" ? NaN : Number(raw);
+    if (!Number.isFinite(n)) {
+      el.value = String(cfg[key]);
+      return;
+    }
+    const v = Math.min(max, Math.max(min, Math.round(n)));
+    if (v !== n) el.value = String(v);
+    if (v === cfg[key]) return;
+    void saveCfg({ [key]: v });
   };
 
   const saveCfg = async (patch: Partial<AppSettings>) => {
@@ -86,22 +107,22 @@ export function SettingsPanel() {
           <label className={field}>
             <span className="block text-sm font-medium text-[color:var(--ink)]">{t("Интервал, мин")}</span>
             <span className="block text-xs text-[color:var(--ink-muted)]">{t("15 … 10080 (неделя)")}</span>
-            <input type="number" min={15} max={10080} defaultValue={cfg.refreshIntervalMinutes} onBlur={(e) => saveCfg({ refreshIntervalMinutes: Number(e.target.value) })} className={input} />
+            <input type="number" min={15} max={10080} defaultValue={cfg.refreshIntervalMinutes} onBlur={(e) => saveNumber("refreshIntervalMinutes", e.target, 15, 10080)} className={input} />
           </label>
           <label className={field}>
             <span className="block text-sm font-medium text-[color:var(--ink)]">{t("Глубина поиска, дней")}</span>
             <span className="block text-xs text-[color:var(--ink-muted)]">{t("Окно «свежести» публикаций")}</span>
-            <input type="number" min={1} max={365} defaultValue={cfg.lookbackDays} onBlur={(e) => saveCfg({ lookbackDays: Number(e.target.value) })} className={input} />
+            <input type="number" min={1} max={365} defaultValue={cfg.lookbackDays} onBlur={(e) => saveNumber("lookbackDays", e.target, 1, 365)} className={input} />
           </label>
           <label className={field}>
             <span className="block text-sm font-medium text-[color:var(--ink)]">{t("Макс. записей на тему")}</span>
             <span className="block text-xs text-[color:var(--ink-muted)]">{t("Для PubMed за один запуск")}</span>
-            <input type="number" min={5} max={300} defaultValue={cfg.maxPerTopic} onBlur={(e) => saveCfg({ maxPerTopic: Number(e.target.value) })} className={input} />
+            <input type="number" min={5} max={300} defaultValue={cfg.maxPerTopic} onBlur={(e) => saveNumber("maxPerTopic", e.target, 5, 300)} className={input} />
           </label>
           <label className={field}>
             <span className="block text-sm font-medium text-[color:var(--ink)]">{t("Мин. индекс доверия для сохранения")}</span>
             <span className="block text-xs text-[color:var(--ink-muted)]">{t("0 — сохранять всё")}</span>
-            <input type="number" min={0} max={100} defaultValue={cfg.minTrustToStore} onBlur={(e) => saveCfg({ minTrustToStore: Number(e.target.value) })} className={input} />
+            <input type="number" min={0} max={100} defaultValue={cfg.minTrustToStore} onBlur={(e) => saveNumber("minTrustToStore", e.target, 0, 100)} className={input} />
           </label>
           <div className={`space-y-2.5 ${field}`}>
             <label className="flex items-center justify-between gap-3 text-sm font-medium text-[color:var(--ink)]">
