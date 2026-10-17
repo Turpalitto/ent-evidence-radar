@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Article, Topic } from "@/db/schema";
 import { INTL_LOCALE, msg } from "@/lib/i18n";
+import { citeGost } from "@/lib/citation";
 import { useI18n } from "@/lib/i18n/client";
 import { ArticleDrawer } from "./ArticleDrawer";
 import { useFocusTrap } from "./useFocusTrap";
@@ -304,6 +305,16 @@ export function Feed({ topics }: { topics: Topic[] }) {
     if (r.ok) setData((d) => ({ ...d, items: d.items.map((x) => (ids.includes(x.id) ? { ...x, isRead: true } : x)) }));
   };
 
+  // Список литературы по ГОСТ Р 7.0.5 для всех статей текущей страницы — в буфер обмена
+  // (для доклада, диссертации или истории болезни; формат цитирования — A-13).
+  const [gostCopied, setGostCopied] = useState(false);
+  const copyGostCitations = async () => {
+    if (!data.items.length) return;
+    await navigator.clipboard.writeText(data.items.map((a) => citeGost({ ...a, authors: a.authors ?? [] })).join("\n"));
+    setGostCopied(true);
+    setTimeout(() => setGostCopied(false), 2500);
+  };
+
   const quickToggle = async (a: Article, patch: Partial<Article>) => {
     const r = await fetch(`/api/articles/${a.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
     if (r.ok) {
@@ -531,6 +542,17 @@ export function Feed({ topics }: { topics: Topic[] }) {
             <span>{notifyPerm === "granted" ? "🔔" : "🔕"}</span>
             <span>{notifyPerm === "granted" ? t("Уведомления") : t("Оповещения")}</span>
           </button>
+          {data.items.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void copyGostCitations()}
+              className="btn-ghost hidden items-center gap-1.5 rounded-xl px-3 py-2.5 text-xs font-medium md:inline-flex"
+              title={t("Список литературы по ГОСТ Р 7.0.5 для всех статей этой страницы — в буфер обмена (для доклада, статьи или диссертации)")}
+            >
+              <span>📋</span>
+              <span>{gostCopied ? t("Скопировано ✓") : t("Цитаты (ГОСТ)")}</span>
+            </button>
+          )}
           {data.items.some((a) => !a.isRead) && (
             <button
               type="button"

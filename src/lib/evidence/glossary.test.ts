@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ABBR_GLOSSARY, PHRASE_GLOSSARY, annotateAbbreviations, glossaryTitle } from "./glossary";
+import { ABBR_GLOSSARY, DRUG_GLOSSARY, PHRASE_GLOSSARY, annotateAbbreviations, glossaryTitle } from "./glossary";
 
 describe("глоссарий устойчивых сокращений", () => {
   it("сегменты склеиваются обратно в исходный текст — рендер ничего не теряет", () => {
@@ -47,9 +47,9 @@ describe("глоссарий устойчивых сокращений", () => {
   });
 
   it("словарь согласован: уникальные ключи, у каждой записи расшифровка, подсказка собирается", () => {
-    const keys = [...ABBR_GLOSSARY, ...PHRASE_GLOSSARY].map((e) => e.abbr.toLowerCase());
+    const keys = [...ABBR_GLOSSARY, ...PHRASE_GLOSSARY, ...DRUG_GLOSSARY].map((e) => e.abbr.toLowerCase());
     expect(new Set(keys).size).toBe(keys.length);
-    for (const e of [...ABBR_GLOSSARY, ...PHRASE_GLOSSARY]) {
+    for (const e of [...ABBR_GLOSSARY, ...PHRASE_GLOSSARY, ...DRUG_GLOSSARY]) {
       expect(e.ru.length).toBeGreaterThan(2);
       const title = glossaryTitle(e);
       expect(title).toContain(e.abbr);
@@ -58,5 +58,25 @@ describe("глоссарий устойчивых сокращений", () => {
     }
     // Сокращения из одного символа слишком «жадные» — в словаре их быть не должно
     expect(ABBR_GLOSSARY.every((e) => e.abbr.length >= 2)).toBe(true);
+  });
+
+  it("клинические шкалы подсвечиваются и объясняются (THI, VHI, ESS, NOSE, RSI)", () => {
+    const segs = annotateAbbreviations("Patients completed THI, VHI and ESS questionnaires; NOSE and RSI were also collected.");
+    const hits = segs.filter((x) => x.entry).map((x) => x.entry!);
+    for (const want of ["THI", "VHI", "ESS", "NOSE", "RSI"]) expect(hits.some((h) => h.abbr === want)).toBe(true);
+    expect(glossaryTitle(hits.find((h) => h.abbr === "THI")!)).toContain("тиннитуса");
+    expect(glossaryTitle(hits.find((h) => h.abbr === "ESS")!)).toContain("Эпворта");
+  });
+
+  it("препараты переводятся на русские МНН без учёта регистра: Amoxicillin → амоксициллин", () => {
+    const segs = annotateAbbreviations("Amoxicillin or azithromycin was given; topical fluticasone and oral prednisolone were allowed. Dupilumab was not studied.");
+    const drugs = segs.filter((x) => x.entry && x.phrase).map((x) => x.entry!);
+    for (const [en, ru] of [["Amoxicillin", "амоксициллин"], ["azithromycin", "азитромицин"], ["fluticasone", "флутиказон"], ["prednisolone", "преднизолон"], ["Dupilumab", "дупилумаб"]]) {
+      const d = drugs.find((x) => x.abbr.toLowerCase() === en.toLowerCase());
+      expect(d, en).toBeDefined();
+      expect(d!.ru).toBe(ru);
+    }
+    // Слово с латинским корнем, но не препарат, не подсвечивается
+    expect(annotateAbbreviations("The amoxicillin-clavulanate arm").filter((x) => x.entry).length).toBe(1);
   });
 });

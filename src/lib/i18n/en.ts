@@ -700,6 +700,10 @@ export const EN: Record<string, string> = {
     "Trust index {score}/100 — a sum of factors: study design, journal, sample size, blinding, placebo control, protocol registration; deductions for preprints, retractions, or dubious journals. ≥80 — dependable; 45–79 — check the details; <45 — for orientation only. Full breakdown in the article card.",
   "Объём выборки, извлечённый из аннотации автоматически (участники, уши, образцы — как указано в работе)":
     "Sample size extracted automatically from the abstract (participants, ears, or specimens as reported)",
+  "Скопировано ✓": "Copied ✓",
+  "Цитаты (ГОСТ)": "Citations (GOST)",
+  "Список литературы по ГОСТ Р 7.0.5 для всех статей этой страницы — в буфер обмена (для доклада, статьи или диссертации)":
+    "Copy a GOST R 7.0.5-2008 reference list for every article on this page to the clipboard (for a talk, paper, or thesis)",
   "Приложение не смогло запуститься. Обычно это временный сбой — обновите страницу.": "The application failed to start. This is usually a temporary glitch — reload the page.",
   "Обновить страницу": "Reload page",
   "Загрузка": "Loading",

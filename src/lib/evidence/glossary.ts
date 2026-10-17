@@ -66,6 +66,13 @@ export const ABBR_GLOSSARY: GlossaryEntry[] = [
   { abbr: "LPR", ru: "ларингофарингеальный рефлюкс", en: "laryngopharyngeal reflux", hint: "заброс содержимого желудка до глотки и гортани — «немой» рефлюкс без изжоги" },
   { abbr: "GERD", ru: "гастроэзофагеальная рефлюксная болезнь", en: "gastroesophageal reflux disease" },
   { abbr: "ETD", ru: "дисфункция слуховой (евстахиевой) трубы", en: "eustachian tube dysfunction" },
+  // ── Клинические шкалы и опросники ──
+  { abbr: "THI", ru: "опросник влияния тиннитуса (0–100; > 58 — значимое ухудшение качества жизни)", en: "Tinnitus Handicap Inventory" },
+  { abbr: "TFI", ru: "опросник функциональности тиннитуса (0–100)", en: "Tinnitus Functional Index" },
+  { abbr: "VHI", ru: "опросник голосового handicap — влияние расстройства голоса на жизнь", en: "Voice Handicap Index" },
+  { abbr: "ESS", ru: "шкала сонливости Эпворта (0–24; > 10 — избыточная дневная сонливость)", en: "Epworth Sleepiness Scale" },
+  { abbr: "NOSE", ru: "опросник симптомов заложенности носа (0–100)", en: "Nasal Obstruction Symptom Evaluation" },
+  { abbr: "RSI", ru: "индекс симптомов рефлюкса (0–45; > 13 — вероятен ларингофарингеальный рефлюкс)", en: "Reflux Symptom Index" },
   // ── Онкология головы и шеи ──
   { abbr: "HNSCC", ru: "плоскоклеточный рак головы и шеи", en: "head and neck squamous cell carcinoma" },
   { abbr: "HPV", ru: "вирус папилломы человека", en: "human papillomavirus" },
@@ -78,6 +85,44 @@ export const ABBR_GLOSSARY: GlossaryEntry[] = [
   { abbr: "NSAID", ru: "нестероидный противовоспалительный препарат", en: "non-steroidal anti-inflammatory drug" },
   { abbr: "PPI", ru: "ингибитор протонной помпы", en: "proton pump inhibitor" },
   { abbr: "VEMP", ru: "вызванные миогенные потенциалы (тест отолитов)", en: "vestibular evoked myogenic potentials" },
+];
+
+/**
+ * Препараты: английское название → русское МНН (международное непатентованное наименование).
+ * Ищутся без учёта регистра по границе слова — «amoxicillin» не встречается внутри других слов.
+ */
+export const DRUG_GLOSSARY: GlossaryEntry[] = [
+  // Антибиотики
+  { abbr: "amoxicillin", ru: "амоксициллин", hint: "антибиотик пенициллиновой группы, первая линия при остром среднем отите и бактериальном риносинусите" },
+  { abbr: "azithromycin", ru: "азитромицин", hint: "макролид — при пенициллиновой аллергии или атипичной флоре" },
+  { abbr: "clarithromycin", ru: "кларитромицин", hint: "макролид" },
+  { abbr: "ceftriaxone", ru: "цефтриаксон", hint: "цефалоспорин III поколения, парентерально" },
+  { abbr: "cefuroxime", ru: "цефуроксим", hint: "цефалоспорин II поколения" },
+  { abbr: "cefixime", ru: "цефиксим", hint: "цефалоспорин III поколения перорально" },
+  { abbr: "clindamycin", ru: "клиндамицин", hint: "линкозамид — при пенициллиновой аллергии и анаэробах" },
+  { abbr: "doxycycline", ru: "доксициклин", hint: "тетрациклин" },
+  { abbr: "penicillin", ru: "пенициллин", hint: "бета-лактамный антибиотик" },
+  // Глюкокортикоиды
+  { abbr: "mometasone", ru: "мометазон", hint: "топический интраназальный ГКС" },
+  { abbr: "fluticasone", ru: "флутиказон", hint: "топический интраназальный ГКС" },
+  { abbr: "budesonide", ru: "будесонид", hint: "топический ГКС (назальный спрей, ингаляции)" },
+  { abbr: "beclomethasone", ru: "беклометазон", hint: "топический ГКС" },
+  { abbr: "prednisolone", ru: "преднизолон", hint: "системный ГКС — например, при SSNHL" },
+  { abbr: "prednisone", ru: "преднизон", hint: "системный ГКС" },
+  { abbr: "dexamethasone", ru: "дексаметазон", hint: "системный ГКС, в т. ч. интратимпанально" },
+  // Биологическая терапия и системные
+  { abbr: "dupilumab", ru: "дупилумаб", hint: "моноклональное антитело к IL-4Rα — тяжелый CRSwNP, терапия 2-й линии" },
+  { abbr: "omalizumab", ru: "омализумаб", hint: "анти-IgE — тяжёлый аллергический ринит, CRSwNP" },
+  { abbr: "mepolizumab", ru: "меполизумаб", hint: "анти-IL-5 — эозинофильный CRSwNP" },
+  { abbr: "benralizumab", ru: "бенрализумаб", hint: "анти-IL-5R — эозинофильный CRSwNP" },
+  { abbr: "montelukast", ru: "монтелукаст", hint: "антагонист лейкотриеновых рецепторов" },
+  { abbr: "propranolol", ru: "пропранолол", hint: "бета-блокатор — первая линия при инфантильных гемангиомах" },
+  { abbr: "gabapentin", ru: "габапентин", hint: "при нейропатической боли, в т. ч. при тиннитусе" },
+  { abbr: "carbamazepine", ru: "карбамазепин", hint: "первая линия при типичной невралгии тройничного нерва" },
+  { abbr: "amitriptyline", ru: "амитриптилин", hint: "трициклический антидепрессант — при хронической боли, ФПС-глоссодинии" },
+  { abbr: "acetaminophen", ru: "парацетамол", hint: "в американской литературе acetaminophen = парацетамол" },
+  { abbr: "ibuprofen", ru: "ибупрофен", hint: "НПВС" },
+  { abbr: "lidocaine", ru: "лидокаин", hint: "местный анестетик, в т. ч. интратимпанально при тиннитусе" },
 ];
 
 /** Устойчивые словосочетания (ищутся без учёта регистра — как фразы однозначны). */
@@ -100,7 +145,9 @@ export function glossaryTitle(e: GlossaryEntry): string {
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const abbrs = ABBR_GLOSSARY.map((e) => e.abbr).sort((a, b) => b.length - a.length).map(escapeRe);
-const phrases = PHRASE_GLOSSARY.map((e) => e.abbr).sort((a, b) => b.length - a.length).map(escapeRe);
+/** Всё, что ищется без учёта регистра: словосочетания и названия препаратов (МНН). */
+const PHRASES_ALL = [...PHRASE_GLOSSARY, ...DRUG_GLOSSARY];
+const phrases = PHRASES_ALL.map((e) => e.abbr).sort((a, b) => b.length - a.length).map(escapeRe);
 
 /** Сокращения — строго по регистру и границам слова («record» не подсветится из-за «OR»). */
 const ABBR_RE = new RegExp(`\\b(${abbrs.join("|")})\\b`, "g");
@@ -137,7 +184,7 @@ export function annotateAbbreviations(text: string): AnnotatedSegment[] {
     const end = start + m[0].length;
     if (ranges.some((r) => start < r.end && r.start < end)) continue;
     const key = m[0].toLowerCase();
-    const entry = PHRASE_GLOSSARY.find((e) => e.abbr === key);
+    const entry = PHRASES_ALL.find((e) => e.abbr === key);
     if (entry) ranges.push({ start, end, entry, phrase: true });
   }
   ranges.sort((a, b) => a.start - b.start);

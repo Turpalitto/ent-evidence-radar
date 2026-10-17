@@ -380,6 +380,22 @@ describe("<Feed /> офлайн (A-15)", () => {
     window.dispatchEvent(new Event("online"));
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   });
+  it("«Цитаты (ГОСТ)»: список литературы по ГОСТ Р 7.0.5 со всей страницы — в буфер обмена", async () => {
+    const writeText = vi.fn(async (_text: string) => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    setup();
+    await findTitle("Tympanostomy tubes versus watchful waiting");
+    // userEvent.click на этой кнопке в jsdom не доходит до обработчика — fire событие напрямую
+    fireEvent.click(screen.getByRole("button", { name: /Цитаты \(ГОСТ\)/ }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const text = String(writeText.mock.calls[0]?.[0] ?? "");
+    expect(text.split("\n").length).toBe(ARTICLES.length);
+    expect(text).toContain("// The Laryngoscope. 2026. URL: https://pubmed.ncbi.nlm.nih.gov/90000001/.");
+    // Кнопка подтверждает копирование
+    expect(screen.getByRole("button", { name: /Скопировано ✓/ })).toBeInTheDocument();
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+  });
+
   it("прогрев ИИ-переводов: открытие карточки греет её и две следующие; повторное открытие — без новых запросов", async () => {
     const { calls } = setup(ARTICLES, { "GET /api/ai": () => ({ configured: true }) });
     await findTitle("Tympanostomy tubes versus watchful waiting");
