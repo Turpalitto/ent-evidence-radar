@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { citeBibtex, citeGost, citeVancouver } from "@/lib/citation";
+import { citeBibtex, citeGost, citeVancouver, dedupeBibtexKeys } from "@/lib/citation";
 
 const a = {
   title: "Tympanostomy tubes in children: a randomized trial.",
@@ -57,5 +57,20 @@ describe("цитирование (A-13)", () => {
     expect(bib).toContain("doi = {10.1002/lary.123}");
     expect(citeBibtex({ ...a, isPreprint: true })).toMatch(/^@unpublished\{/);
     expect(citeBibtex({ ...a, isPreprint: true })).toContain("note = {Preprint}");
+  });
+
+  it("BibTeX: ключ из кириллицы транслитерируется — без «anon» и без коллизий", () => {
+    const ru = { ...a, authors: ["Иванов А.Б.", "Петров В.Г."], title: "Эффективность эндоскопической хирургии при хроническом риносинусите", publishedAt: new Date("2023-06-01T00:00:00Z") };
+    const k1 = citeBibtex(ru).match(/^@\w+\{([^,]+)/)?.[1] ?? "";
+    expect(k1).toBe("ivanov2023effektivnost");
+    // Другая статья того же автора и года — другой ключ (раньше обе были «anon2023»)
+    const k2 = citeBibtex({ ...ru, title: "Другое исследование слуха у детей" }).match(/^@\w+\{([^,]+)/)?.[1] ?? "";
+    expect(k2).toBe("ivanov2023drugoe");
+    expect(k2).not.toBe(k1);
+    // Диакритика снимается, как и раньше: Müller → muller
+    expect(citeBibtex({ ...a, authors: ["Müller L"], title: "Hearing preservation surgery" }).startsWith("@article{muller2024hearing,")).toBe(true);
+    // Заголовок без слов длиннее трёх букв → ключ по PMID, иначе «entry»
+    expect(citeBibtex({ ...a, authors: ["Иванов А.Б."], title: "Нос, рот" }).startsWith("@article{ivanov202412345,")).toBe(true);
+    expect(citeBibtex({ ...a, authors: ["Иванов А.Б."], title: "Нос, рот", pmid: null, doi: null }).startsWith("@article{ivanov2024entry,")).toBe(true);
   });
 });

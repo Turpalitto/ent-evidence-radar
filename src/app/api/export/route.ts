@@ -3,7 +3,7 @@ import { listArticles, parseFilters } from "@/lib/queries";
 import { DESIGN_LABELS } from "@/lib/evidence/taxonomy";
 import { checkApiAuth } from "@/lib/security";
 import { csvRow } from "@/lib/export";
-import { citeBibtex } from "@/lib/citation";
+import { citeBibtex, dedupeBibtexKeys } from "@/lib/citation";
 import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     });
   }
   if (format === "bibtex" || format === "bib") {
-    const body = items.map((a) => citeBibtex(a)).join("\n\n") + "\n";
+    const body = dedupeBibtexKeys(items.map((a) => citeBibtex(a))).join("\n\n") + "\n";
     return new NextResponse(body, {
       headers: { "Content-Type": "application/x-bibtex; charset=utf-8", "Content-Disposition": `attachment; filename="ent-radar-${stamp}.bib"` },
     });

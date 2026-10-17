@@ -79,10 +79,47 @@ export function citeGost(a: CitableArticle): string {
   return `${head}${journal ? ` ${journal}` : ""}. ${rest.join(". ")}.`.replace(/\.\s*\./g, ".");
 }
 
+const CYR_TO_LATIN: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m",
+  н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch",
+  ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya", і: "i", ї: "i", є: "e", ґ: "g",
+};
+
+/** Кириллица → латиница (практическая транслитерация): «Иванов» → «ivanov», диакритика снимается. */
+function translit(s: string): string {
+  return s
+    .normalize("NFD")
+    .toLowerCase()
+    .split("")
+    .map((ch) => CYR_TO_LATIN[ch] ?? ch)
+    .join("");
+}
+
 function bibKey(a: CitableArticle): string {
-  const first = ((a.authors[0] ?? "anon").split(/\s+/)[0] ?? "anon").normalize("NFD").replace(/[^A-Za-z]/g, "") || "anon";
-  const word = cleanTitle(a.title).split(/\s+/).find((w) => w.length > 3)?.replace(/[^A-Za-z0-9]/g, "") ?? "";
-  return `${first.toLowerCase()}${year(a)}${word.toLowerCase()}`;
+  // Идентификатор — запасной источник уникальности, когда заголовок не дал слова (напр. «Уши и нос»).
+  const id = (a.pmid ?? a.nctId ?? a.doi ?? "").replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+  const first = translit((a.authors[0] ?? "anon").split(/\s+/)[0] ?? "anon").replace(/[^a-z0-9]/g, "") || "anon";
+  const word = cleanTitle(a.title).split(/\s+/).map((w) => translit(w).replace(/[^a-z0-9]/g, "")).find((w) => w.length > 3) ?? id.slice(0, 12);
+  return `${first}${year(a)}${word || "entry"}`;
+}
+
+/**
+ * Уникальные ключи в пределах одного .bib-файла: дубликаты получают суффикс a, b, c…
+ * (тот же приём, что в Zotero/JabRef). Записи без ключа не трогаются.
+ */
+export function dedupeBibtexKeys(entries: string[]): string[] {
+  const seen = new Map<string, number>();
+  return entries.map((e) => {
+    const m = e.match(/^(@\w+\{)([^,]+),/);
+    if (!m) return e;
+    const base = m[2] ?? "";
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    if (n === 1) return e;
+    let s = "";
+    for (let k = n - 1; k > 0; k = Math.floor((k - 1) / 26)) s = String.fromCharCode(97 + ((k - 1) % 26)) + s;
+    return e.replace(/^(@\w+\{)([^,]+),/, (_full, head: string) => `${head}${base}${s},`);
+  });
 }
 
 function bibEscape(s: string): string {
