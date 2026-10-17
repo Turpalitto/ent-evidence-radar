@@ -17,9 +17,10 @@ const ARTICLES = [
   makeArticle({ id: 3, title: "Already read cohort", isRead: true, studyDesign: "cohort", evidenceLevel: 3, trustScore: 40, notes: "Проверить дозу будесонида", publishedAt: new Date(Date.UTC(new Date().getFullYear() - 2, 2, 1)), editorialNotice: { type: "expression_of_concern", noticeDoi: "10.1/eoc", date: "2025-01-02", source: "crossref", checkedAt: "2026-10-14T00:00:00Z" } }),
 ];
 
-function setup(items = ARTICLES) {
+function setup(items = ARTICLES, extra: Parameters<typeof mockFetch>[0] = {}) {
   const state = { items: items.map((a) => ({ ...a })) };
   const { fn, calls } = mockFetch({
+
     "GET /api/ai": () => ({ configured: false }),
     "GET /api/articles": (url) => {
       const sub = url.searchParams.get("subspecialty");
@@ -50,6 +51,7 @@ function setup(items = ARTICLES) {
       Object.assign(a, patch);
       return a;
     },
+    ...extra,
   });
   vi.stubGlobal("fetch", fn);
   const utils = render(<Feed topics={TOPICS} />);
@@ -378,4 +380,26 @@ describe("<Feed /> офлайн (A-15)", () => {
     window.dispatchEvent(new Event("online"));
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   });
+  it("прогрев ИИ-переводов: открытие карточки греет её и две следующие; повторное открытие — без новых запросов", async () => {
+    const { calls } = setup(ARTICLES, { "GET /api/ai": () => ({ configured: true }) });
+    await findTitle("Tympanostomy tubes versus watchful waiting");
+    const warmCalls = () => calls.filter((c) => c.url.pathname === "/api/ai/warm");
+    expect(warmCalls().length).toBe(0); // до открытия карточки прогрева нет
+    const user = userEvent.setup();
+    const card = screen.getAllByRole("listitem", { name: "Tympanostomy tubes versus watchful waiting" })[0]!;
+    card.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(warmCalls().length).toBe(1));
+    expect(JSON.parse(String(warmCalls()[0]!.init?.body)).articleIds).toEqual([1, 2, 4]);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Tympanostomy tubes versus watchful waiting" })).toBeNull());
+    // Повторное открытие той же карточки: id уже в warmedRef → нового POST нет
+    card.focus();
+    await user.keyboard("{Enter}");
+    await screen.findAllByRole("dialog");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(warmCalls().length).toBe(1);
+    await user.keyboard("{Escape}");
+  });
+
 });
