@@ -4,6 +4,7 @@ import type { Article } from "@/db/schema";
 import { parseStructuredAbstract } from "@/lib/evidence/abstract";
 import { useI18n } from "@/lib/i18n/client";
 import { sectionHeader } from "./consilium";
+import { AbbrText } from "./AbbrText";
 
 export interface AiState {
   mode: "idle" | "loading" | "done" | "error";
@@ -95,7 +96,7 @@ function StructuredAbstract({ abstract }: { abstract: string }) {
     // `stored` переводит сгенерированные абзацы записей ClinicalTrials.gov («Статус: …», «В реестре опубликованы
     // результаты.»); настоящий текст аннотации возвращается как есть.
     return abstract.split("\n").filter(Boolean).map((p, i) => (
-      <p key={i} className="text-slate-700 dark:text-slate-300">{stored(p)}</p>
+      <p key={i} className="text-slate-700 dark:text-slate-300">{locale === "ru" ? <AbbrText text={stored(p)} /> : stored(p)}</p>
     ));
   }
   return sections.map((sec, i) => {
@@ -124,7 +125,7 @@ function StructuredAbstract({ abstract }: { abstract: string }) {
           </span>
         )}
         <p className={isConclusion ? "font-medium text-teal-950 dark:text-teal-100" : "text-slate-700 dark:text-slate-300"}>
-          {sec.text}
+          {locale === "ru" ? <AbbrText text={sec.text} /> : sec.text}
         </p>
       </div>
     );
