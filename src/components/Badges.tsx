@@ -29,6 +29,18 @@ const DESIGN_STYLES: Record<StudyDesign, string> = {
   other: "border-slate-300/70 bg-slate-50 text-slate-600 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-400",
 };
 
+/**
+ * Человеческое объяснение уровня доказательности (что он означает для практики) —
+ * в подсказке при наведении: врачи не обязаны помнить определения уровней наизусть.
+ */
+const LEVEL_HINTS: Record<number, string> = {
+  1: msg("Основа — систематические обзоры и мета-анализы РКИ, крупные РКИ, руководства на их основе. Самая надёжная опора для клинических решений."),
+  2: msg("Отдельное РКИ или первичное исследование высокого качества. Надёжно, но это единичная работа — полезно сопоставить с другими."),
+  3: msg("Когортные исследования, «случай-контроль», диагностические: показывают связь, но не доказывают причинность так строго, как эксперимент."),
+  4: msg("Серии случаев и описательные отчёты: гипотеза для проверки, а не доказательство."),
+  5: msg("Мнение экспертов, протоколы, препринты, доклинические (лабораторные/на животных) работы — клиническим доказательством не считается."),
+};
+
 const LEVEL_STYLES: Record<number, string> = {
   1: "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-600/25",
   2: "bg-gradient-to-br from-sky-500 to-cyan-600 shadow-sky-600/25",
@@ -60,10 +72,14 @@ export function DesignBadge({ design, reason, confidence }: { design: StudyDesig
 export function LevelBadge({ level }: { level: number }) {
   const { t } = useI18n();
   const known = EVIDENCE_LEVEL_LABELS[level];
+  const hint = LEVEL_HINTS[level];
+  const title = known
+    ? `${t(known)}. ${hint ? t(hint) : ""}`
+    : t("Уровень доказательности {level}: классификация не распознала дизайн — смотрите объяснение в карточке", { level });
   return (
     <span
       className={`inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1.5 text-[11px] font-bold text-white shadow-sm ${LEVEL_STYLES[level] ?? LEVEL_STYLES[5]}`}
-      title={known ? t(known) : t("Уровень доказательности {level}", { level })}
+      title={title}
     >
       {t("Ур.{level}", { level })}
     </span>
@@ -84,7 +100,10 @@ export function TrustScore({ score, size = "md" }: { score: number; size?: "sm" 
     <div
       className={`trust-ring shrink-0 font-bold ${dims}`}
       style={{ "--p": clamped, "--ring-color": ring } as CSSProperties}
-      title={t("Индекс доверия: {score}/100", { score: clamped })}
+      title={t(
+        "Индекс доверия {score}/100 — сумма факторов: дизайн исследования, журнал, размер выборки, слепой метод, плацебо-контроль, регистрация протокола; вычеты за препринт, отзыв или сомнительный журнал. ≥80 — можно опираться; 45–79 — проверьте детали; <45 — только для ориентира. Полный разбор — в карточке статьи.",
+        { score: clamped },
+      )}
     >
       <span className={`tabular-nums ${text}`}>{clamped}</span>
     </div>

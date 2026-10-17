@@ -227,7 +227,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
           <h2 className="text-sm font-semibold leading-snug text-[color:var(--ink)] md:text-base">{a.title}</h2>
           <p className="mt-1 text-xs text-[color:var(--ink-muted)]">
             {stored(a.journal) || "—"} · {date(a.publishedAt)}
-            {a.sampleSize ? ` · n≈${a.sampleSize}` : ""}
+            {a.sampleSize ? <span title={t("Объём выборки, извлечённый из аннотации автоматически (участники, уши, образцы — как указано в работе)")} className="cursor-help"> · n≈{a.sampleSize}</span> : ""}
           </p>
         </div>
         <button onClick={onClose} className="rounded-xl p-2.5 text-[color:var(--ink-subtle)] transition hover:bg-[color:var(--surface-3)] hover:text-[color:var(--ink)]" aria-label={t("Закрыть")}>

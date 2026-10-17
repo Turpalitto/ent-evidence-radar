@@ -683,6 +683,23 @@ export const EN: Record<string, string> = {
   "Что-то пошло не так": "Something went wrong",
   "Произошла непредвиденная ошибка. Данные не пострадали — попробуйте повторить попытку.": "An unexpected error occurred. Your data is intact — please try again.",
   "Попробовать снова": "Try again",
+
+  "Основа — систематические обзоры и мета-анализы РКИ, крупные РКИ, руководства на их основе. Самая надёжная опора для клинических решений.":
+    "Based on systematic reviews and meta-analyses of RCTs, large RCTs, and guidelines built on them. The most reliable foundation for clinical decisions.",
+  "Отдельное РКИ или первичное исследование высокого качества. Надёжно, но это единичная работа — полезно сопоставить с другими.":
+    "A single RCT or other high-quality primary study. Reliable, but one study — worth comparing with others.",
+  "Когортные исследования, «случай-контроль», диагностические: показывают связь, но не доказывают причинность так строго, как эксперимент.":
+    "Cohort, case-control, and diagnostic studies: they show association but do not prove causation as rigorously as an experiment.",
+  "Серии случаев и описательные отчёты: гипотеза для проверки, а не доказательство.":
+    "Case series and descriptive reports: a hypothesis to test, not proof.",
+  "Мнение экспертов, протоколы, препринты, доклинические (лабораторные/на животных) работы — клиническим доказательством не считается.":
+    "Expert opinion, protocols, preprints, and preclinical (laboratory/animal) work — not considered clinical evidence.",
+  "Уровень доказательности {level}: классификация не распознала дизайн — смотрите объяснение в карточке":
+    "Evidence level {level}: the classifier could not determine the design — see the explanation in the article card",
+  "Индекс доверия {score}/100 — сумма факторов: дизайн исследования, журнал, размер выборки, слепой метод, плацебо-контроль, регистрация протокола; вычеты за препринт, отзыв или сомнительный журнал. ≥80 — можно опираться; 45–79 — проверьте детали; <45 — только для ориентира. Полный разбор — в карточке статьи.":
+    "Trust index {score}/100 — a sum of factors: study design, journal, sample size, blinding, placebo control, protocol registration; deductions for preprints, retractions, or dubious journals. ≥80 — dependable; 45–79 — check the details; <45 — for orientation only. Full breakdown in the article card.",
+  "Объём выборки, извлечённый из аннотации автоматически (участники, уши, образцы — как указано в работе)":
+    "Sample size extracted automatically from the abstract (participants, ears, or specimens as reported)",
   "Приложение не смогло запуститься. Обычно это временный сбой — обновите страницу.": "The application failed to start. This is usually a temporary glitch — reload the page.",
   "Обновить страницу": "Reload page",
   "Загрузка": "Loading",
