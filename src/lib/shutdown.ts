@@ -105,4 +105,5 @@ export function _resetShutdownForTests(): void {
   g.__entRadarShutdownHooks = [];
   g.__entRadarShuttingDown = null;
   g2.__entRadarShutdownPromise = undefined;
+  g.__entRadarSignalsInstalled = undefined;
 }
