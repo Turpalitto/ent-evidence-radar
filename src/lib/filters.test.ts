@@ -72,6 +72,11 @@ describe("parseFilters", () => {
     expect(parseFilters(sp("pageSize=1000")).pageSize).toBe(200);
   });
 
+  it("отрицательный pageSize зажимается до 1 (LIMIT < 0 — ошибка Postgres)", () => {
+    expect(parseFilters(sp("pageSize=-5")).pageSize).toBe(1);
+    expect(parseFilters(sp("pageSize=0")).pageSize).toBe(1);
+  });
+
   it("sort приводится к допустимым значениям", () => {
     expect(parseFilters(sp("sort=trust")).sort).toBe("trust");
     expect(parseFilters(sp("sort=fetched")).sort).toBe("fetched");

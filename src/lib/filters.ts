@@ -67,6 +67,7 @@ export function parseFilters(sp: URLSearchParams): ArticleFilters {
     sort: SORTS.has(sp.get("sort") ?? "") ? (sp.get("sort") as ArticleFilters["sort"]) : sp.get("q")?.trim() ? "relevance" : "date",
     scope: sp.get("scope") === "title" || sp.get("scope") === "notes" ? (sp.get("scope") as "title" | "notes") : "all",
     page: Math.max(1, num("page") ?? 1),
-    pageSize: Math.min(num("pageSize") ?? 30, 200),
+    // Нижняя граница: LIMIT 0 скрыл бы всю ленту, а отрицательный LIMIT — ошибка Postgres (500).
+    pageSize: Math.max(1, Math.min(num("pageSize") ?? 30, 200)),
   };
 }
