@@ -61,13 +61,29 @@ export async function sendMail(
     return { sent: true, to, dryRun: true };
   }
   const t = getTransporter(cfg);
-  await t.sendMail({ from: cfg.from, to: to.join(", "), subject, html, text });
+  await t.sendMail(buildMessage(to, subject, html, text, cfg));
   return { sent: true, to, dryRun: false };
 }
 
-export function getRecipients(cfg: MailerConfig = getMailerConfig()): string[] {
-  return (process.env.DIGEST_RECIPIENTS ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+/**
+ * Формирует письмо. Несколько получателей идут в BCC (аудит F-21): раньше все адреса
+ * попадали в заголовок To, и каждый подписчик дайджеста видел адреса остальных.
+ * Единственный получатель остаётся в To — так письмо реже попадает в спам.
+ */
+export function buildMessage(to: string[], subject: string, html: string, text: string, cfg: MailerConfig) {
+  if (to.length === 1) return { from: cfg.from, to: to[0], subject, html, text };
+  return { from: cfg.from, to: cfg.from, bcc: to, subject, html, text };
+}
+
+/** Получатели дайджеста: из настроек (A-09), иначе из DIGEST_RECIPIENTS. */
+export function getRecipients(fromSettings?: string | null): string[] {
+  const src = fromSettings?.trim() ? fromSettings : (process.env.DIGEST_RECIPIENTS ?? "");
+  return Array.from(
+    new Set(
+      src
+        .split(/[,;\s]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
 }

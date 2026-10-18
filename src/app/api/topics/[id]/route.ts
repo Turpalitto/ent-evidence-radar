@@ -1,37 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { topics } from "@/db/schema";
+import { articles, topics } from "@/db/schema";
+import { apiError, isSubspecialtyKey, normalizeTopicLookback, parseId, readJsonObject, TOPIC_LIMITS } from "@/lib/api";
 import { checkApiAuth } from "@/lib/security";
+import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status ?? 401 });
-  }
+  if (!auth.ok) return apiError(auth.status ?? 401, auth.error ?? "unauthorized");
 
-  const { id } = await ctx.params;
-  const body = (await req.json()) as { name?: string; query?: string; subspecialty?: string; enabled?: boolean; lookbackDays?: number | null };
+  const id = parseId((await ctx.params).id);
+  if (id === null) return apiError(400, t("Некорректный id темы"));
+
+  const body = await readJsonObject<{ name?: unknown; query?: unknown; subspecialty?: unknown; enabled?: unknown; lookbackDays?: unknown }>(req);
+  if (!body) return apiError(400, t("Ожидается JSON-объект"));
+
   const patch: Partial<typeof topics.$inferInsert> = {};
-  if (typeof body.name === "string") patch.name = body.name.trim();
-  if (typeof body.query === "string") patch.query = body.query.trim();
-  if (typeof body.subspecialty === "string") patch.subspecialty = body.subspecialty;
+  if (typeof body.name === "string") {
+    const name = body.name.trim();
+    if (!name) return apiError(400, t("Название темы не может быть пустым"));
+    if (name.length > TOPIC_LIMITS.name) return apiError(400, t("Название темы длиннее {n} символов", { n: TOPIC_LIMITS.name }));
+    patch.name = name;
+  }
+  if (typeof body.query === "string") {
+    const query = body.query.trim();
+    if (!query) return apiError(400, t("Поисковый запрос не может быть пустым"));
+    if (query.length > TOPIC_LIMITS.query) return apiError(400, t("Поисковый запрос длиннее {n} символов", { n: TOPIC_LIMITS.query }));
+    patch.query = query;
+  }
+  if (body.subspecialty !== undefined) {
+    if (!isSubspecialtyKey(body.subspecialty)) return apiError(400, t("Неизвестная субспециальность"));
+    patch.subspecialty = body.subspecialty;
+  }
   if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
-  if ("lookbackDays" in body) patch.lookbackDays = typeof body.lookbackDays === "number" && body.lookbackDays > 0 ? Math.min(730, Math.round(body.lookbackDays)) : null;
-  const rows = await db.update(topics).set(patch).where(eq(topics.id, Number(id))).returning();
-  if (!rows.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if ("lookbackDays" in body) patch.lookbackDays = normalizeTopicLookback(body.lookbackDays);
+  if (!Object.keys(patch).length) return apiError(400, t("Нет допустимых полей для изменения"));
+
+  const rows = await db.update(topics).set(patch).where(eq(topics.id, id)).returning();
+  if (!rows.length) return apiError(404, "not found");
   return NextResponse.json(rows[0]);
 }
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { t } = i18nOf(req);
   const auth = checkApiAuth(req);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status ?? 401 });
-  }
+  if (!auth.ok) return apiError(auth.status ?? 401, auth.error ?? "unauthorized");
 
-  const { id } = await ctx.params;
-  await db.delete(topics).where(eq(topics.id, Number(id)));
-  return NextResponse.json({ ok: true });
+  const id = parseId((await ctx.params).id);
+  if (id === null) return apiError(400, t("Некорректный id темы"));
+
+  const rows = await db.delete(topics).where(eq(topics.id, id)).returning({ id: topics.id });
+  if (!rows.length) return apiError(404, "not found");
+  // Аудит F-29: убираем id удалённой темы из статей, иначе фильтр «по теме» и экспорт
+  // ссылаются на несуществующую тему.
+  const detached = await db
+    .update(articles)
+    .set({
+      topicIds: sql`coalesce((select jsonb_agg(e) from jsonb_array_elements(${articles.topicIds}) e where e <> to_jsonb(${id}::int)), '[]'::jsonb)`,
+    })
+    .where(sql`${articles.topicIds} @> ${JSON.stringify([id])}::jsonb`)
+    .returning({ id: articles.id });
+  return NextResponse.json({ ok: true, detachedArticles: detached.length });
 }

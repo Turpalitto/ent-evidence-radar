@@ -1,0 +1,1125 @@
+openapi: 3.1.0
+info:
+  title: ENT Evidence Radar API
+  version: 0.3.0
+  description: |
+    REST API радара доказательной оториноларингологии. Все ответы — JSON (кроме экспорта и Atom-ленты).
+
+    **Авторизация.** Если на сервере задан `API_SECRET`, изменяющие и «дорогие» маршруты требуют
+    либо заголовок `Authorization: Bearer <API_SECRET>` / `X-API-Key: <API_SECRET>` (скрипты, cron),
+    либо сессионную cookie `ent_radar_session`, полученную через `POST /api/auth/login`.
+    С cookie изменяющие методы дополнительно требуют same-origin (анти-CSRF) — иначе 403.
+    Без `API_SECRET` всё открыто (режим доверенной сети). Маршруты с замком ниже помечены `security`.
+
+    **Ошибки.** `{ "error": "текст", "requestId"?: "..." }` или `{ "ok": false, "error": "..." }` (старые маршруты);
+    400 — невалидный ввод, 401 — нужна авторизация, 403 — не same-origin, 404, 409 — операция уже идёт,
+    429 — rate-limit (заголовок `Retry-After`), 500 — внутренняя ошибка (с `requestId`).
+    Текст `error` — на языке запроса: `?lang=ru|en` → cookie `ent_radar_lang` → `DEFAULT_LOCALE` сервера
+    (по умолчанию русский). Коды статусов и имена полей от языка не зависят — скрипты должны опираться на них.
+
+    **Корреляция.** Каждый ответ несёт `x-request-id`; можно передать свой (8–128 символов `[A-Za-z0-9._:-]`).
+servers:
+  - url: /
+tags:
+  - name: articles
+  - name: topics
+  - name: sources
+  - name: refresh
+  - name: settings
+  - name: export
+  - name: backup
+  - name: digest
+  - name: ai
+  - name: auth
+  - name: ops
+    description: "health, status, diagnostics, admin"
+  - name: public
+    description: "Atom-лента и статистика"
+
+security: []
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: "`Authorization: Bearer <API_SECRET>`"
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    session:
+      type: apiKey
+      in: cookie
+      name: ent_radar_session
+      description: "Подписанная httpOnly-cookie после `POST /api/auth/login`; для изменяющих методов нужен same-origin."
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    ArticleFilters_q:
+      name: q
+      in: query
+      description: "Поисковый запрос (≤ 200 символов). Русские термины расширяются англоязычными синонимами; при непустом `q` сортировка по умолчанию — `relevance`."
+      schema: { type: string, maxLength: 200 }
+    ArticleFilters_scope:
+      name: scope
+      in: query
+      description: "Область поиска: `all` — полнотекстовый по заголовку/аннотации/журналу/авторам, `title` — только заголовок, `notes` — подстрока в личных заметках (без синонимов; сортировка `relevance` не применяется)."
+      schema: { type: string, enum: [all, title, notes], default: all }
+    ArticleFilters_withNotes:
+      name: withNotes
+      in: query
+      description: "`1` — только статьи с личными заметками."
+      schema: { type: string, enum: ["1"] }
+    ArticleFilters_subspecialty:
+      name: subspecialty
+      in: query
+      schema: { $ref: "#/components/schemas/Subspecialty" }
+    ArticleFilters_design:
+      name: design
+      in: query
+      schema: { $ref: "#/components/schemas/StudyDesign" }
+    ArticleFilters_issuer:
+      name: issuer
+      in: query
+      description: "Орган-издатель руководства (A-06): ключ из таксономии (aao-hns, epos, icar, nice, aap, who, …) или `other` — руководства без распознанного издателя. Подразумевает design=guideline."
+      schema: { type: string, maxLength: 40 }
+    ArticleFilters_level:
+      name: level
+      in: query
+      description: "Уровень доказательности 1–5 (не хуже указанного)."
+      schema: { type: integer, minimum: 1, maximum: 5 }
+    ArticleFilters_minTrust:
+      name: minTrust
+      in: query
+      schema: { type: integer, minimum: 0, maximum: 100 }
+    ArticleFilters_source:
+      name: source
+      in: query
+      schema: { $ref: "#/components/schemas/SourceKey" }
+    ArticleFilters_days:
+      name: days
+      in: query
+      description: "Опубликовано за последние N дней."
+      schema: { type: integer, minimum: 1 }
+    ArticleFilters_fromYear:
+      name: fromYear
+      in: query
+      schema: { type: integer, minimum: 1800 }
+    ArticleFilters_toYear:
+      name: toYear
+      in: query
+      schema: { type: integer, minimum: 1800 }
+    ArticleFilters_bookmarked:
+      name: bookmarked
+      in: query
+      schema: { type: string, enum: ["1"] }
+    ArticleFilters_unread:
+      name: unread
+      in: query
+      schema: { type: string, enum: ["1"] }
+    ArticleFilters_topicId:
+      name: topicId
+      in: query
+      schema: { type: integer, minimum: 1 }
+    ArticleFilters_excludePreprints:
+      name: excludePreprints
+      in: query
+      schema: { type: string, enum: ["1"] }
+    Lang:
+      name: lang
+      in: query
+      description: "Язык текстов ответа (подписи ленты, сообщения об ошибках); иначе cookie `ent_radar_lang` или `DEFAULT_LOCALE` сервера"
+      schema: { type: string, enum: [ru, en] }
+    ArticleFilters_hidden:
+      name: hidden
+      in: query
+      description: "`1` — показать только скрытые пользователем записи (по умолчанию они исключены)."
+      schema: { type: string, enum: ["1"] }
+    ArticleFilters_sort:
+      name: sort
+      in: query
+      schema: { type: string, enum: [date, trust, fetched, relevance] }
+    ArticleFilters_page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    ArticleFilters_pageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 30 }
+  responses:
+    BadRequest:
+      description: Невалидный ввод
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Unauthorized:
+      description: Требуется авторизация
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Forbidden:
+      description: Источник запроса не совпадает с сайтом (CSRF)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: Не найдено
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    TooManyRequests:
+      description: Превышен лимит запросов
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotModified:
+      description: "Копия клиента актуальна (If-None-Match / If-Modified-Since совпали); тело пустое, валидаторы кэша повторены"
+      headers:
+        ETag: { schema: { type: string } }
+        Cache-Control: { schema: { type: string } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        ok: { type: boolean, const: false }
+        error: { type: string }
+        requestId: { type: string }
+      required: [error]
+    StudyDesign:
+      type: string
+      enum: [systematic_review, guideline, rct, cohort, case_control, cross_sectional, case_series, narrative, trial_registry, preprint, protocol, diagnostic_accuracy, qualitative, economic, mendelian_randomization, secondary_analysis, other]
+    DesignConfidence:
+      type: string
+      description: "Уверенность классификатора в дизайне: high — тип публикации PubMed / реестр / журнал Cochrane / ручная правка, medium — заголовок, low — только аннотация или признаков нет"
+      enum: [high, medium, low]
+    Subspecialty:
+      type: string
+      enum: [otology, cochlear_implant, vestibular, rhinology, laryngology, head_neck_oncology, pediatric, sleep, facial_plastic, infection, general]
+    SourceKey:
+      type: string
+      enum: [pubmed, europepmc, clinicaltrials, medrxiv]
+    TrustBreakdownItem:
+      type: object
+      properties:
+        label: { type: string }
+        points: { type: integer }
+      required: [label, points]
+    TrialEvent:
+      type: object
+      required: [at, kind]
+      properties:
+        at: { type: string, format: date-time, description: "Когда радар заметил изменение" }
+        kind: { type: string, enum: [status, results] }
+        from: { type: [string, "null"], description: "Прежний статус (для kind=status)" }
+        to: { type: [string, "null"], description: "Новый статус или дата публикации результатов" }
+    TrialInfo:
+      type: object
+      required: [status, hasResults, checkedAt, events]
+      properties:
+        status: { type: [string, "null"], description: "OverallStatus реестра: RECRUITING, COMPLETED, TERMINATED, …" }
+        hasResults: { type: boolean }
+        lastUpdatePosted: { type: [string, "null"], description: "yyyy-mm-dd" }
+        resultsFirstPosted: { type: [string, "null"], description: "yyyy-mm-dd" }
+        enrollment: { type: [integer, "null"] }
+        checkedAt: { type: string, format: date-time }
+        events: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/TrialEvent" } }
+    EditorialNotice:
+      type: object
+      description: "Уведомление Crossref (`works?filter=updates:DOI`): отзыв, withdrawal, expression of concern или исправление. Хранится самое серьёзное."
+      required: [type, source, checkedAt]
+      properties:
+        type: { type: string, enum: [retraction, withdrawal, expression_of_concern, correction] }
+        noticeDoi: { type: string, description: "DOI самого уведомления (retraction notice / EoC), если есть" }
+        date: { type: string, description: "Дата уведомления, yyyy-mm-dd" }
+        label: { type: string, description: "Метка Crossref, например «Retraction»" }
+        source: { type: string, enum: [crossref] }
+        checkedAt: { type: string, format: date-time }
+    ManualOverrides:
+      type: object
+      description: "Ручные правки классификации; применяются поверх эвристик и переживают обновления."
+      properties:
+        studyDesign: { $ref: "#/components/schemas/StudyDesign" }
+        subspecialties:
+          type: array
+          items: { $ref: "#/components/schemas/Subspecialty" }
+          maxItems: 6
+    Article:
+      type: object
+      properties:
+        id: { type: integer }
+        dedupKey: { type: string }
+        pmid: { type: [string, "null"] }
+        doi: { type: [string, "null"] }
+        pmcid: { type: [string, "null"] }
+        nctId: { type: [string, "null"] }
+        title: { type: string }
+        abstract: { type: [string, "null"] }
+        journal: { type: [string, "null"] }
+        issns: { type: array, items: { type: string }, description: "ISSN журнала из источника (печатный/электронный/ISSN-L), по ним запись сопоставляется с белым списком" }
+        authors: { type: [array, "null"], items: { type: string } }
+        publishedAt: { type: [string, "null"], format: date-time }
+        publicationTypes: { type: [array, "null"], items: { type: string } }
+        meshTerms: { type: [array, "null"], items: { type: string } }
+        keywords: { type: [array, "null"], items: { type: string } }
+        language: { type: [string, "null"] }
+        sourceKey: { $ref: "#/components/schemas/SourceKey" }
+        sourceKeys: { type: array, items: { $ref: "#/components/schemas/SourceKey" } }
+        url: { type: string }
+        studyDesign: { $ref: "#/components/schemas/StudyDesign" }
+        designConfidence: { oneOf: [{ $ref: "#/components/schemas/DesignConfidence" }, { type: "null" }] }
+        designReason: { type: [string, "null"], description: "Почему выбран дизайн — источник признака и найденный фрагмент (по-русски); null у записей до классификатора v5" }
+        evidenceLevel: { type: integer, minimum: 1, maximum: 5 }
+        trustScore: { type: integer, minimum: 0, maximum: 100 }
+        trustBreakdown: { type: array, items: { $ref: "#/components/schemas/TrustBreakdownItem" } }
+        journalTier: { type: integer, description: "1–3 — белый список, 0 — вне списка, -1 — сомнительное издательство" }
+        subspecialties: { type: array, items: { $ref: "#/components/schemas/Subspecialty" } }
+        sampleSize: { type: [integer, "null"] }
+        isPreprint: { type: boolean }
+        publishedDoi: { type: [string, "null"], description: "DOI рецензированной версии препринта (medRxiv)" }
+        isRetracted: { type: boolean }
+        guidelineIssuer: { type: [string, "null"], description: "Орган-издатель руководства (A-06), только для studyDesign=guideline" }
+        trialInfo:
+          oneOf: [{ $ref: "#/components/schemas/TrialInfo" }, { type: "null" }]
+          description: "Отслеживание КИ (A-08): состояние записи ClinicalTrials.gov и история изменений; null — не запись реестра / ещё не проверялась"
+        editorialNotice:
+          oneOf: [{ $ref: "#/components/schemas/EditorialNotice" }, { type: "null" }]
+          description: "Редакционное уведомление Crossref по DOI (A-04); null — уведомлений нет"
+        classifierVersion: { type: integer }
+        topicIds: { type: array, items: { type: integer } }
+        overrides: { oneOf: [{ $ref: "#/components/schemas/ManualOverrides" }, { type: "null" }] }
+        isHidden: { type: boolean }
+        isRead: { type: boolean }
+        isBookmarked: { type: boolean }
+        notes: { type: [string, "null"] }
+        fetchedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, title, sourceKey, url, studyDesign, evidenceLevel, trustScore]
+    ArticleList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Article" } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        searchTerms:
+          type: array
+          items: { type: string }
+          description: "По каким термам реально искали (для подсветки)."
+      required: [items, total, page, pageSize]
+    Topic:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string, maxLength: 200 }
+        subspecialty: { $ref: "#/components/schemas/Subspecialty" }
+        query: { type: string, description: "Поисковый запрос для источников (синтаксис PubMed)", maxLength: 4000 }
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        lookbackDays: { type: [integer, "null"] }
+        createdAt: { type: string, format: date-time }
+        articleCount: { type: integer, description: "Только в GET /api/topics: видимых статей, относящихся к теме" }
+        recentCount: { type: integer, description: "Только в GET /api/topics: из них опубликовано за последние 30 дней" }
+    Source:
+      type: object
+      properties:
+        id: { type: integer }
+        key: { $ref: "#/components/schemas/SourceKey" }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        enabled: { type: boolean }
+        lastFetchedAt: { type: [string, "null"], format: date-time }
+        lastStatus: { type: [string, "null"], enum: [ok, degraded, error, null] }
+        lastError: { type: [string, "null"] }
+    FetchRun:
+      type: object
+      properties:
+        id: { type: integer }
+        trigger: { type: string, enum: [manual, scheduled] }
+        status: { type: string, enum: [running, success, partial, failed, skipped] }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: [string, "null"], format: date-time }
+        totalFound: { type: integer }
+        newAdded: { type: integer }
+        updated: { type: integer }
+        details: { type: [object, "null"], additionalProperties: true }
+        errorMessage: { type: [string, "null"] }
+        durationMs: { type: [integer, "null"] }
+    Settings:
+      type: object
+      properties:
+        autoRefreshEnabled: { type: boolean }
+        refreshIntervalMinutes: { type: integer, minimum: 15, maximum: 10080 }
+        lookbackDays: { type: integer, minimum: 1, maximum: 730 }
+        maxPerTopic: { type: integer, minimum: 5, maximum: 300 }
+        minTrustToStore: { type: integer, minimum: 0, maximum: 100 }
+        includePreprints: { type: boolean }
+        englishOnly: { type: boolean }
+        digestEnabled: { type: boolean }
+        digestRecipients: { type: string, description: "e-mail через запятую (≤ 50)", maxLength: 2000 }
+        digestWeekday: { type: integer, minimum: -1, maximum: 6, description: "0 — воскресенье … 6 — суббота; -1 — ежедневно" }
+        digestHour: { type: integer, minimum: 0, maximum: 23 }
+        digestDays: { type: integer, minimum: 1, maximum: 60 }
+    Health:
+      type: object
+      properties:
+        ok: { type: boolean }
+        db: { type: boolean }
+        dbKind: { type: string, enum: [pglite, postgres] }
+        version: { type: string }
+        uptimeSec: { type: integer }
+        lastRun: { oneOf: [{ $ref: "#/components/schemas/FetchRun" }, { type: "null" }] }
+        refreshRunning: { type: [object, "null"], additionalProperties: true }
+        lockHolder: { type: [string, "null"] }
+        scheduler:
+          type: object
+          properties:
+            started: { type: boolean }
+            alive: { type: boolean }
+            lastTickAt: { type: [string, "null"], format: date-time }
+        autoRefreshEnabled: { type: boolean }
+        refreshIntervalMinutes: { type: integer }
+        refreshStale: { type: boolean }
+        alertsConfigured: { type: boolean }
+        problems: { type: array, items: { type: string } }
+        responseMs: { type: integer }
+        metrics: { type: object, additionalProperties: true, description: "Только с `?metrics=1` и авторизацией" }
+    Backup:
+      type: object
+      description: "Снимок пользовательских данных (`GET /api/backup`); тот же формат принимает `POST /api/backup/restore`."
+      properties:
+        version: { type: integer, const: 1 }
+        exportedAt: { type: string, format: date-time }
+        settings: { $ref: "#/components/schemas/Settings" }
+        topics:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              subspecialty: { $ref: "#/components/schemas/Subspecialty" }
+              query: { type: string }
+              enabled: { type: boolean }
+              isDefault: { type: boolean }
+              lookbackDays: { type: [integer, "null"] }
+        bookmarksAndNotes:
+          type: array
+          description: "Статьи с закладкой, заметкой, скрытием или ручной правкой — только пользовательские поля и идентификаторы для сопоставления (PMID → DOI → NCT)."
+          items:
+            type: object
+            properties:
+              pmid: { type: [string, "null"] }
+              doi: { type: [string, "null"] }
+              nctId: { type: [string, "null"] }
+              title: { type: string }
+              isRead: { type: boolean }
+              isBookmarked: { type: boolean }
+              isHidden: { type: boolean }
+              notes: { type: [string, "null"] }
+              overrides: { oneOf: [{ $ref: "#/components/schemas/ManualOverrides" }, { type: "null" }] }
+      required: [version, bookmarksAndNotes]
+
+paths:
+  /api/articles:
+    get:
+      tags: [articles]
+      summary: Лента статей с фильтрами, поиском и пагинацией
+      parameters:
+        - $ref: "#/components/parameters/ArticleFilters_q"
+        - $ref: "#/components/parameters/ArticleFilters_scope"
+        - $ref: "#/components/parameters/ArticleFilters_subspecialty"
+        - $ref: "#/components/parameters/ArticleFilters_design"
+        - $ref: "#/components/parameters/ArticleFilters_issuer"
+        - $ref: "#/components/parameters/ArticleFilters_level"
+        - $ref: "#/components/parameters/ArticleFilters_minTrust"
+        - $ref: "#/components/parameters/ArticleFilters_source"
+        - $ref: "#/components/parameters/ArticleFilters_days"
+        - $ref: "#/components/parameters/ArticleFilters_fromYear"
+        - $ref: "#/components/parameters/ArticleFilters_toYear"
+        - $ref: "#/components/parameters/ArticleFilters_bookmarked"
+        - $ref: "#/components/parameters/ArticleFilters_unread"
+        - $ref: "#/components/parameters/ArticleFilters_topicId"
+        - $ref: "#/components/parameters/ArticleFilters_excludePreprints"
+        - $ref: "#/components/parameters/ArticleFilters_hidden"
+        - $ref: "#/components/parameters/ArticleFilters_withNotes"
+        - $ref: "#/components/parameters/ArticleFilters_sort"
+        - $ref: "#/components/parameters/ArticleFilters_page"
+        - $ref: "#/components/parameters/ArticleFilters_pageSize"
+      responses:
+        "200":
+          description: "Страница результатов; заголовок ETag — для условных повторных запросов"
+          headers:
+            ETag: { schema: { type: string } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleList" } } }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/articles/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [articles]
+      summary: Одна статья
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Article" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [articles]
+      summary: Пользовательские поля и ручные правки классификации
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isRead: { type: boolean }
+                isBookmarked: { type: boolean }
+                isHidden: { type: boolean }
+                notes: { type: string, maxLength: 5000 }
+                overrides:
+                  description: "`{studyDesign?, subspecialties?}` поверх эвристик; `null` или `{}` — сбросить к автоматической разметке (запись переклассифицируется)."
+                  oneOf: [{ $ref: "#/components/schemas/ManualOverrides" }, { type: "null" }]
+      responses:
+        "200": { description: Обновлённая статья, content: { application/json: { schema: { $ref: "#/components/schemas/Article" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [articles]
+      summary: Скрыть статью (soft) или удалить навсегда
+      description: "Без параметров — `isHidden=true` (запись не вернётся при обновлении). `?purge=1` — физическое удаление строки."
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      parameters:
+        - name: purge
+          in: query
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  hidden: { type: boolean }
+                  purged: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/articles/{id}/related:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [articles]
+      summary: Похожие статьи (общие темы/субспециальности, недавние)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Article" } }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/articles/bulk:
+    post:
+      tags: [articles]
+      summary: Массовые флаги (прочитано / закладка / скрыть) для ≤ 200 статей
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: { type: array, items: { type: integer, minimum: 1 }, minItems: 1, maxItems: 200 }
+                isRead: { type: boolean }
+                isBookmarked: { type: boolean }
+                isHidden: { type: boolean }
+              description: "Нужен хотя бы один флаг."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  updated: { type: integer }
+                  ids: { type: array, items: { type: integer } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/topics:
+    get:
+      tags: [topics]
+      summary: Список тем
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Topic" } } } } }
+    post:
+      tags: [topics]
+      summary: Создать тему
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, query]
+              properties:
+                name: { type: string, maxLength: 200 }
+                query: { type: string, maxLength: 4000 }
+                subspecialty: { $ref: "#/components/schemas/Subspecialty" }
+                lookbackDays: { type: integer, minimum: 1, maximum: 730 }
+      responses:
+        "201": { description: Создано, content: { application/json: { schema: { $ref: "#/components/schemas/Topic" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/topics/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    patch:
+      tags: [topics]
+      summary: Изменить тему
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 200 }
+                query: { type: string, maxLength: 4000 }
+                subspecialty: { $ref: "#/components/schemas/Subspecialty" }
+                enabled: { type: boolean }
+                lookbackDays: { type: [integer, "null"], minimum: 1, maximum: 730, description: "`null` — использовать общий lookbackDays из настроек" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Topic" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [topics]
+      summary: Удалить тему (ссылки `topicIds` у статей вычищаются)
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  detachedArticles: { type: integer }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/sources:
+    get:
+      tags: [sources]
+      summary: Источники и их статус
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Source" } } } } }
+  /api/sources/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/SourceKey" }
+    patch:
+      tags: [sources]
+      summary: Включить / выключить источник
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/refresh:
+    post:
+      tags: [refresh]
+      summary: Запустить обновление (асинхронно)
+      description: "Возвращает `202 {runId}` сразу; прогресс — `GET /api/runs/{id}`. `?wait=1` — дождаться завершения (для коротких запусков/скриптов). Лимит 5 запросов/мин."
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      parameters:
+        - name: wait
+          in: query
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "202":
+          description: Запуск начат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  runId: { type: integer }
+                  status: { type: string, const: running }
+        "200":
+          description: "Завершено (только с `wait=1`)"
+          content: { application/json: { schema: { type: object, additionalProperties: true } } }
+        "409":
+          description: "Обновление уже выполняется (в этом процессе или на другом инстансе — DB-лок)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, const: false }
+                  running: { type: boolean, const: true }
+                  runId: { type: integer }
+                  message: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    get:
+      tags: [refresh]
+      summary: Идёт ли обновление в этом процессе
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  running: { type: boolean }
+                  runId: { type: [integer, "null"] }
+                  startedAt: { type: [string, "null"], format: date-time }
+  /api/runs:
+    get:
+      tags: [refresh]
+      summary: Последние запуски
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs: { type: array, items: { $ref: "#/components/schemas/FetchRun" } }
+                  running: { type: boolean }
+  /api/runs/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [refresh]
+      summary: Один запуск (для опроса прогресса)
+      responses:
+        "200":
+          description: "OK (`Cache-Control: no-store`)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  run: { $ref: "#/components/schemas/FetchRun" }
+                  finished: { type: boolean }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/settings:
+    get:
+      tags: [settings]
+      summary: Настройки приложения
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Settings" } } } }
+    patch:
+      tags: [settings]
+      summary: Изменить настройки (частично; числа обрезаются к допустимым границам)
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Settings" } } }
+      responses:
+        "200": { description: Новые настройки, content: { application/json: { schema: { $ref: "#/components/schemas/Settings" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/export:
+    get:
+      tags: [export]
+      summary: Экспорт выборки (те же фильтры, что у /api/articles; до 2000 записей)
+      description: "CSV (UTF-8 с BOM, формулы экранированы): `id,title,journal,published,design,evidence_level,trust_score,subspecialties,pmid,doi,nct,sources,url,authors,design_key,bookmarked,notes`; `design` — подпись на языке запроса, `design_key` — машинный ключ. RIS: `N1` с дизайном/уровнем/доверием и второй `N1` с личной заметкой, если есть."
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [csv, ris, bibtex, bib, json], default: csv }
+        - $ref: "#/components/parameters/ArticleFilters_q"
+        - $ref: "#/components/parameters/ArticleFilters_subspecialty"
+        - $ref: "#/components/parameters/ArticleFilters_design"
+        - $ref: "#/components/parameters/ArticleFilters_issuer"
+        - $ref: "#/components/parameters/ArticleFilters_level"
+        - $ref: "#/components/parameters/ArticleFilters_minTrust"
+        - $ref: "#/components/parameters/ArticleFilters_source"
+        - $ref: "#/components/parameters/ArticleFilters_days"
+        - $ref: "#/components/parameters/ArticleFilters_bookmarked"
+        - $ref: "#/components/parameters/ArticleFilters_unread"
+        - $ref: "#/components/parameters/ArticleFilters_topicId"
+      responses:
+        "200":
+          description: "Файл (`Content-Disposition: attachment`)"
+          content:
+            text/csv: { schema: { type: string } }
+            application/x-research-info-systems: { schema: { type: string } }
+            application/x-bibtex: { schema: { type: string } }
+            application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Article" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/backup:
+    get:
+      tags: [backup]
+      summary: Скачать резервную копию пользовательских данных
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      responses:
+        "200": { description: JSON-файл, content: { application/json: { schema: { $ref: "#/components/schemas/Backup" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [backup]
+      summary: Записать бэкап на диск сервера (`BACKUP_DIR`)
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  file: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/backup/restore:
+    post:
+      tags: [backup]
+      summary: Восстановить из бэкапа (слияние, не перезапись; ≤ 25 МБ)
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Backup" } } }
+      responses:
+        "200":
+          description: Итоги слияния
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  articles:
+                    type: object
+                    properties:
+                      matched: { type: integer }
+                      bookmarked: { type: integer }
+                      notesMerged: { type: integer }
+                      overridesApplied: { type: integer }
+                      unmatched:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            title: { type: string }
+                            pmid: { type: [string, "null"] }
+                            doi: { type: [string, "null"] }
+                  topics:
+                    type: object
+                    properties:
+                      created: { type: integer }
+                      updated: { type: integer }
+                  settings:
+                    type: object
+                    properties:
+                      applied: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { description: Файл слишком большой }
+
+  /api/digest:
+    get:
+      tags: [digest]
+      summary: Предпросмотр письма-дайджеста и состояние расписания
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 60 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  days: { type: integer }
+                  generatedAt: { type: string, format: date-time }
+                  html: { type: string }
+                  text: { type: string }
+                  data: { type: object, additionalProperties: true, description: "Структурированное содержимое письма" }
+                  subscription:
+                    type: object
+                    description: "Расписание, получатели, SMTP и состояние последней отправки (`settings.digest_state`)"
+                    properties:
+                      enabled: { type: boolean }
+                      recipients: { type: array, items: { type: string } }
+                      recipientsSource: { type: string, enum: [settings, env, none] }
+                      weekday: { type: integer }
+                      hour: { type: integer }
+                      serverTime: { type: string, format: date-time }
+                      serverTimezone: { type: string }
+                      smtpConfigured: { type: boolean }
+                    additionalProperties: true
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [digest]
+      summary: Отправить дайджест сейчас (без SMTP — dry-run)
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      responses:
+        "200": { description: Результат отправки, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Дайджест уже формируется }
+
+  /api/ai:
+    post:
+      tags: [ai]
+      summary: ИИ-резюме или перевод статьи (стриминг текста)
+      description: "Текст берётся из базы по `articleId`; результат кэшируется. Лимит 30 запросов/мин, суточный бюджет `AI_DAILY_BUDGET`."
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [articleId]
+              properties:
+                articleId: { type: integer, minimum: 1 }
+                action: { type: string, enum: [summary, translate], default: summary }
+                lang:
+                  type: string
+                  enum: [ru, en]
+                  default: ru
+                  description: "Язык резюме (`action: summary`); русское и английское резюме кэшируются раздельно. Перевод всегда на русский."
+      responses:
+        "200":
+          description: "Поток `text/event-stream` с фрагментами текста; обрезанный по таймауту ответ помечается и не кэшируется"
+          content: { text/event-stream: { schema: { type: string } } }
+        "400": { description: "ИИ не настроен (`AI_API_KEY`), у статьи нет аннотации или невалидное тело", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { description: "Лимит запросов в минуту или дневной бюджет исчерпан", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      tags: [ai]
+      summary: Настроен ли ИИ и расход бюджета
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /api/ai/warm:
+    post:
+      tags: [ai]
+      summary: Прогреть кэш для 1–3 статей (открытая карточка и соседние)
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [articleIds]
+              properties:
+                articleIds: { type: array, items: { type: integer, minimum: 1 }, minItems: 1, maxItems: 3 }
+      responses:
+        "200":
+          description: Поставлено в очередь
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  queued: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/auth:
+    get:
+      tags: [auth]
+      summary: Нужна ли авторизация и есть ли сессия
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  required: { type: boolean }
+                  authenticated: { type: boolean }
+                  session: { type: boolean, description: "Есть действующая cookie-сессия" }
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Вход по `API_SECRET` → httpOnly-cookie `ent_radar_session` (30 дней)
+      description: "Лимит 10 попыток за 10 минут с IP. Требует same-origin."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret]
+              properties:
+                secret: { type: string }
+      responses:
+        "200":
+          description: "Сессия создана (или авторизация не настроена — `required=false`)"
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  required: { type: boolean }
+        "401": { description: Неверный секрет }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Выход (очистка cookie)
+      responses:
+        "200": { description: OK }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/health:
+    get:
+      tags: [ops]
+      summary: Health-check
+      description: "Без параметров — 200, пока доступна БД. `?strict=1` — 503, если планировщик молчит > 3 мин, последний запуск упал или обновлений не было дольше 2× интервала. `?metrics=1` (с авторизацией) добавляет счётчики."
+      parameters:
+        - { name: strict, in: query, schema: { type: string, enum: ["1"] } }
+        - { name: metrics, in: query, schema: { type: string, enum: ["1"] } }
+      responses:
+        "200": { description: Здоров, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+        "503": { description: "Проблемы (`problems[]`)", content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+  /api/status:
+    get:
+      tags: [ops]
+      summary: Состояние источников, последний запуск, счётчики (детали ошибок — только с авторизацией)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /api/stats:
+    get:
+      tags: [public]
+      summary: Статистика базы (по дизайну, уровню, субспециальности, источнику, дням, журналам)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /api/admin/reclassify:
+    get:
+      tags: [ops]
+      summary: Сколько записей ждут переклассификации
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  classifierVersion: { type: integer }
+                  pending: { type: integer }
+                  running: { type: boolean }
+    post:
+      tags: [ops]
+      summary: Запустить переклассификацию сейчас
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: { type: boolean, description: "Переразметить и записи с актуальной версией" }
+                limit: { type: integer, minimum: 1, maximum: 1000000 }
+      responses:
+        "200": { description: Итоги, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "409": { description: Уже выполняется }
+  /api/admin/diagnostics:
+    get:
+      tags: [ops]
+      summary: Диагностика для администратора (версия, БД, лок, курсоры, источники, запуски, ИИ, метрики, флаги окружения без значений)
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [ops]
+      summary: Сервисные действия
+      security: [{ bearer: [] }, { apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [release_lock, reset_retraction_cursor]
+                  description: "`release_lock` — снять DB-лок обновления (409, если обновление идёт в этом процессе); `reset_retraction_cursor` — начать перепроверку отзывов с начала"
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: "Обновление выполняется — лок снять нельзя" }
+
+  /feed.xml:
+    get:
+      tags: [public]
+      summary: "Atom-лента 60 последних публикаций; с фильтрами — подписка на сохранённый поиск"
+      description: "Принимает публичные фильтры /api/articles (персональные bookmarked/unread/hidden игнорируются). Без `q` сортировка по времени сбора, с `q` — по релевантности. Заголовок ленты описывает фильтры. Язык подписей — `lang` (читалки не присылают cookie), иначе `DEFAULT_LOCALE` сервера; self-ссылка сохраняет `lang`."
+      parameters:
+        - $ref: "#/components/parameters/Lang"
+        - $ref: "#/components/parameters/ArticleFilters_q"
+        - $ref: "#/components/parameters/ArticleFilters_scope"
+        - $ref: "#/components/parameters/ArticleFilters_subspecialty"
+        - $ref: "#/components/parameters/ArticleFilters_design"
+        - $ref: "#/components/parameters/ArticleFilters_issuer"
+        - $ref: "#/components/parameters/ArticleFilters_level"
+        - $ref: "#/components/parameters/ArticleFilters_minTrust"
+        - $ref: "#/components/parameters/ArticleFilters_source"
+        - $ref: "#/components/parameters/ArticleFilters_days"
+        - $ref: "#/components/parameters/ArticleFilters_fromYear"
+        - $ref: "#/components/parameters/ArticleFilters_toYear"
+        - $ref: "#/components/parameters/ArticleFilters_topicId"
+        - $ref: "#/components/parameters/ArticleFilters_excludePreprints"
+      responses:
+        "200":
+          description: "Atom-лента; ETag и Last-Modified — для условных запросов читалок"
+          headers:
+            ETag: { schema: { type: string } }
+            Last-Modified: { schema: { type: string } }
+          content: { application/atom+xml: { schema: { type: string } } }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }

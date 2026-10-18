@@ -13,6 +13,12 @@
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
 import { createHash } from "node:crypto";
+import { eq, lt, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { aiCache as aiCacheTable, settings as settingsTable, type NewAiCache } from "@/db/schema";
+import { Semaphore } from "@/lib/semaphore";
+import { log } from "@/lib/log";
+import { metrics } from "@/lib/metrics";
 
 // Топ бесплатных моделей для медицинского перевода (проверены на OpenRouter).
 // Первая — основная; остальные подхватываются при отказе предыдущей.
@@ -23,22 +29,129 @@ const DEFAULT_MODELS = [
 ];
 
 /**
+ * Версия промптов. Входит в ключ кэша (аудит F-24): правка TRANSLATE_SYSTEM/SUMMARIZE_SYSTEM
+ * должна сопровождаться инкрементом, иначе старые ответы будут отдаваться под новым промптом.
+ * Модель в ключ намеренно не входит: переводы разных моделей взаимозаменяемы, а ротация
+ * моделей иначе множила бы расходы.
+ */
+export const PROMPT_VERSION = 2;
+
+/**
  * Стабильный ключ кэша: sha256 ПОЛНОГО текста.
  * Срез «первые N символов» опасен: у структурированных аннотаций префиксы
  * часто совпадают (BACKGROUND:…METHODS:…), и одной статье показался бы чужой перевод.
  */
-export function cacheKeyFor(kind: "tr" | "sum", text: string): string {
-  return `${kind}2:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+export type AiCacheKind = "tr" | "sum" | "sum-en";
+
+export function cacheKeyFor(kind: AiCacheKind, text: string): string {
+  return `${kind}${PROMPT_VERSION}:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+}
+
+/** Язык клинического резюме (A-16): русский по умолчанию, английский для EN-интерфейса. Перевод аннотации всегда на русский. */
+export type SummaryLang = "ru" | "en";
+
+/** Потолок записей в памяти (F-24): старые вытесняются по LRU; персистентный слой — таблица ai_cache. */
+export const MEMORY_CACHE_MAX = 500;
+
+/** Максимум одновременных обращений к LLM на процесс (F-08). */
+export const AI_MAX_CONCURRENCY = Math.max(1, Number(process.env.AI_MAX_CONCURRENCY ?? 3) || 3);
+
+/** Дневной бюджет вызовов LLM (кэш-попадания не считаются). 0 — без лимита. */
+export function aiDailyBudget(): number {
+  const n = Number(process.env.AI_DAILY_BUDGET ?? 500);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 500;
 }
 
 const g = globalThis as typeof globalThis & {
   __aiCache?: Map<string, { text: string; at: number }>;
   __aiModelIdx?: number;
+  __aiSemaphore?: Semaphore;
 };
 
 function getCache() {
   if (!g.__aiCache) g.__aiCache = new Map();
   return g.__aiCache;
+}
+
+function getSemaphore(): Semaphore {
+  if (!g.__aiSemaphore) g.__aiSemaphore = new Semaphore(AI_MAX_CONCURRENCY);
+  return g.__aiSemaphore;
+}
+
+/** LRU-запись: переставляем ключ в конец Map и вытесняем самые старые сверх лимита. */
+export function memCacheSet(cache: Map<string, { text: string; at: number }>, key: string, text: string, max = MEMORY_CACHE_MAX) {
+  cache.delete(key);
+  cache.set(key, { text, at: Date.now() });
+  while (cache.size > max) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
+
+export class AiBudgetExceededError extends Error {
+  constructor(public readonly calls: number, public readonly budget: number) {
+    super(`Дневной лимит обращений к AI исчерпан (${calls}/${budget}). Лимит сбросится в полночь UTC; изменить — AI_DAILY_BUDGET.`);
+    this.name = "AiBudgetExceededError";
+  }
+}
+
+/** Ответ модели оборван по таймауту простоя после начала генерации. */
+export class AiTruncatedError extends Error {
+  constructor(public readonly partial: string) {
+    super("Ответ усечён: модель перестала отвечать");
+    this.name = "AiTruncatedError";
+  }
+}
+
+const USAGE_KEY = "ai_usage";
+
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Атомарно учитывает вызов LLM в дневном счётчике (settings.ai_usage, общий для всех
+ * инстансов) и бросает AiBudgetExceededError при превышении бюджета.
+ */
+export async function chargeAiCall(): Promise<{ calls: number; budget: number }> {
+  const budget = aiDailyBudget();
+  const day = todayUtc();
+  let calls = 0;
+  try {
+    const res = await db.execute(sql`
+      INSERT INTO settings (key, value, "updated_at")
+      VALUES (${USAGE_KEY}, jsonb_build_object('day', ${day}::text, 'calls', 1), now())
+      ON CONFLICT (key) DO UPDATE
+        SET value = CASE
+              WHEN settings.value->>'day' = ${day}::text
+                THEN jsonb_set(settings.value, '{calls}', to_jsonb(coalesce((settings.value->>'calls')::int, 0) + 1))
+              ELSE jsonb_build_object('day', ${day}::text, 'calls', 1)
+            END,
+            "updated_at" = now()
+      RETURNING (value->>'calls')::int AS calls
+    `);
+    calls = Number((res as { rows?: { calls?: number }[] }).rows?.[0]?.calls ?? 0);
+  } catch {
+    // Счётчик не должен блокировать работу при сбое БД.
+    return { calls: 0, budget };
+  }
+  if (budget > 0 && calls > budget) throw new AiBudgetExceededError(calls, budget);
+  return { calls, budget };
+}
+
+/** Текущий расход за день (для /api/ai и статистики). */
+export async function getAiUsage(): Promise<{ day: string; calls: number; budget: number; concurrency: number; inFlight: number }> {
+  const day = todayUtc();
+  let calls = 0;
+  try {
+    const rows = await db.select({ value: settingsTable.value }).from(settingsTable).where(eq(settingsTable.key, USAGE_KEY));
+    const v = rows[0]?.value as { day?: string; calls?: number } | undefined;
+    if (v?.day === day) calls = Number(v.calls ?? 0);
+  } catch {
+    /* нет данных — считаем 0 */
+  }
+  return { day, calls, budget: aiDailyBudget(), concurrency: AI_MAX_CONCURRENCY, inFlight: getSemaphore().inUse };
 }
 
 export function aiConfigured(): boolean {
@@ -71,9 +184,12 @@ async function chatOnce(prompt: string, system: string, model: string, timeoutMs
   const apiKey = process.env.AI_API_KEY || process.env.DEEPSEEK_API_KEY || "";
   if (!apiKey) throw new Error("AI не настроен: задайте AI_API_KEY (или DEEPSEEK_API_KEY)");
 
+  const release = await getSemaphore().acquire();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    await chargeAiCall();
+    metrics.inc("ai.requests", { model });
     const res = await fetch(`${aiBaseUrl()}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -100,17 +216,35 @@ async function chatOnce(prompt: string, system: string, model: string, timeoutMs
     return text;
   } finally {
     clearTimeout(timer);
+    release();
   }
 }
 
-/** Стриминговая отправка промпта к одной модели. Отдаёт чанки текста по мере генерации. */
-async function* streamOnce(prompt: string, system: string, model: string, timeoutMs: number): AsyncGenerator<string> {
+/** Таймауты стрима (F-23): простой между чанками и общий потолок вместо одного жёсткого лимита. */
+export const STREAM_IDLE_MS = Math.max(100, Number(process.env.AI_STREAM_IDLE_MS ?? 20_000) || 20_000);
+export const STREAM_MAX_MS = Math.max(STREAM_IDLE_MS, Number(process.env.AI_STREAM_MAX_MS ?? 120_000) || 120_000);
+
+/**
+ * Стриминговая отправка промпта к одной модели. Отдаёт чанки текста по мере генерации.
+ * Таймаут простоя сбрасывается на каждом чанке (idleMs), общий потолок — maxMs. Если поток
+ * оборвался уже после первых чанков — бросаем AiTruncatedError с накопленным текстом.
+ */
+async function* streamOnce(prompt: string, system: string, model: string, idleMs = STREAM_IDLE_MS, maxMs = STREAM_MAX_MS): AsyncGenerator<string> {
   const apiKey = process.env.AI_API_KEY || process.env.DEEPSEEK_API_KEY || "";
   if (!apiKey) throw new Error("AI не настроен: задайте AI_API_KEY (или DEEPSEEK_API_KEY)");
 
+  const release = await getSemaphore().acquire();
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let idleTimer = setTimeout(() => ctrl.abort(), idleMs);
+  const touch = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => ctrl.abort(), idleMs);
+  };
+  const maxTimer = setTimeout(() => ctrl.abort(), maxMs);
+  let acc = "";
   try {
+    await chargeAiCall();
+    metrics.inc("ai.requests", { model });
     const res = await fetch(`${aiBaseUrl()}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -137,6 +271,7 @@ async function* streamOnce(prompt: string, system: string, model: string, timeou
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      touch();
       buf += decoder.decode(value, { stream: true });
       let nl: number;
       while ((nl = buf.indexOf("\n")) !== -1) {
@@ -149,14 +284,22 @@ async function* streamOnce(prompt: string, system: string, model: string, timeou
         try {
           const j = JSON.parse(data) as { choices?: { delta?: { content?: string } }[] };
           const delta = j.choices?.[0]?.delta?.content ?? "";
-          if (delta) yield delta;
+          if (delta) {
+            acc += delta;
+            yield delta;
+          }
         } catch {
           /* пропускаем нерелевантные строки потока */
         }
       }
     }
+  } catch (e) {
+    if (ctrl.signal.aborted && acc) throw new AiTruncatedError(acc);
+    throw e;
   } finally {
-    clearTimeout(timer);
+    clearTimeout(idleTimer);
+    clearTimeout(maxTimer);
+    release();
   }
 }
 
@@ -165,17 +308,17 @@ async function* streamOnce(prompt: string, system: string, model: string, timeou
  * падает ДО выдачи контента — пробуем следующую; если уже начали отдавать
  * текст — не переключаемся (иначе пользователь увидит смешанный ответ).
  */
-export async function* aiStream(prompt: string, system: string, timeoutMs = 30_000): AsyncGenerator<string> {
+export async function* aiStream(prompt: string, system: string): AsyncGenerator<string> {
   const models = aiModels();
   const start = nextModelIdx(models);
   let lastErr: unknown;
 
   for (let i = 0; i < models.length; i++) {
     const idx = (start + i) % models.length;
-    const model = models[idx];
+    const model = models[idx]!;
     let yielded = false;
     try {
-      for await (const delta of streamOnce(prompt, system, model, timeoutMs)) {
+      for await (const delta of streamOnce(prompt, system, model)) {
         yielded = true;
         yield delta;
       }
@@ -185,9 +328,9 @@ export async function* aiStream(prompt: string, system: string, timeoutMs = 30_0
       }
       lastErr = new Error("AI вернул пустой ответ");
     } catch (e) {
-      if (yielded) throw e;
+      if (yielded || e instanceof AiBudgetExceededError) throw e;
       lastErr = e;
-      console.warn(`[ai] модель ${model} не сработала, пробую следующую:`, e instanceof Error ? e.message : String(e));
+      log.warn("ai.model_failed", { model, error: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -206,14 +349,15 @@ async function chat(prompt: string, system: string, timeoutMs = 60_000): Promise
 
   for (let i = 0; i < models.length; i++) {
     const idx = (start + i) % models.length;
-    const model = models[idx];
+    const model = models[idx]!;
     try {
       const text = await chatOnce(prompt, system, model, timeoutMs);
       g.__aiModelIdx = (idx + 1) % models.length; // следующая ротация
       return text;
     } catch (e) {
+      if (e instanceof AiBudgetExceededError) throw e;
       lastErr = e;
-      console.warn(`[ai] модель ${model} не сработала, пробую следующую:`, e instanceof Error ? e.message : String(e));
+      log.warn("ai.model_failed", { model, error: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -221,9 +365,6 @@ async function chat(prompt: string, system: string, timeoutMs = 60_000): Promise
   throw new Error(`AI: все модели недоступны (${models.join(", ")}). Последняя ошибка: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
 }
 
-import { db } from "@/db";
-import { aiCache as aiCacheTable, type NewAiCache } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
 
 /** Прочитать готовый ответ из персистентной БД (кэш переживает рестарты). */
 async function dbGet(key: string): Promise<string | undefined> {
@@ -257,7 +398,7 @@ async function cachedPick(key: string, ttlMs = 10 * 60_000): Promise<string | un
   const hit = cachedString(key, ttlMs);
   if (hit !== undefined) return hit;
   const fromDb = await dbGet(key);
-  if (fromDb !== undefined) getCache().set(key, { text: fromDb, at: Date.now() });
+  if (fromDb !== undefined) memCacheSet(getCache(), key, fromDb);
   return fromDb;
 }
 
@@ -265,35 +406,76 @@ async function cached(key: string, kind: string, fn: () => Promise<string>, ttlM
   const pre = await cachedPick(key, ttlMs);
   if (pre !== undefined) return pre;
   const text = await fn();
-  getCache().set(key, { text, at: Date.now() });
+  memCacheSet(getCache(), key, text);
   void dbSet(key, kind, text);
   return text;
 }
 
 function cachedString(key: string, ttlMs = 10 * 60_000): string | undefined {
-  const hit = getCache().get(key);
-  return hit && Date.now() - hit.at < ttlMs ? hit.text : undefined;
+  const cache = getCache();
+  const hit = cache.get(key);
+  if (!hit) return undefined;
+  if (Date.now() - hit.at >= ttlMs) {
+    cache.delete(key);
+    return undefined;
+  }
+  // Освежаем позицию в LRU.
+  cache.delete(key);
+  cache.set(key, hit);
+  return hit.text;
 }
 
-/** Конкурентная предзагрузка переводов в кэш (не мешает основному потоку). */
-export function warmAbstracts(texts: string[], concurrency = 4): void {
+/**
+ * Очистка персистентного кэша (F-24): записи старше maxAgeDays и всё сверх maxRows
+ * (самые старые первыми). Вызывается в конце refresh; ошибки не критичны.
+ */
+export async function pruneAiCache(opts: { maxAgeDays?: number; maxRows?: number } = {}): Promise<{ deleted: number }> {
+  const maxAgeDays = opts.maxAgeDays ?? 180;
+  const maxRows = opts.maxRows ?? 20_000;
+  let deleted = 0;
+  try {
+    const old = await db
+      .delete(aiCacheTable)
+      .where(lt(aiCacheTable.updatedAt, new Date(Date.now() - maxAgeDays * 86_400_000)))
+      .returning({ id: aiCacheTable.id });
+    deleted += old.length;
+    const res = await db.execute(sql`
+      DELETE FROM ai_cache WHERE id IN (
+        SELECT id FROM ai_cache ORDER BY updated_at DESC, id DESC OFFSET ${maxRows}
+      ) RETURNING id
+    `);
+    deleted += (res as { rows?: unknown[] }).rows?.length ?? 0;
+  } catch (e) {
+    log.warn("ai.cache_prune_failed", { error: e instanceof Error ? e.message : String(e) });
+  }
+  return { deleted };
+}
+
+/**
+ * Фоновая предзагрузка переводов в кэш. Вызывается только для открытой карточки и 1–2
+ * соседних (F-08), один воркер — чтобы не отбирать слоты семафора у явных запросов.
+ * При исчерпании бюджета прогрев прекращается.
+ */
+export function warmAbstracts(texts: string[], concurrency = 1): void {
   if (!aiConfigured()) return;
   const uniq = [...new Set(texts.map((t) => t.trim()).filter(Boolean))];
   let i = 0;
+  let stop = false;
   const worker = async () => {
-    while (i < uniq.length) {
+    while (i < uniq.length && !stop) {
       const t = uniq[i++];
-      if (t.length > 30000) continue;
+      if (!t || t.length > 30000) continue;
       const key = cacheKeyFor("tr", t);
       if (await cachedPick(key)) continue;
       try {
         await translateAbstract(t);
-      } catch {
+      } catch (e) {
+        if (e instanceof AiBudgetExceededError) stop = true;
         /* фоновая предзагрузка не должна ронять ленту */
       }
     }
   };
-  for (let w = 0; w < concurrency; w++) void worker();
+  for (let w = 0; w < Math.max(1, concurrency); w++) void worker();
 }
 
 const TRANSLATE_SYSTEM =
@@ -316,6 +498,19 @@ const SUMMARIZE_SYSTEM =
   "• Клинический вывод: что это меняет в практике (рекомендовано/неэффективно/безопасно)\n\n" +
   "Пиши предельно конкретно, без вводных фраз и воды. Не выдумывай данные, которых нет в аннотации. Терминология — профессиональная русская ЛОР-медицина. Верни ТОЛЬКО текст резюме.";
 
+const SUMMARIZE_SYSTEM_EN =
+  "You are an evidence-based medicine assistant for an otolaryngologist (ENT surgeon).\n" +
+  "Read the abstract of a scientific article and write a structured clinical summary strictly in this format:\n" +
+  "• Patients (P): who was studied, diagnosis, sample size (n)\n" +
+  "• Intervention (I/C): what was compared (drug/surgery vs control/placebo)\n" +
+  "• Main outcome (O): key outcome figures and statistical significance (p-value, CI)\n" +
+  "• Clinical bottom line: what it changes in practice (recommended/ineffective/safe)\n\n" +
+  "Be extremely specific, no preamble or filler. Do not invent data that is not in the abstract. Use professional ENT terminology in English. Return ONLY the summary text.";
+
+function summaryPrompt(lang: SummaryLang): { system: string; kind: "sum" | "sum-en" } {
+  return lang === "en" ? { system: SUMMARIZE_SYSTEM_EN, kind: "sum-en" } : { system: SUMMARIZE_SYSTEM, kind: "sum" };
+}
+
 /** Перевод англ. аннотации на русский. Пустой текст -> пустой ответ. */
 export function translateAbstract(text: string): Promise<string> {
   const t = text.trim();
@@ -323,11 +518,30 @@ export function translateAbstract(text: string): Promise<string> {
   return cached(cacheKeyFor("tr", t), "tr", () => chat(t, TRANSLATE_SYSTEM));
 }
 
-/** Краткое резюме «о чём статья» (RU). Пустой текст -> пустой ответ. */
-export function summarizeAbstract(text: string): Promise<string> {
+/** Краткое резюме «о чём статья» (RU по умолчанию, EN по запросу). Пустой текст -> пустой ответ. */
+export function summarizeAbstract(text: string, lang: SummaryLang = "ru"): Promise<string> {
   const t = text.trim();
   if (!t) return Promise.resolve("");
-  return cached(cacheKeyFor("sum", t), "sum", () => chat(t, SUMMARIZE_SYSTEM));
+  const { system, kind } = summaryPrompt(lang);
+  return cached(cacheKeyFor(kind, t), kind, () => chat(t, system));
+}
+
+/**
+ * Перевод заголовка для карточки: если перевод уже в кэше — мгновенно и бесплатно;
+ * если нет и дневной бюджет ещё не исчерпан — переводим и кэшируем (повторные показы бесплатны);
+ * бюджет исчерпан — пустая строка (расходов нет), заголовок просто не показывается.
+ */
+export async function translateTitleCached(title: string): Promise<string> {
+  const t = title.trim();
+  if (!t) return "";
+  if (await cachedPick(cacheKeyFor("tr", t))) return translateAbstract(t);
+  const usage = await getAiUsage();
+  if (usage.budget > 0 && usage.calls >= usage.budget) return "";
+  try {
+    return await translateAbstract(t);
+  } catch {
+    return "";
+  }
 }
 
 /** Стриминговый перевод аннотации. Если перевод уже в кэше (память/БД) — отдаёт его мгновенно. */
@@ -340,30 +554,42 @@ export async function* translateStream(text: string): AsyncGenerator<string> {
     yield pre;
     return;
   }
-  let acc = "";
-  for await (const delta of aiStream(t, TRANSLATE_SYSTEM, 30_000)) {
-    acc += delta;
-    yield delta;
-  }
-  getCache().set(key, { text: acc, at: Date.now() });
-  void dbSet(key, "tr", acc);
+  yield* streamAndCache(t, TRANSLATE_SYSTEM, key, "tr");
 }
 
-/** Стриминговое резюме. Если резюме уже в кэше — отдаёт его мгновенно. */
-export async function* summarizeStream(text: string): AsyncGenerator<string> {
+/** Пометка, которую видит пользователь, если модель замолчала на полуслове (F-23). */
+export const TRUNCATED_MARK = "\n\n⚠ Ответ усечён: модель перестала отвечать. Нажмите ещё раз, чтобы повторить.";
+
+/** Общий стрим с кэшированием. Усечённый ответ в кэш НЕ пишем — иначе обрывок станет «переводом» навсегда. */
+async function* streamAndCache(text: string, system: string, key: string, kind: AiCacheKind): AsyncGenerator<string> {
+  let acc = "";
+  try {
+    for await (const delta of aiStream(text, system)) {
+      acc += delta;
+      yield delta;
+    }
+  } catch (e) {
+    if (e instanceof AiTruncatedError) {
+      yield TRUNCATED_MARK;
+      return;
+    }
+    throw e;
+  }
+  if (!acc.trim()) return;
+  memCacheSet(getCache(), key, acc);
+  void dbSet(key, kind, acc);
+}
+
+/** Стриминговое резюме. Если резюме уже в кэше — отдаёт его мгновенно. Русское и английское резюме кэшируются раздельно. */
+export async function* summarizeStream(text: string, lang: SummaryLang = "ru"): AsyncGenerator<string> {
   const t = text.trim();
   if (!t) return;
-  const key = cacheKeyFor("sum", t);
+  const { system, kind } = summaryPrompt(lang);
+  const key = cacheKeyFor(kind, t);
   const pre = await cachedPick(key);
   if (pre !== undefined) {
     yield pre;
     return;
   }
-  let acc = "";
-  for await (const delta of aiStream(t, SUMMARIZE_SYSTEM, 30_000)) {
-    acc += delta;
-    yield delta;
-  }
-  getCache().set(key, { text: acc, at: Date.now() });
-  void dbSet(key, "sum", acc);
+  yield* streamAndCache(t, system, key, kind);
 }

@@ -1,27 +1,58 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { isShuttingDown } from "@/lib/shutdown";
 import { db } from "@/db";
-import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail } from "@/db/schema";
-import { classify, dedupKeyFor, type RawArticle } from "@/lib/evidence/classify";
+import { articles, fetchRuns, settings, sources, topics, type NewArticle, type RunSourceDetail, type ManualOverrides, type EditorialNotice } from "@/db/schema";
+import { CLASSIFIER_VERSION, classify, dedupKeyFor, normalizeIds, normalizeNct, type RawArticle } from "@/lib/evidence/classify";
 import { DEFAULT_SETTINGS, DEFAULT_SOURCES, DEFAULT_TOPICS, type AppSettings } from "@/lib/defaults";
 import { fetchPubmed } from "@/lib/sources/pubmed";
-import { fetchEuropePmc } from "@/lib/sources/europepmc";
+import { fetchEuropePmc, fetchEuropePmcQuery } from "@/lib/sources/europepmc";
+import { pubmedToEpmcQuery } from "@/lib/sources/epmc-query";
 import { fetchClinicalTrials } from "@/lib/sources/clinicaltrials";
 import { fetchMedrxiv } from "@/lib/sources/medrxiv";
-import { recheckRetractions } from "@/lib/retraction";
+import { recheckEditorialNotices, recheckRetractions } from "@/lib/retraction";
+import { recheckTrials } from "@/lib/trials";
+import { isReclassifyRunning, reclassifyArticles } from "@/lib/reclassify";
+import { pruneAiCache } from "@/lib/ai";
 import { invalidateStatsCache } from "@/lib/stats";
+import { log } from "@/lib/log";
+import { invalidateArticleAggregates } from "@/lib/cache";
+import { metrics } from "@/lib/metrics";
+import { evaluateRunAlerts } from "@/lib/alerts";
+
+export interface CurrentRefresh {
+  runId: number;
+  trigger: "manual" | "scheduled";
+  startedAt: number;
+}
 
 const g = globalThis as typeof globalThis & {
   __entRadarRunning?: boolean;
   __entRadarSeeded?: boolean;
+  __entRadarCurrentRun?: CurrentRefresh & { done: Promise<{ runId: number }>; holder?: string; heartbeat?: ReturnType<typeof setInterval> };
 };
 
 export function isRefreshRunning() {
   return !!g.__entRadarRunning;
 }
 
+/** Текущий запуск в этом процессе (для 409/опроса), либо null. */
+export function currentRefresh(): CurrentRefresh | null {
+  const c = g.__entRadarCurrentRun;
+  return c ? { runId: c.runId, trigger: c.trigger, startedAt: c.startedAt } : null;
+}
+
 // ---- Кросс-инстансная блокировка запуска (через settings; без новой миграции).
 // Позволяет нескольким процессам (self-host + cron) не запускать рефреш одновременно.
 const LOCK_KEY = "lock_refresh";
+/** Сколько устаревших записей переразмечать за один запуск refresh (ограничивает время запуска). */
+const RECLASSIFY_PER_RUN = 2000;
+/** Служебные шаги запуска, попадающие в details наряду с источниками. */
+/**
+ * Служебные шаги запуска: их `found` означает «проверено/просмотрено», а `added`/`updated`
+ * проставляет сам шаг (новых отзывов, появившихся результатов, изменённых записей) — поэтому
+ * они не входят в «найдено» запуска и не перезаписываются счётчиками реальных источников.
+ */
+export const SERVICE_STEPS: ReadonlySet<string> = new Set(["retraction-recheck", "crossref-notices", "trial-tracking", "reclassify"]);
 const LOCK_LEASE_MS = 6 * 60 * 1000;
 
 async function acquireLock(holder: string): Promise<boolean> {
@@ -54,6 +85,14 @@ async function releaseLock(holder: string) {
   `);
 }
 
+/** Текущий держатель кросс-процессной блокировки (null, если блокировки нет или она истекла). */
+export async function lockStatus(): Promise<{ holder: string; expiresAt: string } | null> {
+  const rows = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, LOCK_KEY));
+  const v = rows[0]?.value as { holder?: string; expiresAt?: string } | undefined;
+  if (!v?.holder || !v.expiresAt) return null;
+  return new Date(v.expiresAt).getTime() > Date.now() ? { holder: v.holder, expiresAt: v.expiresAt } : null;
+}
+
 /** Идемпотентное наполнение справочников при первом старте. */
 export async function ensureSeeded() {
   if (g.__entRadarSeeded) return;
@@ -61,8 +100,11 @@ export async function ensureSeeded() {
   const have = new Set(existingSources.map((s) => s.key));
   for (const s of DEFAULT_SOURCES) {
     if (!have.has(s.key)) await db.insert(sources).values(s).onConflictDoNothing();
+    // Описание источника — справочный текст приложения, а не пользовательская настройка: держим актуальным.
+    else await db.update(sources).set({ description: s.description }).where(and(eq(sources.key, s.key), ne(sources.description, s.description)));
   }
-  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(topics);
+  const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(topics);
+  const count = row?.count ?? 0;
   if (count === 0) {
     await db.insert(topics).values(DEFAULT_TOPICS.map((t) => ({ ...t, isDefault: true })));
   }
@@ -92,10 +134,34 @@ export interface Candidate {
   topicIds: Set<number>;
 }
 
+/** Результат адаптера источника с данными о полноте просмотра окна. */
+export interface SourceFetchResult {
+  items: RawArticle[];
+  scanned?: number;
+  total?: number;
+  truncated?: boolean;
+}
+
+/** Статус источника после опроса: ok — без ошибок, degraded — часть тем упала, error — все. */
+export type SourceStatus = "ok" | "degraded" | "error";
+
+/**
+ * Чистая функция: статус PubMed по числу упавших тем (аудит F-18). Раньше источник
+ * считался «ok», пока жива хотя бы одна тема, — 13 упавших тем из 14 не были видны в /api/status.
+ */
+export function pubmedSourceStatus(failedTopics: number, totalTopics: number): SourceStatus {
+  if (failedTopics <= 0) return "ok";
+  if (totalTopics > 0 && failedTopics < totalTopics) return "degraded";
+  return "error";
+}
+
 export function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
-  // Предпочитаем PubMed-запись как более полную; дополняем недостающие поля.
-  const primary = a.sourceKey === "pubmed" ? a : b.sourceKey === "pubmed" ? b : a;
+  // Предпочитаем PubMed-запись как более полную, затем рецензированную версию перед препринтом;
+  // недостающие поля дополняем из второй записи.
+  const primary = a.sourceKey === "pubmed" ? a : b.sourceKey === "pubmed" ? b : a.isPreprint && !b.isPreprint ? b : a;
   const secondary = primary === a ? b : a;
+  const doi = primary.doi ?? secondary.doi ?? null;
+  const publishedDoi = primary.publishedDoi ?? secondary.publishedDoi ?? null;
   return {
     ...secondary,
     ...primary,
@@ -106,9 +172,101 @@ export function mergeRaw(a: RawArticle, b: RawArticle): RawArticle {
     abstract: (primary.abstract?.length ?? 0) >= (secondary.abstract?.length ?? 0) ? primary.abstract : secondary.abstract,
     meshTerms: primary.meshTerms?.length ? primary.meshTerms : secondary.meshTerms,
     keywords: Array.from(new Set([...(primary.keywords ?? []), ...(secondary.keywords ?? [])])),
+    issns: Array.from(new Set([...(primary.issns ?? []), ...(secondary.issns ?? [])])),
     publicationTypes: Array.from(new Set([...(primary.publicationTypes ?? []), ...(secondary.publicationTypes ?? [])])),
     isPreprint: !!(primary.isPreprint && secondary.isPreprint),
+    // Слитая журнальная версия не «опубликована» сама в себе.
+    publishedDoi: publishedDoi && publishedDoi !== doi ? publishedDoi : null,
+    // Подсказки реестра (trial_registry, hasResults, статус) относятся к записи ClinicalTrials.gov;
+    // слитая с публикацией запись — статья, и классифицироваться должна как статья (A-08).
+    studyTypeHint: primary.studyTypeHint,
+    hasResults: primary.hasResults,
+    enrollment: primary.enrollment ?? secondary.enrollment ?? null,
+    trialStatus: primary.trialStatus ?? null,
+    trialLastUpdate: primary.trialLastUpdate ?? null,
+    trialResultsPosted: primary.trialResultsPosted ?? null,
   };
+}
+
+/**
+ * Сборщик кандидатов с дедупликацией внутри пачки (аудит I-13): идентификаторы нормализуются,
+ * а запись, у которой dedupKey другой (например, medRxiv дал только DOI, PubMed — PMID+DOI),
+ * всё равно сливается с уже собранным кандидатом по общему PMID/DOI/NCT.
+ */
+export function makeCandidateCollector(candidates: Map<string, Candidate>, sourceKeysByDedup: Map<string, Set<string>>) {
+  const keyByPmid = new Map<string, string>();
+  const keyByDoi = new Map<string, string>();
+  const keyByNct = new Map<string, string>();
+  /** Переливает кандидата `from` в `to` (темы, источники, поля) и перенаправляет индексы. */
+  const absorb = (to: string, from: string) => {
+    const a = candidates.get(to)!;
+    const b = candidates.get(from)!;
+    a.raw = mergeRaw(a.raw, b.raw);
+    for (const t of b.topicIds) a.topicIds.add(t);
+    for (const s of sourceKeysByDedup.get(from) ?? []) sourceKeysByDedup.get(to)!.add(s);
+    candidates.delete(from);
+    sourceKeysByDedup.delete(from);
+    for (const m of [keyByPmid, keyByDoi, keyByNct]) for (const [id, k] of m) if (k === from) m.set(id, to);
+  };
+  return (input: RawArticle, topicId?: number) => {
+    const raw = normalizeIds(input);
+    // Препринт, у которого уже есть журнальная версия в этой же пачке (аудит A-05), сливается с ней:
+    // одна запись, источники объединяются, в карточке — ссылка на рецензированную версию.
+    const key =
+      (raw.doi && keyByDoi.get(raw.doi)) ||
+      (raw.pmid && keyByPmid.get(raw.pmid)) ||
+      (raw.nctId && keyByNct.get(raw.nctId)) ||
+      (raw.publishedDoi && keyByDoi.get(raw.publishedDoi)) ||
+      dedupKeyFor(raw);
+    const existing = candidates.get(key);
+    if (existing) {
+      existing.raw = mergeRaw(existing.raw, raw);
+      if (topicId) existing.topicIds.add(topicId);
+    } else {
+      candidates.set(key, { raw, topicIds: new Set(topicId ? [topicId] : []) });
+    }
+    if (!sourceKeysByDedup.has(key)) sourceKeysByDedup.set(key, new Set());
+    sourceKeysByDedup.get(key)!.add(raw.sourceKey);
+    // Новая запись могла «связать» двух ранее независимых кандидатов (у одного был только DOI,
+    // у другого — только PMID): поглощаем второго, иначе в базе появятся две строки.
+    const merged = candidates.get(key)!.raw;
+    for (const [m, id] of [
+      [keyByPmid, merged.pmid],
+      [keyByDoi, merged.doi],
+      [keyByNct, merged.nctId],
+    ] as const) {
+      if (!id) continue;
+      const other = m.get(id);
+      if (other && other !== key && candidates.has(other)) absorb(key, other);
+      m.set(id, key);
+    }
+    // Журнальная версия пришла после препринта той же пачки — поглощаем препринт (A-05).
+    if (merged.doi) {
+      for (const [k, c] of candidates) if (k !== key && c.raw.publishedDoi === merged.doi) absorb(key, k);
+    }
+  };
+}
+
+/** Насколько «полна» запись: PubMed-источник, длина аннотации, наличие PMID/MeSH. */
+function richness(v: { sourceKey?: string; abstract?: string | null; pmid?: string | null; meshTerms?: string[] | null }): number {
+  return (v.sourceKey === "pubmed" ? 1_000_000 : 0) + (v.pmid ? 100_000 : 0) + (v.meshTerms?.length ? 10_000 : 0) + (v.abstract?.length ?? 0);
+}
+
+/** Добавляет обновление, объединяя его с уже запланированным для той же строки (I-13/A-05). */
+function pushUpdate(toUpdate: PlannedUpdate[], updateIdx: Map<number, number>, planned: PlannedUpdate) {
+  const prevIdx = updateIdx.get(planned.id);
+  if (prevIdx === undefined) {
+    updateIdx.set(planned.id, toUpdate.length);
+    toUpdate.push(planned);
+    return;
+  }
+  const prev = toUpdate[prevIdx]!;
+  const topicIds = Array.from(new Set([...(prev.values.topicIds ?? []), ...(planned.values.topicIds ?? [])]));
+  const sourceKeys = Array.from(new Set([...(prev.values.sourceKeys ?? []), ...(planned.values.sourceKeys ?? [])]));
+  // «Только связать» никогда не перетирает полноценное обновление; иначе поля берём у более полной
+  // записи (PubMed > остальные, затем длина аннотации), темы/источники объединяем.
+  const full = prev.linkOnly && !planned.linkOnly ? planned : planned.linkOnly && !prev.linkOnly ? prev : richness(planned.values) > richness(prev.values) ? planned : prev;
+  toUpdate[prevIdx] = { id: planned.id, source: full.source, linkOnly: !!(prev.linkOnly && planned.linkOnly), values: { ...full.values, topicIds, sourceKeys } };
 }
 
 export interface PlannedInsert {
@@ -117,20 +275,41 @@ export interface PlannedInsert {
 }
 export interface PlannedUpdate {
   id: number;
-  values: Omit<NewArticle, "dedupKey">;
+  values: Partial<NewArticle>;
   source: string;
+  /** Только связать (темы/источники) — препринт к уже сохранённой журнальной версии (A-05). */
+  linkOnly?: boolean;
 }
 export interface WritePlan {
   toInsert: PlannedInsert[];
   toUpdate: PlannedUpdate[];
 }
-type ExistingRef = { id: number; topicIds?: number[] | null; sourceKeys?: string[] | null };
+type ExistingRef = {
+  id: number;
+  topicIds?: number[] | null;
+  sourceKeys?: string[] | null;
+  overrides?: ManualOverrides | null;
+  /** Флаг отзыва и уведомление Crossref у существующей строки (A-04): обновление из источника их не сбрасывает. */
+  isRetracted?: boolean | null;
+  editorialNotice?: EditorialNotice | null;
+  /** Строка — «чистая» запись реестра КИ (sourceKey = clinicaltrials, без PMID/DOI); публикация по тому же NCT может её «занять» (A-08). */
+  registryOnly?: boolean;
+  nctId?: string | null;
+};
 
 /**
  * Чистая функция планирования записи: по кандидатам и уже существующим записям решает,
  * какие строки вставить, а какие обновить (с дедупликацией по dedupKey → DOI → PMID и
  * слиянием тем/источников). Вынесена из doRefresh, чтобы покрывать логику тестами без БД.
  */
+/**
+ * Невалидная дата из источника (`new Date("garbage")`) при сериализации в pg превращается в ошибку
+ * запроса и откатывает всю транзакцию пакетной записи — такие даты сбрасываем в null.
+ */
+function validDate(d: Date | null | undefined): Date | null {
+  return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+}
+
 export function planWrites(
   candidates: Map<string, Candidate>,
   sourceKeysByDedup: Map<string, Set<string>>,
@@ -138,14 +317,78 @@ export function planWrites(
   byDoi: Map<string, ExistingRef>,
   byPmid: Map<string, ExistingRef>,
   minTrustToStore: number,
+  /** Строки-препринты по их `publishedDoi` (A-05). */
+  byPublishedDoi: Map<string, ExistingRef> = new Map(),
+  /** Существующие строки по нормализованному NCT (A-08). */
+  byNct: Map<string, ExistingRef> = new Map(),
 ): WritePlan {
   const toInsert: PlannedInsert[] = [];
   const toUpdate: PlannedUpdate[] = [];
+  // Две записи пачки могут вести к одной существующей строке разными путями (одна по DOI,
+  // другая по PMID). Раньше второй update затирал слияние первого (аудит I-13) — теперь
+  // обновления на одну строку объединяются.
+  const updateIdx = new Map<number, number>();
 
   for (const [key, cand] of candidates) {
     const raw = cand.raw;
-    const c = classify(raw);
-    if (c.trustScore < minTrustToStore) continue;
+    const existing = existingByKey.get(key);
+    const doiMatch = raw.doi ? byDoi.get(raw.doi.toLowerCase()) : undefined;
+    const pmidMatch = raw.pmid ? byPmid.get(raw.pmid) : undefined;
+    // A-05: препринт, чья журнальная версия уже в базе → только связываем (темы/источники),
+    // не вставляем дубль и не портим журнальную запись данными препринта.
+    const journalOfPreprint = !existing && !doiMatch && !pmidMatch && raw.publishedDoi ? byDoi.get(raw.publishedDoi.toLowerCase()) : undefined;
+    if (journalOfPreprint) {
+      const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
+      pushUpdate(toUpdate, updateIdx, {
+        id: journalOfPreprint.id,
+        source: raw.sourceKey,
+        values: {
+          topicIds: Array.from(new Set([...(journalOfPreprint.topicIds ?? []), ...cand.topicIds])),
+          sourceKeys: Array.from(new Set([...(journalOfPreprint.sourceKeys ?? []), ...srcKeys])),
+          updatedAt: new Date(),
+        },
+        linkOnly: true,
+      });
+      continue;
+    }
+    // A-05 (обратный случай): в базе лежит препринт с publishedDoi = DOI пришедшей журнальной версии →
+    // обновляем ту же строку рецензированными данными (заметки/закладки врача остаются при статье).
+    const preprintMatch = !existing && !doiMatch && !pmidMatch && raw.doi ? byPublishedDoi.get(raw.doi.toLowerCase()) : undefined;
+    // A-08: связь по NCT. Запись реестра, пришедшая повторно, когда строка уже «доросла» до публикации
+    // (dedupKey сменился на doi:/pmid:), — только связываем, дубль реестра не вставляем.
+    const nctKey = raw.nctId ? normalizeNct(raw.nctId) : null;
+    const nctRow = !existing && !doiMatch && !pmidMatch && !preprintMatch && nctKey ? byNct.get(nctKey) : undefined;
+    if (nctRow && raw.sourceKey === "clinicaltrials" && !nctRow.registryOnly) {
+      const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
+      pushUpdate(toUpdate, updateIdx, {
+        id: nctRow.id,
+        source: raw.sourceKey,
+        values: {
+          topicIds: Array.from(new Set([...(nctRow.topicIds ?? []), ...cand.topicIds])),
+          sourceKeys: Array.from(new Set([...(nctRow.sourceKeys ?? []), ...srcKeys])),
+          updatedAt: new Date(),
+        },
+        linkOnly: true,
+      });
+      continue;
+    }
+    // Публикация (PubMed/Europe PMC/medRxiv) по NCT, под которым в базе лежит «чистая» запись реестра →
+    // та же строка становится статьёй: заметки/закладки врача и история КИ остаются при ней.
+    // (Запись реестра с «чистой» строкой под другим dedupKey — редкий случай старой нормализации — тоже обновляет её.)
+    const trialMatch = nctRow && nctRow.registryOnly ? nctRow : undefined;
+    // Ручные правки врача у существующей строки (аудит A-11) применяются поверх эвристик.
+    const prevRef = existing ?? doiMatch ?? pmidMatch ?? preprintMatch ?? trialMatch;
+    const overrides = prevRef?.overrides ?? null;
+    // Отзыв, найденный перепроверкой (PubMed/Crossref), и уведомление Crossref переживают обновление
+    // из источника: medRxiv/Europe PMC об отзыве не знают и иначе «реабилитировали» бы статью (A-04).
+    const c = classify(
+      prevRef && (prevRef.isRetracted || prevRef.editorialNotice)
+        ? { ...raw, isRetracted: !!raw.isRetracted || !!prevRef.isRetracted, editorialNotice: prevRef.editorialNotice ?? raw.editorialNotice }
+        : raw,
+      overrides,
+    );
+    // Порог доверия — только для НОВЫХ записей: уже сохранённую статью обновляем всегда.
+    if (c.trustScore < minTrustToStore && !existing && !doiMatch && !pmidMatch && !preprintMatch && !trialMatch) continue;
     const srcKeys = Array.from(sourceKeysByDedup.get(key) ?? [raw.sourceKey]);
     const values: NewArticle = {
       dedupKey: key,
@@ -156,8 +399,9 @@ export function planWrites(
       title: raw.title,
       abstract: raw.abstract ?? "",
       journal: raw.journal ?? "",
+      issns: raw.issns ?? [],
       authors: raw.authors ?? [],
-      publishedAt: raw.publishedAt ?? null,
+      publishedAt: validDate(raw.publishedAt),
       publicationTypes: raw.publicationTypes ?? [],
       meshTerms: raw.meshTerms ?? [],
       keywords: raw.keywords ?? [],
@@ -173,24 +417,36 @@ export function planWrites(
       subspecialties: c.subspecialties,
       sampleSize: c.sampleSize,
       isPreprint: c.isPreprint,
+      // undefined — не трогать при UPDATE (PubMed-запись не знает о препринте), null не пишем.
+      publishedDoi: raw.publishedDoi ?? undefined,
       isRetracted: c.isRetracted,
+      guidelineIssuer: c.guidelineIssuer,
+      designConfidence: c.designConfidence,
+      designReason: c.designReason,
+      classifierVersion: CLASSIFIER_VERSION,
       topicIds: Array.from(cand.topicIds),
       updatedAt: new Date(),
     };
 
-    const existing = existingByKey.get(key);
-    const doiMatch = raw.doi ? byDoi.get(raw.doi.toLowerCase()) : undefined;
-    const pmidMatch = raw.pmid ? byPmid.get(raw.pmid) : undefined;
-    const existingId = existing?.id ?? doiMatch?.id ?? pmidMatch?.id;
+    const existingId = existing?.id ?? doiMatch?.id ?? pmidMatch?.id ?? preprintMatch?.id ?? trialMatch?.id;
 
     if (existingId) {
-      const prev = existing ?? doiMatch ?? pmidMatch ?? { topicIds: [] as number[], sourceKeys: [] as string[] };
+      const prev = existing ?? doiMatch ?? pmidMatch ?? preprintMatch ?? trialMatch ?? { topicIds: [] as number[], sourceKeys: [] as string[] };
       const mergedTopics = Array.from(new Set([...(prev.topicIds ?? []), ...values.topicIds!]));
       const mergedSources = Array.from(new Set([...(prev.sourceKeys ?? []), ...srcKeys]));
       // не перетираем пользовательские поля (isRead, isBookmarked, notes) и dedupKey
       const { dedupKey: _dk, ...upd } = values;
       void _dk;
-      toUpdate.push({ id: existingId, values: { ...upd, topicIds: mergedTopics, sourceKeys: mergedSources }, source: raw.sourceKey });
+      const planned: PlannedUpdate = {
+        id: existingId,
+        // Препринт «дорос» до журнальной статьи: строка получает идентичность журнальной версии
+        // (dedupKey/DOI), иначе следующий заход medRxiv вернул бы ей данные препринта.
+        // Аналогично запись реестра, «занятая» публикацией, получает идентичность статьи (dedupKey doi:/pmid:),
+        // иначе следующий заход CT.gov вернул бы ей данные реестра; NCT сохраняется для связи.
+        values: { ...upd, topicIds: mergedTopics, sourceKeys: mergedSources, ...(preprintMatch ? { publishedDoi: null, dedupKey: key } : {}), ...(trialMatch ? { dedupKey: key, nctId: raw.nctId ?? trialMatch.nctId ?? null } : {}) },
+        source: raw.sourceKey,
+      };
+      pushUpdate(toUpdate, updateIdx, planned);
     } else {
       toInsert.push({ values, source: raw.sourceKey });
     }
@@ -199,51 +455,138 @@ export function planWrites(
   return { toInsert, toUpdate };
 }
 
-export async function runRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: number; skipped?: boolean }> {
-  if (g.__entRadarRunning) return { runId: -1, skipped: true };
-  const holder = `proc-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
-  if (!(await acquireLock(holder))) return { runId: -1, skipped: true };
-  g.__entRadarRunning = true;
-  const heartbeat = setInterval(() => void renewLock(holder).catch(() => {}), 120_000);
-  try {
-    return await doRefresh(trigger);
-  } finally {
-    clearInterval(heartbeat);
-    await releaseLock(holder).catch(() => {});
-    g.__entRadarRunning = false;
-  }
+export interface RefreshStart {
+  runId: number;
+  /** Запуск не стартовал: уже идёт в этом или другом процессе. */
+  skipped?: boolean;
+  /** Завершение фонового выполнения (для `await` в планировщике/тестах и `after()` в API). */
+  done: Promise<{ runId: number }>;
 }
 
-async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: number }> {
-  await ensureSeeded();
+/**
+ * Запускает обновление и СРАЗУ возвращает runId (аудит F-05): само выполнение идёт в фоне,
+ * прогресс по источникам пишется в `fetch_runs.details`, UI и cron опрашивают
+ * `GET /api/runs/:id`. Раньше HTTP-запрос ждал 1–5 минут и обрывался прокси (504),
+ * а запись оставалась `running` навсегда.
+ */
+export async function startRefresh(trigger: "manual" | "scheduled"): Promise<RefreshStart> {
+  const noop = Promise.resolve({ runId: -1 });
+  if (g.__entRadarRunning) return { runId: g.__entRadarCurrentRun?.runId ?? -1, skipped: true, done: g.__entRadarCurrentRun?.done ?? noop };
+  // Процесс останавливается — новую работу не начинаем, её подхватит следующий инстанс/тик.
+  if (isShuttingDown()) return { runId: -1, skipped: true, done: noop };
+  const holder = `proc-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  if (!(await acquireLock(holder))) return { runId: -1, skipped: true, done: noop };
+  g.__entRadarRunning = true;
+
+  let run: { id: number };
+  try {
+    await ensureSeeded();
+    // Мы держим эксклюзивную блокировку, значит любые другие записи «running» —
+    // призраки убитых процессов (OOM, рестарт, таймаут serverless). Закрываем их здесь,
+    // а не только при старте процесса (instrumentation), которого на serverless нет.
+    await recoverStaleRuns();
+    const inserted = await db.insert(fetchRuns).values({ trigger, status: "running" }).returning({ id: fetchRuns.id });
+    if (!inserted[0]) throw new Error("fetch_runs: insert не вернул id");
+    run = inserted[0];
+  } catch (e) {
+    await releaseLock(holder).catch(() => {});
+    g.__entRadarRunning = false;
+    throw e;
+  }
+
+  const heartbeat = setInterval(() => void renewLock(holder).catch(() => {}), 120_000);
+  const done = (async () => {
+    try {
+      return await doRefresh(trigger, run.id);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error("refresh.failed", { runId: run.id, trigger, error: msg });
+      await db
+        .update(fetchRuns)
+        .set({ status: "failed", finishedAt: new Date(), errorMessage: msg })
+        .where(eq(fetchRuns.id, run.id))
+        .catch(() => {});
+      metrics.inc("refresh.runs", { trigger, status: "failed" });
+      return { runId: run.id };
+    } finally {
+      invalidateArticleAggregates();
+      clearInterval(heartbeat);
+      await releaseLock(holder).catch(() => {});
+      g.__entRadarRunning = false;
+      g.__entRadarCurrentRun = undefined;
+    }
+  })().then(async (r) => {
+    // Алерты по серии сбоев / восстановлению (I-08) — после фиксации статуса запуска.
+    await evaluateRunAlerts().catch((e) => log.warn("alert.evaluate_failed", { error: e instanceof Error ? e.message : String(e) }));
+    return r;
+  });
+  g.__entRadarCurrentRun = { runId: run.id, trigger, startedAt: Date.now(), done, holder, heartbeat };
+  return { runId: run.id, done };
+}
+
+/**
+ * Штатная остановка процесса во время запуска: помечаем запуск failed с понятной причиной
+ * и снимаем кросс-процессную блокировку, чтобы следующий инстанс не ждал истечения аренды.
+ * Сам сбор в памяти завершится вместе с процессом — его результаты не записываются.
+ */
+export async function abortCurrentRefresh(reason = "Процесс остановлен (SIGTERM) до завершения запуска"): Promise<boolean> {
+  const c = g.__entRadarCurrentRun;
+  if (!c) return false;
+  if (c.heartbeat) clearInterval(c.heartbeat);
+  await db
+    .update(fetchRuns)
+    .set({ status: "failed", finishedAt: new Date(), errorMessage: reason })
+    .where(and(eq(fetchRuns.id, c.runId), eq(fetchRuns.status, "running")))
+    .catch(() => {});
+  if (c.holder) await releaseLock(c.holder).catch(() => {});
+  g.__entRadarRunning = false;
+  g.__entRadarCurrentRun = undefined;
+  log.warn("refresh.aborted_on_shutdown", { runId: c.runId, trigger: c.trigger });
+  return true;
+}
+
+/** Синхронный вариант: дождаться завершения (планировщик, скрипты, тесты). */
+export async function runRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: number; skipped?: boolean }> {
+  const s = await startRefresh(trigger);
+  if (s.skipped) return { runId: s.runId, skipped: true };
+  return await s.done;
+}
+
+/** Помечает зависшие запуски «running» как failed. Вызывать только под блокировкой. */
+export async function recoverStaleRuns(): Promise<number> {
+  const stale = await db
+    .update(fetchRuns)
+    .set({ status: "failed", finishedAt: new Date(), errorMessage: "Процесс прерван до завершения запуска" })
+    .where(eq(fetchRuns.status, "running"))
+    .returning({ id: fetchRuns.id });
+  if (stale.length) log.warn("refresh.stale_recovered", { count: stale.length, ids: stale.map((r) => r.id) });
+  return stale.length;
+}
+
+async function doRefresh(trigger: "manual" | "scheduled", runId: number): Promise<{ runId: number }> {
   const cfg = await getSettings();
   const started = Date.now();
-  const [run] = await db.insert(fetchRuns).values({ trigger, status: "running" }).returning();
+  const run = { id: runId };
 
   const details: RunSourceDetail[] = [];
+  // Прогресс по источникам пишем в БД по мере завершения — UI показывает его при опросе.
+  const persistProgress = () =>
+    db
+      .update(fetchRuns)
+      .set({ details: details.map((d) => ({ ...d })) })
+      .where(eq(fetchRuns.id, run.id))
+      .catch(() => {});
   const candidates = new Map<string, Candidate>();
   const sourceKeysByDedup = new Map<string, Set<string>>();
-
-  const addCandidate = (raw: RawArticle, topicId?: number) => {
-    const key = dedupKeyFor(raw);
-    const existing = candidates.get(key);
-    if (existing) {
-      existing.raw = mergeRaw(existing.raw, raw);
-      if (topicId) existing.topicIds.add(topicId);
-    } else {
-      candidates.set(key, { raw, topicIds: new Set(topicId ? [topicId] : []) });
-    }
-    if (!sourceKeysByDedup.has(key)) sourceKeysByDedup.set(key, new Set());
-    sourceKeysByDedup.get(key)!.add(raw.sourceKey);
-  };
+  const addCandidate = makeCandidateCollector(candidates, sourceKeysByDedup);
 
   const enabledSources = new Set((await db.select().from(sources).where(eq(sources.enabled, true))).map((s) => s.key));
   const enabledTopics = await db.select().from(topics).where(eq(topics.enabled, true));
 
-  const markSource = async (key: string, ok: boolean, err?: string) => {
+  const markSource = async (key: string, status: SourceStatus, err?: string) => {
     await db
       .update(sources)
-      .set({ lastFetchedAt: new Date(), lastStatus: ok ? "ok" : "error", lastError: err ?? null })
+      .set({ lastFetchedAt: new Date(), lastStatus: status, lastError: err ?? null })
       .where(eq(sources.key, key));
   };
 
@@ -263,30 +606,78 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
       }
     }
     details.push({ source: "pubmed", found, added: 0, updated: 0, durationMs: Date.now() - t0, error: errors.length ? errors.join(" | ") : undefined });
-    await markSource("pubmed", errors.length < enabledTopics.length, errors.length ? errors.join(" | ").slice(0, 1000) : undefined);
+    await persistProgress();
+    const status = pubmedSourceStatus(errors.length, enabledTopics.length);
+    await markSource(
+      "pubmed",
+      status,
+      errors.length ? `${status === "degraded" ? `Ошибка в ${errors.length} из ${enabledTopics.length} тем: ` : ""}${errors.join(" | ")}`.slice(0, 1000) : undefined,
+    );
   }
 
   // ---- Остальные источники параллельно
   const parallel: Promise<void>[] = [];
-  const runSource = (key: string, fn: () => Promise<RawArticle[]>) => {
+  const runSource = (key: string, fn: () => Promise<RawArticle[] | SourceFetchResult>) => {
     if (!enabledSources.has(key)) return;
     parallel.push(
       (async () => {
         const t0 = Date.now();
         try {
-          const items = await fn();
-          for (const it of items) addCandidate(it);
-          details.push({ source: key, found: items.length, added: 0, updated: 0, durationMs: Date.now() - t0 });
-          await markSource(key, true);
+          const r = await fn();
+          const res: SourceFetchResult = Array.isArray(r) ? { items: r } : r;
+          for (const it of res.items) addCandidate(it);
+          // Усечённое окно (F-14) — не тихая потеря: фиксируем в деталях и помечаем запуск частичным.
+          const note = res.truncated ? `Окно просмотрено не полностью: ${res.scanned ?? "?"} из ${res.total ?? "?"} записей (лимит страниц/времени)` : undefined;
+          details.push({ source: key, found: res.items.length, added: 0, updated: 0, durationMs: Date.now() - t0, error: note });
+          await markSource(key, res.truncated ? "degraded" : "ok", note);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           details.push({ source: key, found: 0, added: 0, updated: 0, durationMs: Date.now() - t0, error: msg });
-          await markSource(key, false, msg);
+          await markSource(key, "error", msg);
         }
+        await persistProgress();
       })(),
     );
   };
-  runSource("europepmc", () => fetchEuropePmc(cfg.lookbackDays, 200, cfg.includePreprints));
+  // Europe PMC по темам (аудит I-06): запрос темы переводится из синтаксиса PubMed, найденное
+  // получает topicId; темы, которые перевести нельзя, пропускаются, а если таких все — страховочный запрос.
+  if (enabledSources.has("europepmc")) {
+    parallel.push(
+      (async () => {
+        const t0 = Date.now();
+        let found = 0;
+        const errors: string[] = [];
+        const plan = enabledTopics
+          .map((topic) => ({ topic, query: pubmedToEpmcQuery(cfg.englishOnly ? `(${topic.query}) AND english[la]` : topic.query) }))
+          .filter((x): x is { topic: (typeof enabledTopics)[number]; query: string } => !!x.query);
+        try {
+          if (plan.length === 0) {
+            const items = await fetchEuropePmc(cfg.lookbackDays, 200, cfg.includePreprints);
+            found += items.length;
+            for (const it of items) addCandidate(it);
+          }
+          for (const { topic, query } of plan) {
+            try {
+              const items = await fetchEuropePmcQuery(query, topic.lookbackDays ?? cfg.lookbackDays, cfg.maxPerTopic, cfg.includePreprints);
+              found += items.length;
+              for (const it of items) addCandidate(it, topic.id);
+            } catch (e) {
+              errors.push(`${topic.name}: ${e instanceof Error ? e.message : String(e)}`);
+            }
+          }
+          const status = pubmedSourceStatus(errors.length, plan.length);
+          const note = errors.length ? `${status === "degraded" ? `Ошибка в ${errors.length} из ${plan.length} тем: ` : ""}${errors.join(" | ")}`.slice(0, 1000) : undefined;
+          details.push({ source: "europepmc", found, added: 0, updated: 0, durationMs: Date.now() - t0, error: note });
+          await markSource("europepmc", status, note);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          details.push({ source: "europepmc", found, added: 0, updated: 0, durationMs: Date.now() - t0, error: msg });
+          await markSource("europepmc", "error", msg);
+        }
+        await persistProgress();
+      })(),
+    );
+  }
   runSource("clinicaltrials", () => fetchClinicalTrials(cfg.lookbackDays, 150));
   if (cfg.includePreprints) runSource("medrxiv", () => fetchMedrxiv(cfg.lookbackDays, 100));
   await Promise.all(parallel);
@@ -300,30 +691,54 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
   const keys = Array.from(candidates.keys());
   const existingRows = keys.length
     ? await db
-        .select({ id: articles.id, dedupKey: articles.dedupKey, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, pmid: articles.pmid, doi: articles.doi })
+        .select({ id: articles.id, dedupKey: articles.dedupKey, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, pmid: articles.pmid, doi: articles.doi, overrides: articles.overrides, isRetracted: articles.isRetracted, editorialNotice: articles.editorialNotice })
         .from(articles)
         .where(inArray(articles.dedupKey, keys))
     : [];
   const existingByKey = new Map(existingRows.map((r) => [r.dedupKey, r]));
 
   // вторичная дедупликация: та же DOI/PMID под другим ключом
-  const allDois = keys.length ? Array.from(candidates.values()).map((c) => c.raw.doi?.toLowerCase()).filter((x): x is string => !!x) : [];
+  const allDois = keys.length
+    ? Array.from(new Set(Array.from(candidates.values()).flatMap((c) => [c.raw.doi?.toLowerCase(), c.raw.publishedDoi?.toLowerCase()]).filter((x): x is string => !!x)))
+    : [];
   const allPmids = Array.from(candidates.values()).map((c) => c.raw.pmid).filter((x): x is string => !!x);
-  const byDoi = new Map<string, { id: number; topicIds: number[]; sourceKeys: string[] }>();
-  const byPmid = new Map<string, { id: number; topicIds: number[]; sourceKeys: string[] }>();
+  const byDoi = new Map<string, ExistingRef>();
+  const byPmid = new Map<string, ExistingRef>();
+  const byPublishedDoi = new Map<string, ExistingRef>();
+  const refCols = { id: articles.id, doi: articles.doi, pmid: articles.pmid, publishedDoi: articles.publishedDoi, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys, overrides: articles.overrides, isRetracted: articles.isRetracted, editorialNotice: articles.editorialNotice };
+  const toRef = (r: { id: number; topicIds: number[] | null; sourceKeys: string[] | null; overrides: ManualOverrides | null; isRetracted: boolean; editorialNotice: EditorialNotice | null }): ExistingRef => ({
+    id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [], overrides: r.overrides, isRetracted: r.isRetracted, editorialNotice: r.editorialNotice,
+  });
   if (allDois.length) {
-    const rows = await db.select({ id: articles.id, doi: articles.doi, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys }).from(articles).where(inArray(sql`lower(${articles.doi})`, allDois));
-    for (const r of rows) if (r.doi) byDoi.set(r.doi.toLowerCase(), { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [] });
+    const rows = await db.select(refCols).from(articles).where(inArray(sql`lower(${articles.doi})`, allDois));
+    for (const r of rows) if (r.doi) byDoi.set(r.doi.toLowerCase(), toRef(r));
+    // Препринты, журнальная версия которых пришла сейчас (A-05).
+    const pre = await db.select(refCols).from(articles).where(inArray(sql`lower(${articles.publishedDoi})`, allDois));
+    for (const r of pre) if (r.publishedDoi) byPublishedDoi.set(r.publishedDoi.toLowerCase(), toRef(r));
   }
   if (allPmids.length) {
-    const rows = await db.select({ id: articles.id, pmid: articles.pmid, topicIds: articles.topicIds, sourceKeys: articles.sourceKeys }).from(articles).where(inArray(articles.pmid, allPmids));
-    for (const r of rows) if (r.pmid) byPmid.set(r.pmid, { id: r.id, topicIds: r.topicIds ?? [], sourceKeys: r.sourceKeys ?? [] });
+    const rows = await db.select(refCols).from(articles).where(inArray(articles.pmid, allPmids));
+    for (const r of rows) if (r.pmid) byPmid.set(r.pmid, toRef(r));
+  }
+  // A-08: строки по NCT — чтобы публикация «заняла» запись реестра, а повторная запись реестра не стала дублем.
+  const byNct = new Map<string, ExistingRef>();
+  const allNcts = Array.from(new Set(Array.from(candidates.values()).map((c) => normalizeNct(c.raw.nctId)).filter((x): x is string => !!x)));
+  if (allNcts.length) {
+    const rows = await db.select({ ...refCols, nctId: articles.nctId, sourceKey: articles.sourceKey }).from(articles).where(inArray(sql`upper(${articles.nctId})`, allNcts));
+    for (const r of rows) {
+      const k = normalizeNct(r.nctId);
+      if (!k) continue;
+      const ref: ExistingRef = { ...toRef(r), nctId: r.nctId, registryOnly: r.sourceKey === "clinicaltrials" && !r.pmid && !r.doi };
+      // Если под одним NCT несколько строк, «чистая» запись реестра приоритетнее для занятия публикацией.
+      const prev = byNct.get(k);
+      if (!prev || (ref.registryOnly && !prev.registryOnly)) byNct.set(k, ref);
+    }
   }
 
   // Сначала считаем решения (insert/update) чистой функцией, затем пишем пакетно в одной
   // транзакции: вставки — пачками по 100, обновления — в той же транзакции. Это убирает
   // N отдельных коммитов (fsync) на PGlite и N round-trip'ов на внешнем PostgreSQL.
-  const { toInsert, toUpdate } = planWrites(candidates, sourceKeysByDedup, existingByKey, byDoi, byPmid, cfg.minTrustToStore);
+  const { toInsert, toUpdate } = planWrites(candidates, sourceKeysByDedup, existingByKey, byDoi, byPmid, cfg.minTrustToStore, byPublishedDoi, byNct);
 
   const INSERT_CHUNK = 100;
   await db.transaction(async (tx) => {
@@ -360,8 +775,54 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
     });
   }
 
+  // ---- Crossref (A-04): отзывы/expression of concern по DOI — для записей без PMID и для EoC,
+  // которых PubMed типом публикации не помечает. Пачка небольшая, круг по базе — за несколько запусков.
+  const tNotices = Date.now();
+  const notices = await recheckEditorialNotices();
+  if (notices.checked > 0 || notices.error) {
+    // found = проверено DOI, added = новых отзывов, updated = новых/изменённых уведомлений (включая EoC/исправления).
+    details.push({
+      source: "crossref-notices",
+      found: notices.checked,
+      added: notices.newlyRetracted,
+      updated: notices.noticed,
+      durationMs: Date.now() - tNotices,
+      error: notices.error,
+    });
+  }
+
+  // ---- Отслеживание сохранённых КИ (A-08): смена статуса и появление результатов у записей реестра.
+  if (enabledSources.has("clinicaltrials")) {
+    const tTrials = Date.now();
+    const trials = await recheckTrials();
+    if (trials.checked > 0 || trials.error) {
+      // found = проверено записей, added = появились результаты, updated = сменился статус.
+      details.push({ source: "trial-tracking", found: trials.checked, added: trials.resultsAppeared, updated: trials.statusChanged, durationMs: Date.now() - tTrials, error: trials.error });
+    }
+  }
+
+  // ---- Догоняющая переклассификация: записи, размеченные старой версией эвристик
+  // (см. CLASSIFIER_VERSION), переразмечаются порциями в конце каждого запуска, чтобы
+  // правки классификатора применялись ко всей базе, а не только к новым статьям.
+  if (!isReclassifyRunning()) {
+    const tReclass = Date.now();
+    try {
+      const r = await reclassifyArticles({ limit: RECLASSIFY_PER_RUN });
+      if (r.scanned > 0) {
+        // found = просмотрено, added = у скольких изменилась оценка (trust score).
+        details.push({ source: "reclassify", found: r.scanned, added: r.changed.trustScore, updated: r.updated, durationMs: Date.now() - tReclass });
+      }
+    } catch (e) {
+      details.push({ source: "reclassify", found: 0, added: 0, updated: 0, durationMs: Date.now() - tReclass, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // ---- Гигиена кэша AI (F-24): старые/избыточные записи ai_cache.
+  const pruned = await pruneAiCache();
+  if (pruned.deleted) log.info("ai.cache_pruned", { deleted: pruned.deleted });
+
   for (const d of details) {
-    if (d.source === "retraction-recheck") continue; // added уже проставлен перепроверкой
+    if (SERVICE_STEPS.has(d.source)) continue; // added/updated уже проставлены самим шагом
     d.added = addedBySource[d.source] ?? 0;
     d.updated = updatedBySource[d.source] ?? 0;
   }
@@ -372,7 +833,9 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
     .set({
       status,
       finishedAt: new Date(),
-      totalFound: details.reduce((s, d) => s + d.found, 0),
+      // «Найдено» считаем только по реальным источникам: служебные шаги (перепроверка
+      // отзывов, переклассификация) используют found как «проверено/просмотрено».
+      totalFound: details.filter((d) => !SERVICE_STEPS.has(d.source)).reduce((s, d) => s + d.found, 0),
       newAdded,
       updated,
       details,
@@ -383,21 +846,22 @@ async function doRefresh(trigger: "manual" | "scheduled"): Promise<{ runId: numb
 
   // Данные изменились — сбрасываем TTL-кэш агрегатов статистики.
   invalidateStatsCache();
+  metrics.inc("refresh.runs", { trigger, status });
+  metrics.observe("refresh.duration", Date.now() - started, { trigger });
 
   return { runId: run.id };
 }
 
+/**
+ * Дождаться завершения запуска. Сбой самого выполнения уже зафиксирован в fetch_runs
+ * фоновой задачей (см. startRefresh); сюда долетают только ошибки старта (БД, блокировка).
+ */
 export async function runRefreshSafe(trigger: "manual" | "scheduled") {
   try {
     return await runRefresh(trigger);
   } catch (e) {
     g.__entRadarRunning = false;
-    const msg = e instanceof Error ? e.message : String(e);
-    // фиксируем сбой в последнем running-запуске
-    const running = await db.select().from(fetchRuns).where(and(eq(fetchRuns.status, "running"), eq(fetchRuns.trigger, trigger)));
-    for (const r of running) {
-      await db.update(fetchRuns).set({ status: "failed", finishedAt: new Date(), errorMessage: msg }).where(eq(fetchRuns.id, r.id));
-    }
+    log.error("refresh.start_failed", { trigger, error: e instanceof Error ? e.message : String(e) });
     throw e;
   }
 }

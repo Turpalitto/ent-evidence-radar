@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, renderDigest, summarize, type DigestArticle } from "@/lib/digest";
+import { digestSubject, formatDate, renderDigest, summarize, type DigestArticle } from "@/lib/digest";
+import { createI18n } from "@/lib/i18n";
 
 const base: DigestArticle = {
   title: "A study",
@@ -82,6 +83,29 @@ describe("digest renderDigest", () => {
     const { html, text } = renderDigest(summarize([], 7));
     expect(text).toContain("нет новых статей");
     expect(html).toContain("ENT Evidence Radar");
+  });
+
+  it("английское письмо по языку развёртывания (DEFAULT_LOCALE=en) или явной связке i18n", () => {
+    const { html, text } = renderDigest(summarize([row({ studyDesign: "rct", isPreprint: true })], 7), createI18n("en"));
+    expect(text).toContain("ENT Evidence Radar digest for the last 7 days");
+    expect(text).toContain("By design: RCT — 1");
+    expect(text).toMatch(/Generated: \d+ \w+ \d{4}/);
+    expect(html).toContain('<html lang="en">');
+    expect(html).toContain("<h2>New articles</h2>");
+    expect(html).toContain("Preprint ");
+    expect(html).not.toMatch(/[\u0400-\u04FF]/);
+    expect(digestSubject(7, createI18n("en"))).toBe("ENT Evidence Radar digest for the last 7 days");
+    expect(digestSubject(7)).toBe("Дайджест ENT Evidence Radar за 7 дн.");
+
+    const prev = process.env.DEFAULT_LOCALE;
+    process.env.DEFAULT_LOCALE = "en";
+    try {
+      expect(renderDigest(summarize([], 7)).text).toContain("— no new articles —");
+      expect(digestSubject(14)).toBe("ENT Evidence Radar digest for the last 14 days");
+    } finally {
+      if (prev === undefined) delete process.env.DEFAULT_LOCALE;
+      else process.env.DEFAULT_LOCALE = prev;
+    }
   });
 });
 

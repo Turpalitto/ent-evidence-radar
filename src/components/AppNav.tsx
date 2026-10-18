@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useCallback, useSyncExternalStore } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useSyncExternalStore, useTransition } from "react";
+import { LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE, LOCALE_NAMES, msg, type Locale } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n/client";
 import { RefreshButton } from "./RefreshButton";
+import { AuthStatus } from "./AuthStatus";
 
 const navLinks = [
   {
     href: "/",
-    label: "Лента",
+    label: msg("Лента"),
     exact: true,
     icon: (
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -18,7 +21,7 @@ const navLinks = [
   },
   {
     href: "/topics",
-    label: "Темы",
+    label: msg("Темы"),
     icon: (
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
         <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
@@ -28,7 +31,7 @@ const navLinks = [
   },
   {
     href: "/stats",
-    label: "Аналитика",
+    label: msg("Аналитика"),
     icon: (
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
         <line x1="18" y1="20" x2="18" y2="10" />
@@ -39,7 +42,7 @@ const navLinks = [
   },
   {
     href: "/settings",
-    label: "Настройки",
+    label: msg("Настройки"),
     icon: (
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
         <circle cx="12" cy="12" r="3" />
@@ -49,11 +52,12 @@ const navLinks = [
   },
 ];
 
-// Все ссылки для десктопного меню включают "Журнал"
+// Подписи — ключи словаря (msg), переводятся через t() при рендере.
+// Все ссылки для десктопного меню включают «Журнал».
 const desktopLinks = [
   ...navLinks.slice(0, 3),
-  { href: "/runs", label: "Журнал", exact: false, icon: null },
-  navLinks[3],
+  { href: "/runs", label: msg("Журнал"), exact: false, icon: null },
+  ...navLinks.slice(3, 4),
 ];
 
 function subscribeTheme(cb: () => void) {
@@ -65,6 +69,7 @@ const getTheme = () => document.documentElement.classList.contains("dark");
 const getServerTheme = () => false;
 
 function ThemeToggle({ compact = false }: { compact?: boolean }) {
+  const { t } = useI18n();
   const dark = useSyncExternalStore(subscribeTheme, getTheme, getServerTheme);
   const toggle = useCallback(() => {
     const next = !document.documentElement.classList.contains("dark");
@@ -83,10 +88,10 @@ function ThemeToggle({ compact = false }: { compact?: boolean }) {
       <button
         onClick={toggle}
         className="nav-item flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[10px] font-medium"
-        aria-label="Переключить тему"
+        aria-label={t("Переключить тему")}
       >
         <span className="rounded-lg p-1.5">{icon}</span>
-        <span>{dark ? "Светлая" : "Тёмная"}</span>
+        <span>{dark ? t("Светлая") : t("Тёмная")}</span>
       </button>
     );
   }
@@ -95,16 +100,49 @@ function ThemeToggle({ compact = false }: { compact?: boolean }) {
     <button
       onClick={toggle}
       className="btn-ghost rounded-xl p-2"
-      title={dark ? "Светлая тема" : "Тёмная тема"}
-      aria-label="Переключить тему"
+      title={dark ? t("Светлая тема") : t("Тёмная тема")}
+      aria-label={t("Переключить тему")}
     >
       {icon}
     </button>
   );
 }
 
+/**
+ * Переключатель языка интерфейса (A-16). Пишет cookie и просит сервер перерисовать
+ * дерево (`router.refresh()`): серверные страницы читают cookie, клиентские компоненты
+ * получают новый язык через LocaleProvider из layout — без перезагрузки страницы.
+ */
+function LanguageSwitch() {
+  const { t, locale } = useI18n();
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const next: Locale = locale === "ru" ? "en" : "ru";
+  const switchTo = useCallback(() => {
+    const secure = typeof location !== "undefined" && location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${LOCALE_COOKIE}=${next}; Path=/; Max-Age=${LOCALE_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
+    document.documentElement.lang = next;
+    startTransition(() => router.refresh());
+  }, [next, router]);
+  return (
+    <button
+      type="button"
+      onClick={switchTo}
+      disabled={pending}
+      className="btn-ghost rounded-xl px-2.5 py-2 text-xs font-bold uppercase tracking-wide disabled:opacity-60"
+      title={t("Язык интерфейса: {name}. Переключить на {next}", { name: LOCALE_NAMES[locale], next: LOCALE_NAMES[next] })}
+      aria-label={t("Переключить язык интерфейса на {next}", { next: LOCALE_NAMES[next] })}
+      lang={next}
+      data-testid="language-switch"
+    >
+      {next}
+    </button>
+  );
+}
+
 export function AppNav() {
   const path = usePathname();
+  const { t } = useI18n();
   return (
     <>
       {/* ── Верхний хедер ── */}
@@ -128,7 +166,7 @@ export function AppNav() {
           </Link>
 
           {/* Desktop nav */}
-          <nav aria-label="Основная навигация" className="nav-group ml-4 hidden items-center gap-1 rounded-full p-1 md:flex">
+          <nav aria-label={t("Основная навигация")} className="nav-group ml-4 hidden items-center gap-1 rounded-full p-1 md:flex">
             {desktopLinks.map((l) => {
               const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
               return (
@@ -138,7 +176,7 @@ export function AppNav() {
                   aria-current={active ? "page" : undefined}
                   className={`rounded-full px-3.5 py-1.5 text-sm font-medium ${active ? "nav-item-active" : "nav-item"}`}
                 >
-                  {l.label}
+                  {t(l.label)}
                 </Link>
               );
             })}
@@ -147,13 +185,15 @@ export function AppNav() {
           <div className="ml-auto flex items-center gap-2">
             {/* ThemeToggle только на десктопе — на мобиле он в нижнем баре */}
             <span className="hidden md:block"><ThemeToggle /></span>
+            <LanguageSwitch />
+            <AuthStatus />
             <RefreshButton />
           </div>
         </div>
       </header>
 
       {/* ── Нижняя навигация (mobile only) ── */}
-      <nav aria-label="Мобильная навигация" className="mobile-nav fixed bottom-0 left-0 right-0 z-40 pb-safe md:hidden">
+      <nav aria-label={t("Мобильная навигация")} className="mobile-nav fixed bottom-0 left-0 right-0 z-40 pb-safe md:hidden">
         <div className="flex px-1">
           {navLinks.map((l) => {
             const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
@@ -171,7 +211,7 @@ export function AppNav() {
                 <span className={`rounded-lg p-1.5 transition ${active ? "nav-icon-active" : ""}`}>
                   {l.icon}
                 </span>
-                <span>{l.label}</span>
+                <span>{t(l.label)}</span>
               </Link>
             );
           })}

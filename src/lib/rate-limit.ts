@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { checkRateLimit } from "@/lib/security";
+import { log } from "@/lib/log";
 
 /**
  * Общий (кросс-инстансный) rate-limit.
@@ -57,10 +58,7 @@ export async function checkRateLimitShared(key: string, limit: number, windowMs:
       resetMs: Math.max(0, Number(row.reset_ms)),
     };
   } catch (e) {
-    console.warn(
-      "[ent-radar] Общий rate-limit недоступен — временно используется in-memory:",
-      e instanceof Error ? e.message : String(e),
-    );
+    log.warn("ratelimit.shared_unavailable", { error: e instanceof Error ? e.message : String(e), fallback: "in-memory" });
     return checkRateLimit(key, limit, windowMs);
   }
 }

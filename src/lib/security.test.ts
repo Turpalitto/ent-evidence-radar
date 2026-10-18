@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { checkRateLimit, checkApiAuth, getClientIp } from "@/lib/security";
+import { checkRateLimit, checkApiAuth, getClientIp, rateLimitKey } from "@/lib/security";
+import { SESSION_COOKIE, createSessionToken, verifySessionToken } from "@/lib/session";
 
 describe("checkRateLimit", () => {
   it("allows requests within limit", () => {
@@ -32,16 +33,18 @@ describe("checkRateLimit", () => {
 describe("checkApiAuth", () => {
   const SECRET = "test-secret-123";
 
-  function req(headers: Record<string, string>) {
-    return { headers: { get: (n: string) => headers[n.toLowerCase()] ?? null } };
+  function req(headers: Record<string, string>, method = "POST") {
+    return { method, headers: { get: (n: string) => headers[n.toLowerCase()] ?? null } };
   }
 
   beforeEach(() => {
     process.env.API_SECRET = SECRET;
+    delete process.env.SESSION_SECRET;
   });
 
   afterEach(() => {
     delete process.env.API_SECRET;
+    delete process.env.SESSION_SECRET;
   });
 
   it("open access when API_SECRET is not set", () => {
@@ -61,30 +64,73 @@ describe("checkApiAuth", () => {
     expect(r.status).toBe(401);
   });
 
-  it("accepts same-origin browser request (exact host match)", () => {
-    expect(checkApiAuth(req({ origin: "https://app.example.com", host: "app.example.com" })).ok).toBe(true);
-  });
-
-  it("accepts same-origin via sec-fetch-site even without Origin", () => {
-    expect(checkApiAuth(req({ "sec-fetch-site": "same-origin", host: "app.example.com" })).ok).toBe(true);
-  });
-
-  it("REJECTS spoofed origin that merely contains the host (bypass fix)", () => {
-    const r = checkApiAuth(req({ origin: "https://evil.example/app.example.com", host: "app.example.com" }));
+  // Главный регрессионный тест аудита (F-01): заголовки, которые любой HTTP-клиент
+  // выставляет произвольно, НЕ являются аутентификацией.
+  it("REJECTS spoofed Sec-Fetch-Site: same-origin without token or session", () => {
+    const r = checkApiAuth(req({ "sec-fetch-site": "same-origin", host: "app.example.com" }));
     expect(r.ok).toBe(false);
     expect(r.status).toBe(401);
   });
 
-  it("rejects cross-origin and malformed origin", () => {
-    expect(checkApiAuth(req({ origin: "https://other.example", host: "app.example.com" })).ok).toBe(false);
-    expect(checkApiAuth(req({ origin: "not-a-url", host: "app.example.com" })).ok).toBe(false);
-    expect(checkApiAuth(req({ origin: "https://app.example.com", host: "other.example" })).ok).toBe(false);
+  it("REJECTS spoofed Origin equal to Host without token or session", () => {
+    const r = checkApiAuth(req({ origin: "https://app.example.com", host: "app.example.com" }));
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe(401);
   });
 
-  it("rejects when neither token nor origin present", () => {
+  it("rejects when neither token nor session present", () => {
     const r = checkApiAuth(req({ host: "app.example.com" }));
     expect(r.ok).toBe(false);
     expect(r.status).toBe(401);
+  });
+
+  describe("session cookie", () => {
+    const cookie = () => `${SESSION_COOKIE}=${createSessionToken()}`;
+
+    it("accepts a valid session cookie on a same-origin mutating request", () => {
+      expect(checkApiAuth(req({ cookie: cookie(), "sec-fetch-site": "same-origin", host: "app.example.com" })).ok).toBe(true);
+      expect(checkApiAuth(req({ cookie: cookie(), origin: "https://app.example.com", host: "app.example.com" })).ok).toBe(true);
+    });
+
+    it("accepts a valid session cookie on GET without origin headers (downloads/navigation)", () => {
+      expect(checkApiAuth(req({ cookie: cookie(), host: "app.example.com" }, "GET")).ok).toBe(true);
+    });
+
+    it("REJECTS a mutating request with a valid cookie but cross-site origin (CSRF)", () => {
+      const r1 = checkApiAuth(req({ cookie: cookie(), "sec-fetch-site": "cross-site", origin: "https://evil.example", host: "app.example.com" }));
+      expect(r1.ok).toBe(false);
+      expect(r1.status).toBe(403);
+      const r2 = checkApiAuth(req({ cookie: cookie(), origin: "https://evil.example/app.example.com", host: "app.example.com" }));
+      expect(r2.ok).toBe(false);
+      const r3 = checkApiAuth(req({ cookie: cookie(), host: "app.example.com" }));
+      expect(r3.ok).toBe(false);
+    });
+
+    it("rejects forged, tampered and expired tokens", () => {
+      const forged = `${SESSION_COOKIE}=v1.9999999999.abc.notasignature`;
+      expect(checkApiAuth(req({ cookie: forged, "sec-fetch-site": "same-origin", host: "a" })).ok).toBe(false);
+
+      const valid = createSessionToken()!;
+      const tampered = valid.replace(/^v1\.(\d+)/, (_m, exp: string) => `v1.${Number(exp) + 100000}`);
+      expect(verifySessionToken(tampered)).toBe(false);
+
+      const expired = createSessionToken(Date.now() - 400 * 24 * 3600 * 1000, 60)!;
+      expect(verifySessionToken(expired)).toBe(false);
+      expect(verifySessionToken("")).toBe(false);
+      expect(verifySessionToken("v1.1.2")).toBe(false);
+    });
+
+    it("invalidates sessions when the secret changes", () => {
+      const token = createSessionToken()!;
+      expect(verifySessionToken(token)).toBe(true);
+      process.env.API_SECRET = "another-secret";
+      expect(verifySessionToken(token)).toBe(false);
+    });
+
+    it("cannot create a session when no secret is configured", () => {
+      delete process.env.API_SECRET;
+      expect(createSessionToken()).toBeNull();
+    });
   });
 });
 
@@ -125,5 +171,71 @@ describe("getClientIp", () => {
     process.env.TRUST_PROXY = "1";
     process.env.CLIENT_IP_HEADER = "cf-connecting-ip";
     expect(getClientIp(req({ "cf-connecting-ip": "198.51.100.7", "x-forwarded-for": "1.2.3.4" }))).toBe("198.51.100.7");
+  });
+
+  it("IPv6: скобки с портом, CIDR доверенных прокси и сокращение «::»", () => {
+    process.env.TRUST_PROXY = "1";
+    process.env.TRUSTED_PROXIES = "2001:db8:ffff::/48, ::1";
+    expect(getClientIp(req({ "x-forwarded-for": "[2001:db8::1]:443" }))).toBe("2001:db8::1");
+    // Хоп прокси из IPv6-подсети и loopback пропускаются, клиент — ближайший недоверенный адрес.
+    expect(getClientIp(req({ "x-forwarded-for": "1.2.3.4, 2001:db8::1, 2001:db8:ffff:0:0:0:0:7, ::1" }))).toBe("2001:db8::1");
+    // Семейства адресов не смешиваются: IPv4-клиент не попадает под IPv6-CIDR.
+    expect(getClientIp(req({ "x-forwarded-for": "203.0.113.9, ::1" }))).toBe("203.0.113.9");
+  });
+
+  it("точный IP в TRUSTED_PROXIES и запасные варианты: все хопы доверенные → последний; x-real-ip; пусто → unknown", () => {
+    process.env.TRUST_PROXY = "1";
+    process.env.TRUSTED_PROXIES = "10.0.0.1";
+    expect(getClientIp(req({ "x-forwarded-for": "10.0.0.1" }))).toBe("10.0.0.1");
+    expect(getClientIp(req({ "x-real-ip": "198.51.100.7:8080" }))).toBe("198.51.100.7");
+    expect(getClientIp(req({ "x-forwarded-for": " , " }))).toBe("unknown");
+    expect(getClientIp(req({}))).toBe("unknown");
+  });
+
+  it("некорректные CIDR/адреса не считаются доверенными и не роняют разбор", () => {
+    process.env.TRUST_PROXY = "1";
+    process.env.TRUSTED_PROXIES = "10.0.0.0/99, 300.1.1.1/8, 10.0.0/8, zz::zz/64, 10.0.0.0/0";
+    // /0 — любой IPv4 доверенный → остаётся последний хоп; IPv6-клиент под /0 для IPv4 не попадает.
+    expect(getClientIp(req({ "x-forwarded-for": "203.0.113.9, 10.1.2.3" }))).toBe("10.1.2.3");
+    expect(getClientIp(req({ "x-forwarded-for": "2001:db8::5, 10.1.2.3" }))).toBe("2001:db8::5");
+    process.env.TRUSTED_PROXIES = "10.0.0.0/99";
+    expect(getClientIp(req({ "x-forwarded-for": "203.0.113.9, 10.1.2.3" }))).toBe("10.1.2.3");
+  });
+});
+
+describe("rateLimitKey (I-12)", () => {
+  function req(headers: Record<string, string>) {
+    return { headers: { get: (n: string) => headers[n.toLowerCase()] ?? null } };
+  }
+  beforeEach(() => {
+    process.env.API_SECRET = "s3cret";
+  });
+  afterEach(() => {
+    delete process.env.API_SECRET;
+    delete process.env.TRUST_PROXY;
+  });
+
+  it("разные сессии → разные бакеты, одна сессия → один бакет; секрет не попадает в ключ", () => {
+    const a = `${SESSION_COOKIE}=${createSessionToken(Date.now())}`;
+    const b = `${SESSION_COOKIE}=${createSessionToken(Date.now() + 1000)}`;
+    const ka = rateLimitKey(req({ cookie: a }));
+    expect(ka).toMatch(/^sess:[0-9a-f]{16}$/);
+    expect(rateLimitKey(req({ cookie: a }))).toBe(ka);
+    expect(rateLimitKey(req({ cookie: b }))).not.toBe(ka);
+    expect(ka).not.toContain(a.slice(-10));
+  });
+
+  it("токен API — свой бакет; просроченная cookie не считается сессией", () => {
+    const kt = rateLimitKey(req({ authorization: "Bearer s3cret" }));
+    expect(kt).toMatch(/^tok:[0-9a-f]{16}$/);
+    expect(rateLimitKey(req({ "x-api-key": "s3cret" }))).toBe(kt);
+    const expired = `${SESSION_COOKIE}=${createSessionToken(Date.now() - 100 * 86400_000, 60)}`;
+    expect(rateLimitKey(req({ cookie: expired }))).toBe("ip:unknown");
+  });
+
+  it("без учётных данных — по IP (с TRUST_PROXY — реальный, иначе unknown)", () => {
+    expect(rateLimitKey(req({ "x-forwarded-for": "1.2.3.4" }))).toBe("ip:unknown");
+    process.env.TRUST_PROXY = "1";
+    expect(rateLimitKey(req({ "x-forwarded-for": "1.2.3.4" }))).toBe("ip:1.2.3.4");
   });
 });

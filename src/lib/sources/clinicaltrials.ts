@@ -1,7 +1,8 @@
 import { fetchJson } from "./http";
 import type { RawArticle } from "@/lib/evidence/classify";
+import { maskingLabel, phaseLabel, trialStatusLabel } from "@/lib/evidence/trial-status";
 
-interface CtStudy {
+export interface CtStudy {
   protocolSection?: {
     identificationModule?: { nctId?: string; briefTitle?: string; officialTitle?: string };
     statusModule?: {
@@ -43,52 +44,84 @@ export async function fetchClinicalTrials(days: number, maxResults: number): Pro
     pageSize: String(Math.min(maxResults, 200)),
     sort: "LastUpdatePostDate:desc",
     format: "json",
-    fields:
-      "NCTId,BriefTitle,OfficialTitle,OverallStatus,LastUpdatePostDate,ResultsFirstPostDate,StudyFirstPostDate,BriefSummary,StudyType,Phase,EnrollmentCount,DesignAllocation,DesignInterventionModel,DesignMasking,Condition,Keyword,LeadSponsorName,HasResults,LocationCountry",
+    fields: FIELDS,
   });
   const data = await fetchJson<CtResponse>(`https://clinicaltrials.gov/api/v2/studies?${p}`, {
     throttleKey: "ctgov",
     throttleMs: 300,
   });
 
-  return (data.studies ?? [])
-    .map<RawArticle | null>((s) => {
-      const ps = s.protocolSection ?? {};
-      const nct = ps.identificationModule?.nctId;
-      const title = ps.identificationModule?.officialTitle || ps.identificationModule?.briefTitle;
-      if (!nct || !title) return null;
-      const design = ps.designModule;
-      const isRandomized = design?.designInfo?.allocation === "RANDOMIZED";
-      const enrollment = design?.enrollmentInfo?.count ?? null;
-      const status = ps.statusModule?.overallStatus ?? "";
-      const phases = design?.phases ?? [];
-      const countries = Array.from(new Set((ps.contactsLocationsModule?.locations ?? []).map((l) => l.country).filter(Boolean)));
-      const dateStr =
-        (s.hasResults ? ps.statusModule?.resultsFirstPostDateStruct?.date : undefined) ??
-        ps.statusModule?.studyFirstPostDateStruct?.date ??
-        ps.statusModule?.lastUpdatePostDateStruct?.date;
+  return (data.studies ?? []).map(studyToRaw).filter((x): x is RawArticle => x !== null);
+}
 
-      const abstractParts = [
-        `Статус: ${status}. ${isRandomized ? "Рандомизированное" : "Нерандомизированное"} интервенционное исследование${phases.length ? `, фаза ${phases.join("/")}` : ""}${enrollment ? `, планируемая/фактическая выборка n=${enrollment}` : ""}. Маскирование: ${design?.designInfo?.maskingInfo?.masking ?? "не указано"}. Спонсор: ${ps.sponsorCollaboratorsModule?.leadSponsor?.name ?? "не указан"}.${countries.length ? ` Страны: ${countries.slice(0, 8).join(", ")}${countries.length > 8 ? "…" : ""}.` : ""}`,
-        s.hasResults ? "В реестре опубликованы результаты." : "Результаты в реестре пока не опубликованы.",
-        ps.descriptionModule?.briefSummary ?? "",
-      ];
+const FIELDS =
+  "NCTId,BriefTitle,OfficialTitle,OverallStatus,LastUpdatePostDate,ResultsFirstPostDate,StudyFirstPostDate,BriefSummary,StudyType,Phase,EnrollmentCount,DesignAllocation,DesignInterventionModel,DesignMasking,Condition,Keyword,LeadSponsorName,HasResults,LocationCountry";
 
-      return {
-        nctId: nct,
-        title,
-        abstract: abstractParts.filter(Boolean).join("\n\n"),
-        journal: "ClinicalTrials.gov (реестр)",
-        authors: ps.sponsorCollaboratorsModule?.leadSponsor?.name ? [ps.sponsorCollaboratorsModule.leadSponsor.name] : [],
-        publishedAt: dateStr ? new Date(dateStr) : null,
-        publicationTypes: [isRandomized ? "Randomized Controlled Trial (registry)" : "Interventional study (registry)", ...phases],
-        keywords: [...(ps.conditionsModule?.conditions ?? []), ...(ps.conditionsModule?.keywords ?? [])].slice(0, 20),
-        sourceKey: "clinicaltrials",
-        url: `https://clinicaltrials.gov/study/${nct}`,
-        hasResults: !!s.hasResults,
-        enrollment,
-        studyTypeHint: s.hasResults && isRandomized ? "rct" : "trial_registry",
-      };
-    })
-    .filter((x): x is RawArticle => x !== null);
+/** Сколько NCT за один запрос `filter.ids` (API v2 принимает списки через запятую; pageSize ≤ 1000). */
+export const CT_IDS_PER_REQUEST = 100;
+
+/**
+ * Текущее состояние конкретных исследований по NCT (A-08): статус, результаты, даты.
+ * Используется отслеживанием сохранённых КИ; результат в том же формате RawArticle.
+ */
+export async function fetchClinicalTrialsByIds(nctIds: string[], opts: { fetch?: typeof fetchJson } = {}): Promise<RawArticle[]> {
+  const get = opts.fetch ?? fetchJson;
+  const ids = [...new Set(nctIds.map((x) => x.trim().toUpperCase()).filter((x) => /^NCT\d{8}$/.test(x)))];
+  const out: RawArticle[] = [];
+  for (let i = 0; i < ids.length; i += CT_IDS_PER_REQUEST) {
+    const chunk = ids.slice(i, i + CT_IDS_PER_REQUEST);
+    const p = new URLSearchParams({ "filter.ids": chunk.join(","), pageSize: String(chunk.length), format: "json", fields: FIELDS });
+    const data = await get<CtResponse>(`https://clinicaltrials.gov/api/v2/studies?${p}`, { throttleKey: "ctgov", throttleMs: 300 });
+    for (const s of data.studies ?? []) {
+      const r = studyToRaw(s);
+      if (r) out.push(r);
+    }
+  }
+  return out;
+}
+
+/** Чистое преобразование записи API v2 в RawArticle. Экспортировано для тестов и отслеживания КИ. */
+export function studyToRaw(s: CtStudy): RawArticle | null {
+  const ps = s.protocolSection ?? {};
+  const nct = ps.identificationModule?.nctId;
+  const title = ps.identificationModule?.officialTitle || ps.identificationModule?.briefTitle;
+  if (!nct || !title) return null;
+  const design = ps.designModule;
+  const isRandomized = design?.designInfo?.allocation === "RANDOMIZED";
+  const enrollment = design?.enrollmentInfo?.count ?? null;
+  const status = ps.statusModule?.overallStatus ?? "";
+  const phases = design?.phases ?? [];
+  const countries = Array.from(new Set((ps.contactsLocationsModule?.locations ?? []).map((l) => l.country).filter(Boolean)));
+  const dateStr =
+    (s.hasResults ? ps.statusModule?.resultsFirstPostDateStruct?.date : undefined) ??
+    ps.statusModule?.studyFirstPostDateStruct?.date ??
+    ps.statusModule?.lastUpdatePostDateStruct?.date;
+
+  // Первый абзац — человекочитаемая сводка; EN-версия собирается при показе пофразно (`i18n/stored.ts`),
+  // а `trials.ts` читает из него статус и факт публикации результатов у записей без `trial_info`.
+  const phase = phaseLabel(phases);
+  const abstractParts = [
+    `Статус: ${trialStatusLabel(status)}. ${isRandomized ? "Рандомизированное" : "Нерандомизированное"} интервенционное исследование${phase ? `, фаза ${phase}` : ""}${enrollment ? `, планируемая/фактическая выборка n=${enrollment}` : ""}. Маскирование: ${maskingLabel(design?.designInfo?.maskingInfo?.masking)}. Спонсор: ${ps.sponsorCollaboratorsModule?.leadSponsor?.name ?? "не указан"}.${countries.length ? ` Страны: ${countries.slice(0, 8).join(", ")}${countries.length > 8 ? "…" : ""}.` : ""}`,
+    s.hasResults ? "В реестре опубликованы результаты." : "Результаты в реестре пока не опубликованы.",
+    ps.descriptionModule?.briefSummary ?? "",
+  ];
+
+  return {
+    nctId: nct,
+    title,
+    abstract: abstractParts.filter(Boolean).join("\n\n"),
+    journal: "ClinicalTrials.gov (реестр)",
+    authors: ps.sponsorCollaboratorsModule?.leadSponsor?.name ? [ps.sponsorCollaboratorsModule.leadSponsor.name] : [],
+    publishedAt: dateStr ? new Date(dateStr) : null,
+    publicationTypes: [isRandomized ? "Randomized Controlled Trial (registry)" : "Interventional study (registry)", ...phases],
+    keywords: [...(ps.conditionsModule?.conditions ?? []), ...(ps.conditionsModule?.keywords ?? [])].slice(0, 20),
+    sourceKey: "clinicaltrials",
+    url: `https://clinicaltrials.gov/study/${nct}`,
+    hasResults: !!s.hasResults,
+    enrollment,
+    studyTypeHint: s.hasResults && isRandomized ? "rct" : "trial_registry",
+    trialStatus: status || null,
+    trialLastUpdate: ps.statusModule?.lastUpdatePostDateStruct?.date ?? null,
+    trialResultsPosted: ps.statusModule?.resultsFirstPostDateStruct?.date ?? null,
+  };
 }

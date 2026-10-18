@@ -23,6 +23,9 @@ describe("parseFilters", () => {
       topicId: undefined,
       excludePreprints: false,
       sort: "date",
+      scope: "all",
+      hidden: false,
+      withNotes: false,
       page: 1,
       pageSize: 30,
     });
@@ -39,6 +42,14 @@ describe("parseFilters", () => {
     expect(f.sort).toBe("trust");
     expect(f.page).toBe(3);
     expect(f.pageSize).toBe(50);
+  });
+
+  it("scope принимает title и notes, остальное — all; withNotes только как '1'", () => {
+    expect(parseFilters(sp("q=x&scope=title")).scope).toBe("title");
+    expect(parseFilters(sp("q=x&scope=notes")).scope).toBe("notes");
+    expect(parseFilters(sp("q=x&scope=body")).scope).toBe("all");
+    expect(parseFilters(sp("withNotes=1")).withNotes).toBe(true);
+    expect(parseFilters(sp("withNotes=true")).withNotes).toBe(false);
   });
 
   it("булевы параметры включаются только как '1'", () => {
@@ -59,6 +70,11 @@ describe("parseFilters", () => {
 
   it("pageSize клампится до 200", () => {
     expect(parseFilters(sp("pageSize=1000")).pageSize).toBe(200);
+  });
+
+  it("отрицательный pageSize зажимается до 1 (LIMIT < 0 — ошибка Postgres)", () => {
+    expect(parseFilters(sp("pageSize=-5")).pageSize).toBe(1);
+    expect(parseFilters(sp("pageSize=0")).pageSize).toBe(1);
   });
 
   it("sort приводится к допустимым значениям", () => {

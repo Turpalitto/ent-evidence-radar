@@ -11,10 +11,21 @@ jobs:
   digest:
     runs-on: ubuntu-latest
     environment: production
+    env:
+      APP_URL: ${{ secrets.APP_URL }}
+      API_SECRET: ${{ secrets.API_SECRET }}
     steps:
+      # Дайджест по расписанию встроен в приложение (Настройки → «Email-дайджест по расписанию»);
+      # этот workflow — только для serverless без планировщика. Без APP_URL — тихий no-op.
+      - name: Skip when APP_URL is not configured
+        if: env.APP_URL == ''
+        run: echo "::notice::Секрет APP_URL не задан (environment production) — внешний cron дайджеста отключён; используйте расписание в настройках приложения."
+
       - name: Trigger digest
+        if: env.APP_URL != ''
         run: |
-          curl -fsS -X POST "${{ secrets.APP_URL }}/api/digest" \
+          set -euo pipefail
+          curl -fsS -X POST "$APP_URL/api/digest" \
             -H 'Content-Type: application/json' \
-            -H "Authorization: Bearer ${{ secrets.API_SECRET }}" \
+            -H "Authorization: Bearer $API_SECRET" \
             -w '\nHTTP %{http_code}\n'

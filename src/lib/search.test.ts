@@ -85,3 +85,14 @@ describe("expandQuery (синдромы + частичное префиксно�
     expect(flat("дексаметазон")).toContain("intratympanic dexamethasone");
   });
 });
+
+describe("покрытие словаря базовыми ЛОР-операциями", () => {
+  it("тонзиллэктомия / аденотомия / трахеостомия раскрываются в английские термины", () => {
+    const flat = (q: string) => expandQuery(q).flat().map((t) => t.toLowerCase());
+    expect(flat("тонзиллэктомия")).toContain("tonsillectomy");
+    expect(flat("аденотомия")).toContain("adenoidectomy");
+    expect(flat("трахеостомия")).toContain("tracheostomy");
+    expect(flat("внезапная тугоухость")).toContain("sudden sensorineural hearing loss");
+    expect(flat("впч")).toContain("hpv");
+  });
+});

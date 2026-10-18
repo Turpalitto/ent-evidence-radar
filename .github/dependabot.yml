@@ -1,0 +1,33 @@
+# Автоматические PR на обновление зависимостей (аудит I-10).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Moscow
+    open-pull-requests-limit: 5
+    groups:
+      # Патчи и минорные обновления — одним PR, чтобы не заваливать репозиторий.
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # Мажорные обновления фреймворка/ORM требуют ручной миграции — только вручную.
+      - dependency-name: next
+        update-types: ["version-update:semver-major"]
+      - dependency-name: drizzle-orm
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@electric-sql/pglite"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly

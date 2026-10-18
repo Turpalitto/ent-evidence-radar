@@ -43,6 +43,90 @@
       "when": 1791729971884,
       "tag": "0005_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791983019077,
+      "tag": "0006_classifier_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791983624822,
+      "tag": "0007_sync_schema_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791985370237,
+      "tag": "0008_fts_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791986398199,
+      "tag": "0009_manual_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791986994713,
+      "tag": "0010_preprint_published_doi",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791988322830,
+      "tag": "0011_drop_trgm_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791990159118,
+      "tag": "0012_editorial_notice",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791990835622,
+      "tag": "0013_guideline_issuer",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791991313117,
+      "tag": "0014_trial_info",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791992907907,
+      "tag": "0015_indexes_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791996937804,
+      "tag": "0016_issns",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791997644657,
+      "tag": "0017_design_reason",
+      "breakpoints": true
     }
   ]
 }

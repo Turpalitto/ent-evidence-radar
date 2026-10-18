@@ -283,6 +283,93 @@ export const SYNONYMS: Record<string, string[]> = {
   "синусопластика": ["balloon sinuplasty", "sinuplasty"],
   "тимпаностомия": ["tympanostomy", "ventilation tube", "myringotomy"],
   "стапедотомия": ["stapedotomy", "stapedectomy"],
+  // Операции и вмешательства, которых не хватало (аудит: «тонзиллэктомия» не находила tonsillectomy)
+  тонзиллэктомия: ["tonsillectomy", "adenotonsillectomy"],
+  тонзилэктомия: ["tonsillectomy"],
+  аденотонзиллэктомия: ["adenotonsillectomy", "tonsillectomy", "adenoidectomy"],
+  аденотомия: ["adenoidectomy"],
+  аденоидэктомия: ["adenoidectomy"],
+  "шунтирование барабанной полости": ["tympanostomy tube", "ventilation tube", "grommet"],
+  мирингопластика: ["myringoplasty", "tympanoplasty"],
+  стапедопластика: ["stapedotomy", "stapedectomy", "stapes surgery"],
+  трахеостомия: ["tracheostomy", "tracheotomy"],
+  ларингэктомия: ["laryngectomy"],
+  тиреоидэктомия: ["thyroidectomy"],
+  паротидэктомия: ["parotidectomy"],
+  "шейная диссекция": ["neck dissection"],
+  увулопалатофарингопластика: ["uvulopalatopharyngoplasty", "uppp"],
+  микроларингоскопия: ["microlaryngoscopy", "microlaryngeal surgery"],
+  "баллонная дилатация": ["balloon dilation", "balloon dilatation"],
+  "эндоскопическая хирургия пазух": ["endoscopic sinus surgery", "fess"],
+  дакриоцисториностомия: ["dacryocystorhinostomy"],
+  "трансоральная роботизированная хирургия": ["transoral robotic surgery", "tors"],
+  "лазерная хирургия": ["laser surgery", "co2 laser"],
+  "радиочастотная абляция": ["radiofrequency ablation"],
+  интубация: ["intubation"],
+  "стеноз трахеи": ["tracheal stenosis", "subglottic stenosis"],
+  // Онкология головы и шеи
+  впч: ["hpv", "human papillomavirus"],
+  "лучевая терапия": ["radiotherapy", "radiation therapy"],
+  химиотерапия: ["chemotherapy", "chemoradiotherapy"],
+  иммунотерапия: ["immunotherapy", "pembrolizumab", "nivolumab"],
+  "узлы щитовидной железы": ["thyroid nodule"],
+  гипопаратиреоз: ["hypoparathyroidism", "hypocalcemia"],
+  // Слюнные железы, шея
+  сиалоаденит: ["sialadenitis"],
+  сиалолитиаз: ["sialolithiasis", "salivary stone"],
+  "слюннокаменная болезнь": ["sialolithiasis"],
+  лимфаденит: ["lymphadenitis", "cervical lymphadenopathy"],
+  "киста шеи": ["branchial cleft cyst", "thyroglossal duct cyst", "neck mass"],
+  "флегмона шеи": ["deep neck infection", "neck abscess"],
+  // Слух: детали
+  "внезапная тугоухость": ["sudden sensorineural hearing loss", "sudden hearing loss"],
+  ототоксичность: ["ototoxicity", "cisplatin ototoxicity"],
+  "скрининг слуха новорожденных": ["newborn hearing screening", "universal newborn hearing screening"],
+  "имплант костной проводимости": ["bone conduction implant", "bone-anchored hearing"],
+  "серная пробка": ["cerumen impaction", "earwax"],
+  // Нос: детали
+  "промывание носа": ["nasal irrigation", "saline irrigation"],
+  "назальный спрей": ["nasal spray", "intranasal corticosteroid"],
+  "назальная обструкция": ["nasal obstruction"],
+  обоняние: ["olfaction", "smell", "olfactory"],
+  // Общее
+  ковид: ["covid-19", "sars-cov-2"],
+  covid: ["covid-19", "sars-cov-2", "ковид"],
+  вакцинация: ["vaccination", "vaccine"],
+  пробиотики: ["probiotics"],
+  телемедицина: ["telemedicine", "telehealth"],
+  "искусственный интеллект": ["artificial intelligence", "machine learning", "deep learning"],
+  // Общеклинические слова, без которых русский многословный запрос («отит дети») терял смысл:
+  // слово без перевода образует AND-группу, которой нет в английских текстах.
+  "дети": ["children", "child", "pediatric", "paediatric"],
+  "детей": ["children", "child", "pediatric", "paediatric"],
+  "ребенок": ["child", "children", "pediatric", "paediatric"],
+  "ребёнок": ["child", "children", "pediatric", "paediatric"],
+  "педиатрия": ["pediatric", "paediatric", "children"],
+  "взрослые": ["adults", "adult"],
+  "пожилые": ["elderly", "older adults", "aged"],
+  "беременность": ["pregnancy", "pregnant"],
+  "хирургический": ["surgical", "surgery"],
+  "профилактика": ["prevention", "prophylaxis"],
+  "осложнения": ["complications", "complication", "adverse events"],
+  "рецидив": ["recurrence", "recurrent", "relapse"],
+  "антибиотик": ["antibiotic", "antibiotics", "antimicrobial"],
+  "антибиотики": ["antibiotics", "antibiotic", "antimicrobial"],
+  "стероиды": ["steroids", "corticosteroids", "glucocorticoids"],
+  "кортикостероиды": ["corticosteroids", "steroids", "glucocorticoids"],
+  "качество жизни": ["quality of life", "QoL"],
+  "исходы": ["outcomes", "outcome"],
+  "смертность": ["mortality", "death"],
+  "руководство": ["guideline", "guidelines", "clinical practice guideline"],
+  "рекомендации": ["guideline", "guidelines", "recommendations"],
+  "метаанализ": ["meta-analysis", "metaanalysis"],
+  "мета-анализ": ["meta-analysis", "metaanalysis"],
+  "систематический обзор": ["systematic review", "meta-analysis"],
+  "обзор": ["review", "systematic review"],
+  "рандомизированное": ["randomized", "randomised", "randomized controlled trial"],
+  "рки": ["randomized controlled trial", "randomised controlled trial", "RCT"],
+  "когорта": ["cohort", "cohort study"],
+  "плацебо": ["placebo", "placebo-controlled"],
   // Специальные термины
   "лор": ["otolaryngology", "otorhinolaryngology", "ent", "ear nose throat"],
   "лор-хирургия": ["otolaryngology surgery", "ent surgery", "head and neck surgery"],
@@ -343,13 +430,14 @@ function wordsWithPrefix(prefix: string, limit: number): { word: string; keys: s
   let hi = arr.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (arr[mid].word < prefix) lo = mid + 1;
+    if (arr[mid]!.word < prefix) lo = mid + 1;
     else hi = mid;
   }
   const out: { word: string; keys: string[] }[] = [];
   for (let i = lo; i < arr.length && out.length < limit; i++) {
-    if (!arr[i].word.startsWith(prefix)) break;
-    out.push(arr[i]);
+    const entry = arr[i]!;
+    if (!entry.word.startsWith(prefix)) break;
+    out.push(entry);
   }
   return out;
 }
@@ -364,7 +452,7 @@ function expandTerm(t: string): string[] {
   const addGroup = (k: string) => {
     if (k === t) return;
     set.add(k);
-    for (const a of SYNONYMS[k]) set.add(a);
+    for (const a of SYNONYMS[k] ?? []) set.add(a);
   };
 
   // Точное вхождение слова в концепт-группу (ключ или альтернатива).

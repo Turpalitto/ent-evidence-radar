@@ -1,4 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { hasValidSession, readCookie, SESSION_COOKIE } from "./session";
+import { msg } from "./i18n";
+import { i18nOf } from "./i18n/request";
 
 interface RateLimitEntry {
   count: number;
@@ -73,7 +76,7 @@ function ipToBigInt(ip: string): { value: bigint; bits: number } | null {
 
 /** Совпадает ли IP с CIDR-диапазоном (или точным адресом) — IPv4 и IPv6. */
 function cidrMatch(ip: string, cidr: string): boolean {
-  const [net, prefixRaw] = cidr.split("/");
+  const [net = "", prefixRaw] = cidr.split("/");
   const a = ipToBigInt(ip);
   const b = ipToBigInt(net);
   if (!a || !b || a.bits !== b.bits) return false;
@@ -130,11 +133,11 @@ export function getClientIp(req: { headers: { get(name: string): string | null }
   if (xff) {
     const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
     for (let i = parts.length - 1; i >= 0; i--) {
-      const ip = normalizeIp(parts[i]);
+      const ip = normalizeIp(parts[i]!);
       if (ip && !isTrustedProxy(ip, trusted)) return ip;
     }
     if (parts.length) {
-      const last = normalizeIp(parts[parts.length - 1]);
+      const last = normalizeIp(parts[parts.length - 1]!);
       if (last) return last;
     }
   }
@@ -147,6 +150,25 @@ export function getClientIp(req: { headers: { get(name: string): string | null }
   }
 
   return "unknown";
+}
+
+/**
+ * Ключ rate-limit для запроса (аудит I-12). Без TRUST_PROXY все клиенты за прокси выглядят
+ * как «unknown» и один пользователь исчерпывал лимит для всех. Поэтому сначала различаем
+ * клиентов по учётным данным: сессионная cookie → свой бакет на сессию, токен API → свой
+ * бакет на токен; IP — только запасной вариант. Хэшируем, чтобы секреты не попадали в ключи/логи.
+ */
+export function rateLimitKey(req: { headers: HeadersLike }): string {
+  const session = readCookie(req.headers, SESSION_COOKIE);
+  if (session && hasValidSession(req.headers)) return `sess:${shortHash(session)}`;
+  const authHeader = req.headers.get("authorization");
+  const token = authHeader?.replace(/^Bearer\s+/i, "") ?? req.headers.get("x-api-key");
+  if (token) return `tok:${shortHash(token)}`;
+  return `ip:${getClientIp(req)}`;
+}
+
+function shortHash(s: string): string {
+  return createHash("sha256").update(s).digest("hex").slice(0, 16);
 }
 
 /** Проверяет in-memory лимит запросов по ключу. */
@@ -201,24 +223,48 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Проверяет авторизацию запроса.
- * Если API_SECRET не задан — разрешает доступ (для простоты локальной разработки).
- * Если API_SECRET задан — требует Bearer токен или заголовок X-API-Key, либо same-origin браузерный запрос.
+ * Признак «браузерный запрос с нашей же страницы» (anti-CSRF).
+ *
+ * ВАЖНО: это НЕ аутентификация. Заголовки Sec-Fetch-Site/Origin любой не-браузерный
+ * клиент выставляет произвольно, поэтому сами по себе они ничего не удостоверяют.
+ * Мы используем их только как дополнительный барьер для запросов, которые уже
+ * удостоверены сессионной cookie: браузер проставляет их сам и не даст чужому сайту
+ * отправить запрос «от имени» залогиненного пользователя.
  */
-export function checkApiAuth(req: { headers: HeadersLike }): { ok: boolean; status?: number; error?: string } {
+export function isSameOriginRequest(headers: HeadersLike): boolean {
+  if (headers.get("sec-fetch-site") === "same-origin") return true;
+  return isSameOrigin(headers);
+}
+
+export const AUTH_REQUIRED_MESSAGE = msg("Требуется авторизация: войдите через /login или передайте API_SECRET (Bearer / X-API-Key)");
+
+/**
+ * Проверяет авторизацию запроса.
+ *
+ * - API_SECRET не задан — доступ открыт (локальная разработка / доверенная сеть).
+ * - API_SECRET задан — принимаются:
+ *   1) Bearer-токен или заголовок X-API-Key, равный секрету (внешний cron, скрипты);
+ *   2) действующая сессионная cookie (вход через /login). Для изменяющих методов
+ *      дополнительно требуется same-origin (anti-CSRF), для GET/HEAD — нет.
+ *
+ * Подделанные Sec-Fetch-Site/Origin БЕЗ cookie и БЕЗ токена отклоняются (401).
+ */
+export function checkApiAuth(req: { headers: HeadersLike; method?: string; url?: string }): { ok: boolean; status?: number; error?: string } {
   const secret = process.env.API_SECRET;
   if (!secret) return { ok: true };
+  const { t } = i18nOf(req);
 
   const authHeader = req.headers.get("authorization");
   const token = authHeader?.replace(/^Bearer\s+/i, "") ?? req.headers.get("x-api-key");
 
   if (token && safeEqual(token, secret)) return { ok: true };
 
-  // Разрешаем запросы из того же источника (браузерный интерфейс приложения)
-  const secFetchSite = req.headers.get("sec-fetch-site");
-  if (secFetchSite === "same-origin") return { ok: true };
+  if (hasValidSession(req.headers)) {
+    const method = (req.method ?? "GET").toUpperCase();
+    if (method === "GET" || method === "HEAD") return { ok: true };
+    if (isSameOriginRequest(req.headers)) return { ok: true };
+    return { ok: false, status: 403, error: t("Запрос отклонён: источник запроса не совпадает с сайтом (защита от CSRF)") };
+  }
 
-  if (isSameOrigin(req.headers)) return { ok: true };
-
-  return { ok: false, status: 401, error: "Требуется авторизация (API_SECRET)" };
+  return { ok: false, status: 401, error: t(AUTH_REQUIRED_MESSAGE) };
 }

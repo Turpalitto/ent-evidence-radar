@@ -1,0 +1,112 @@
+import { describe, it, expect, beforeAll } from "vitest";
+import { NextRequest } from "next/server";
+import { db } from "@/db";
+import { articles, topics } from "@/db/schema";
+import { ensureSeeded } from "@/lib/refresh";
+import { GET } from "@/app/feed.xml/route";
+import { describeFeedFilters, feedFilters } from "./feed";
+import { createI18n } from "@/lib/i18n";
+
+const get = (qs = "") => GET(new NextRequest(`http://localhost/feed.xml${qs}`));
+
+describe("/feed.xml с фильтрами (подписка на сохранённый поиск)", () => {
+  beforeAll(async () => {
+    await ensureSeeded();
+    const [t] = await db.select({ id: topics.id }).from(topics).limit(1);
+    await db.insert(articles).values([
+      { dedupKey: "feed-1", title: "Feed rhinology RCT", sourceKey: "pubmed", sourceKeys: ["pubmed"], url: "https://e.org/1", pmid: "80000001", subspecialties: ["rhinology"], studyDesign: "rct", evidenceLevel: 2, trustScore: 80, topicIds: [t.id] },
+      { dedupKey: "feed-2", title: "Feed otology cohort", sourceKey: "pubmed", sourceKeys: ["pubmed"], url: "https://e.org/2", pmid: "80000002", subspecialties: ["otology"], studyDesign: "cohort", evidenceLevel: 3, trustScore: 40 },
+      { dedupKey: "feed-3", title: "Feed hidden rhinology", sourceKey: "pubmed", sourceKeys: ["pubmed"], url: "https://e.org/3", pmid: "80000003", subspecialties: ["rhinology"], studyDesign: "rct", trustScore: 90, isHidden: true },
+      { dedupKey: "feed-4", title: "Feed bookmarked otology", sourceKey: "pubmed", sourceKeys: ["pubmed"], url: "https://e.org/4", pmid: "80000004", subspecialties: ["otology"], studyDesign: "rct", trustScore: 70, isBookmarked: true },
+      {
+        dedupKey: "feed-5",
+        title: "Feed registry trial",
+        sourceKey: "clinicaltrials",
+        sourceKeys: ["clinicaltrials"],
+        url: "https://clinicaltrials.gov/study/NCT08000005",
+        nctId: "NCT08000005",
+        journal: "ClinicalTrials.gov (реестр)",
+        abstract: "Статус: RECRUITING. Рандомизированное интервенционное исследование, фаза PHASE3. Маскирование: NONE. Спонсор: Acme Ltd.\n\nРезультаты в реестре пока не опубликованы.\n\nDupilumab in CRSwNP.",
+        subspecialties: ["rhinology"],
+        studyDesign: "trial_registry",
+        evidenceLevel: 4,
+        trustScore: 30,
+      },
+    ]);
+  });
+
+  it("без параметров — все нескрытые записи, заголовок общий", async () => {
+    const res = await get();
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/atom+xml");
+    const xml = await res.text();
+    expect(xml).toContain("<title>ENT Evidence Radar — лента доказательных публикаций</title>");
+    expect(xml).toContain("Feed rhinology RCT");
+    expect(xml).toContain("Feed otology cohort");
+    expect(xml).not.toContain("Feed hidden rhinology");
+    expect(xml).toContain('rel="self"');
+  });
+
+  it("фильтры сужают выборку и попадают в заголовок, self-ссылку и ссылку на сайт", async () => {
+    const xml = await (await get("?subspecialty=rhinology&design=rct&minTrust=70")).text();
+    expect(xml).toContain("Feed rhinology RCT");
+    expect(xml).not.toContain("Feed otology cohort");
+    expect(xml).not.toContain("Feed hidden rhinology");
+    expect(xml).toContain("<title>ENT Evidence Radar — Ринология / аллергология · РКИ · доверие ≥ 70</title>");
+    expect(xml).toMatch(/<link href="[^"]*\/feed\.xml\?subspecialty=rhinology&amp;design=rct&amp;minTrust=70" rel="self"/);
+    expect(xml).toMatch(/<link href="[^"]*\/\?subspecialty=rhinology&amp;design=rct&amp;minTrust=70" rel="alternate"/);
+  });
+
+  it("?lang=en — подписи на английском, self-ссылка сохраняет lang, ссылка на сайт — нет", async () => {
+    const xml = await (await get("?subspecialty=rhinology&design=rct&minTrust=70&lang=en")).text();
+    expect(xml).toContain("<title>ENT Evidence Radar — Rhinology / allergy · RCT · trust ≥ 70</title>");
+    expect(xml).toContain("<subtitle>Systematic reviews, RCTs and clinical practice guidelines in otolaryngology from primary sources.</subtitle>");
+    expect(xml).toMatch(/Trust index \d+\/100 · RCT · evidence level/);
+    expect(xml).toMatch(/<link href="[^"]*\/feed\.xml\?subspecialty=rhinology&amp;design=rct&amp;minTrust=70&amp;lang=en" rel="self"/);
+    expect(xml).toMatch(/<link href="[^"]*\/\?subspecialty=rhinology&amp;design=rct&amp;minTrust=70" rel="alternate"/);
+    // Без параметра — общий заголовок на английском
+    const all = await (await get("?lang=en")).text();
+    expect(all).toContain("<title>ENT Evidence Radar — evidence-based publications feed</title>");
+    // Сгенерированная аннотация и журнал записи реестра — тоже на английском; настоящий текст не тронут
+    expect(all).toContain("ClinicalTrials.gov (registry). Trust index 30/100");
+    expect(all).toContain("Status: RECRUITING. Randomised interventional study, phase PHASE3. Masking: NONE. Sponsor: Acme Ltd. No results posted in the registry yet. Dupilumab in CRSwNP.");
+    expect(await (await get("?source=clinicaltrials")).text()).toContain("ClinicalTrials.gov (реестр). Индекс доверия 30/100");
+  });
+
+  it("персональные флаги игнорируются: bookmarked/unread/hidden не влияют на публичную ленту", async () => {
+    const xml = await (await get("?bookmarked=1&hidden=1&unread=1&withNotes=1&subspecialty=otology")).text();
+    expect(xml).toContain("Feed otology cohort"); // не закладка — всё равно в ленте
+    expect(xml).toContain("Feed bookmarked otology");
+    expect(xml).not.toContain("Feed hidden rhinology");
+    expect(xml).not.toContain("bookmarked=1");
+    // Поиск по личным заметкам наружу не отдаём: `scope=notes` становится обычным поиском.
+    expect(feedFilters(new URLSearchParams("q=otology&scope=notes&withNotes=1"))).toMatchObject({ scope: "all", withNotes: false });
+    expect(feedFilters(new URLSearchParams("q=otology&scope=title")).scope).toBe("title");
+  });
+
+  it("тема попадает в заголовок по имени", async () => {
+    const [t] = await db.select({ id: topics.id, name: topics.name }).from(topics).limit(1);
+    const xml = await (await get(`?topicId=${t.id}`)).text();
+    expect(xml).toContain(`тема «${t.name}»`);
+    expect(xml).toContain("Feed rhinology RCT");
+    expect(xml).not.toContain("Feed otology cohort");
+  });
+
+  it("feedFilters/describeFeedFilters: сортировка по сбору без запроса, по релевантности с запросом", () => {
+    const a = feedFilters(new URLSearchParams("days=30&excludePreprints=1&fromYear=2024"));
+    expect(a.sort).toBe("fetched");
+    expect(a.pageSize).toBe(60);
+    expect(describeFeedFilters(a)).toEqual(["за 30 дн.", "с 2024", "без препринтов"]);
+    const b = feedFilters(new URLSearchParams("q=tinnitus&level=2"));
+    expect(b.sort).toBe("relevance");
+    expect(describeFeedFilters(b)).toEqual(["уровень ≤ 2", "поиск «tinnitus»"]);
+    // Издатель руководства (A-06) описывается вместо дизайна
+    expect(describeFeedFilters(feedFilters(new URLSearchParams("design=guideline&issuer=aao-hns")))).toEqual(["руководства AAO-HNS"]);
+    // Английский вариант (A-16): шаблоны и подписи таксономии переводятся, пользовательские значения — нет
+    const en = createI18n("en");
+    expect(describeFeedFilters(a, null, en)).toEqual(["last 30 days", "from 2024", "no preprints"]);
+    expect(describeFeedFilters(b, "Тиннитус", en)).toEqual(["topic “Тиннитус”", "level ≤ 2", "search “tinnitus”"]);
+    expect(describeFeedFilters(feedFilters(new URLSearchParams("issuer=minzdrav&source=pubmed")), null, en)).toEqual(["Russian MoH guidelines", "PubMed / MEDLINE"]);
+    expect(describeFeedFilters(feedFilters(new URLSearchParams("issuer=other")))).toEqual(["руководства без распознанного издателя"]);
+  });
+});

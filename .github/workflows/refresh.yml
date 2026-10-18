@@ -3,6 +3,7 @@ name: Scheduled refresh
 on:
   schedule:
     - cron: "0 */6 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,10 +12,42 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     environment: production
+    # Секреты в `if:` недоступны напрямую — пробрасываем через env job'а.
+    env:
+      APP_URL: ${{ secrets.APP_URL }}
+      API_SECRET: ${{ secrets.API_SECRET }}
     steps:
-      - name: Trigger refresh
+      # Внешний cron нужен только serverless-развёртываниям; без настроенного APP_URL
+      # (environment «production») job завершается успешно с уведомлением, а не падает каждые 6 часов.
+      - name: Skip when APP_URL is not configured
+        if: env.APP_URL == ''
+        run: echo "::notice::Секрет APP_URL не задан (environment production) — внешний cron обновления отключён. Self-host/Docker обновляется встроенным планировщиком."
+
+      # POST /api/refresh отвечает 202 { runId } сразу (аудит F-05); итог узнаём опросом GET /api/runs/:id,
+      # чтобы падение обновления было видно как падение job'а, а не терялось за «HTTP 202».
+      - name: Trigger refresh and wait for result
+        if: env.APP_URL != ''
         run: |
-          curl -fsS -X POST "${{ secrets.APP_URL }}/api/refresh" \
+          set -euo pipefail
+          if [ -z "$API_SECRET" ]; then echo "::warning::API_SECRET не задан — запрос уйдёт без авторизации (сервер без API_SECRET примет его, с API_SECRET вернёт 401)"; fi
+          resp=$(curl -fsS -X POST "$APP_URL/api/refresh" \
             -H 'Content-Type: application/json' \
-            -H "Authorization: Bearer ${{ secrets.API_SECRET }}" \
-            -w '\nHTTP %{http_code}\n'
+            -H "Authorization: Bearer $API_SECRET")
+          echo "start: $resp"
+          run_id=$(echo "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("runId") or "")')
+          if [ -z "$run_id" ]; then echo "::error::runId не получен"; exit 1; fi
+          for i in $(seq 1 90); do
+            sleep 10
+            st=$(curl -fsS "$APP_URL/api/runs/$run_id")
+            status=$(echo "$st" | python3 -c 'import json,sys; print(json.load(sys.stdin)["run"]["status"])')
+            echo "[$i] status=$status"
+            case "$status" in
+              success|partial)
+                echo "$st" | python3 -c 'import json,sys; r=json.load(sys.stdin)["run"]; print(f"found={r[\"totalFound\"]} new={r[\"newAdded\"]} updated={r[\"updated\"]}"); [print(f"  {d[\"source\"]}: found={d[\"found\"]} added={d[\"added\"]}" + (f" ERROR={d[\"error\"]}" if d.get("error") else "")) for d in r["details"]]'
+                [ "$status" = "partial" ] && echo "::warning::Обновление завершилось частично (часть источников с ошибками)"
+                exit 0;;
+              failed)
+                echo "::error::Обновление завершилось с ошибкой"; echo "$st"; exit 1;;
+            esac
+          done
+          echo "::error::Обновление не завершилось за 15 минут"; exit 1

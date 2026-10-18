@@ -1,12 +1,33 @@
-const lastCall: Record<string, number> = {};
+import { metrics, hostLabel } from "@/lib/metrics";
 
-/** Простой rate-limiter: минимум minIntervalMs между вызовами по ключу */
+/** Момент, на который уже «забронирован» следующий слот по ключу (а не время последнего вызова). */
+const nextSlot: Record<string, number> = {};
+
+/**
+ * Rate-limiter с бронированием слота: конкурентные вызовы выстраиваются в очередь с шагом
+ * minIntervalMs, а не стартуют пачкой после одной общей паузы (аудит F-32). Раньше N параллельных
+ * запросов к NCBI читали одно и то же `lastCall`, ждали одинаково и уходили одновременно → 429.
+ */
 async function throttle(key: string, minIntervalMs: number) {
   const now = Date.now();
-  const last = lastCall[key] ?? 0;
-  const wait = last + minIntervalMs - now;
-  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  lastCall[key] = Date.now();
+  const slot = Math.max(now, nextSlot[key] ?? 0);
+  nextSlot[key] = slot + minIntervalMs;
+  if (slot > now) await new Promise((r) => setTimeout(r, slot - now));
+}
+
+/** Сдвигает все последующие слоты по ключу на `ms` вперёд (сервер попросил подождать). */
+export function penalizeThrottle(key: string, ms: number) {
+  nextSlot[key] = Math.max(nextSlot[key] ?? 0, Date.now() + ms);
+}
+
+/** Пауза, которую просит сервер заголовком Retry-After (секунды или HTTP-дата), ограниченная сверху. */
+export function retryAfterMs(res: { headers: { get(name: string): string | null } }, maxMs = 60_000): number | null {
+  const h = res.headers.get("retry-after");
+  if (!h) return null;
+  const sec = Number(h);
+  if (Number.isFinite(sec)) return Math.min(maxMs, Math.max(0, sec * 1000));
+  const t = Date.parse(h);
+  return Number.isNaN(t) ? null : Math.min(maxMs, Math.max(0, t - Date.now()));
 }
 
 export interface FetchOpts {
@@ -15,32 +36,48 @@ export interface FetchOpts {
   throttleKey?: string;
   throttleMs?: number;
   headers?: Record<string, string>;
+  /** POST с телом (например, длинные term/id для E-utilities вместо URL >2 КБ). */
+  method?: "GET" | "POST";
+  body?: string;
 }
 
 export async function fetchWithRetry(url: string, opts: FetchOpts = {}): Promise<Response> {
-  const { timeoutMs = 25_000, retries = 2, throttleKey, throttleMs = 0, headers } = opts;
+  const { timeoutMs = 25_000, retries = 2, throttleKey, throttleMs = 0, headers, method = "GET", body } = opts;
+  const host = hostLabel(url);
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     if (throttleKey) await throttle(throttleKey, throttleMs);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const t0 = Date.now();
+    metrics.inc("http.requests", { host });
+    if (attempt > 0) metrics.inc("http.retries", { host });
     try {
       const res = await fetch(url, {
+        method,
+        body: method === "POST" ? body : undefined,
         signal: ctrl.signal,
         headers: { "User-Agent": "ENT-Evidence-Radar/1.0 (research monitoring tool)", ...headers },
         cache: "no-store",
       });
       clearTimeout(timer);
+      metrics.observe("http.duration", Date.now() - t0, { host });
       if (res.status === 429 || res.status >= 500) {
+        metrics.inc("http.errors", { host, status: res.status });
         lastErr = new Error(`HTTP ${res.status} from ${new URL(url).host}`);
-        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        // Уважаем Retry-After (NCBI и CT.gov его присылают), иначе линейный backoff.
+        const wait = retryAfterMs(res) ?? 800 * (attempt + 1);
+        if (throttleKey && res.status === 429) penalizeThrottle(throttleKey, wait);
+        // После последней попытки ждать незачем — сразу отдаём ошибку (Retry-After может быть до 60 с).
+        if (attempt < retries) await new Promise((r) => setTimeout(r, wait));
         continue;
       }
       return res;
     } catch (e) {
       clearTimeout(timer);
+      metrics.inc("http.errors", { host, status: e instanceof Error && e.name === "AbortError" ? "timeout" : "network" });
       lastErr = e;
-      await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+      if (attempt < retries) await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
@@ -63,13 +100,61 @@ export function toArray<T>(v: T | T[] | undefined | null): T[] {
   return Array.isArray(v) ? v : [v];
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00a0",
+};
+
+/**
+ * Декодирует XML/HTML-сущности: именованные (&amp; &lt; &gt; &quot; &apos; &nbsp;)
+ * и числовые (&#8805; &#x2264;). Один проход — двойное кодирование (`&amp;lt;`)
+ * даёт `&lt;` как текст, а не тег.
+ */
+export function decodeEntities(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, ent: string) => {
+    if (ent[0] === "#") {
+      const code = ent[1]?.toLowerCase() === "x" ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
+      if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return match;
+      return String.fromCodePoint(code);
+    }
+    return NAMED_ENTITIES[ent.toLowerCase()] ?? match;
+  });
+}
+
+/**
+ * Снимает inline-разметку (<i>, <b>, <sup>, <sub>, <mml:…>) и декодирует сущности.
+ * Порядок важен: сначала теги, потом сущности — тогда `&lt;img&gt;` остаётся текстом.
+ */
 export function stripTags(s: string | undefined | null): string {
   if (!s) return "";
-  return String(s)
-    .replace(/<[^>]+>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
+  return decodeEntities(String(s).replace(/<[^>]+>/g, ""))
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * HTML-аннотация (Europe PMC отдаёт структурированные аннотации как `<h4>Methods</h4>text…`,
+ * абзацы — `<p>`) → текст в формате PubMed-парсера: «Label: text» по одной секции на строку.
+ * Простой `stripTags` склеивал слова («MethodsPROSPERO…», «loss.Methods:»), из-за чего секции,
+ * вывод (Conclusions) и PICO не распознавались, а поиск получал мусорные токены.
+ */
+export function htmlAbstractToText(s: string | undefined | null): string {
+  if (!s) return "";
+  const withBreaks = String(s)
+    .replace(/<\s*h[1-6][^>]*>\s*([\s\S]*?)\s*<\s*\/\s*h[1-6]\s*>/gi, (_m, label: string) => {
+      const clean = label.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      return clean ? `\n${clean.replace(/:$/, "")}: ` : "\n";
+    })
+    .replace(/<\s*(br|\/p|\/div|\/li|\/tr)\s*\/?>/gi, "\n")
+    .replace(/<\s*(p|div|li|tr)[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
+  return decodeEntities(withBreaks)
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
 }

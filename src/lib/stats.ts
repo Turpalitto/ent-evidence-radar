@@ -1,4 +1,4 @@
-import { desc, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { articles, fetchRuns, type FetchRun, type StudyDesign } from "@/db/schema";
 
@@ -46,8 +46,11 @@ export function invalidateStatsCache() {
   g.__entRadarStatsCache = undefined;
 }
 
+/** Скрытые врачом записи (A-11) не попадают ни в один агрегат — ни в totals, ни в срезы по датам/источникам. */
+const visible = eq(articles.isHidden, false);
+
 async function computeStats(): Promise<StatsData> {
-  const [totals] = await db
+  const [totalsRow] = await db
     .select({
       total: sql<number>`count(*)::int`,
       unread: sql<number>`count(*) filter (where not ${articles.isRead})::int`,
@@ -60,35 +63,40 @@ async function computeStats(): Promise<StatsData> {
       retracted: sql<number>`count(*) filter (where ${articles.isRetracted})::int`,
       multi: sql<number>`count(*) filter (where jsonb_array_length(${articles.sourceKeys}) > 1)::int`,
     })
-    .from(articles);
+    .from(articles)
+    .where(visible);
+  // Агрегат без GROUP BY всегда возвращает ровно одну строку; запасной объект — ради типов.
+  const totals: StatsTotals = totalsRow ?? { total: 0, unread: 0, bookmarked: 0, highTrust: 0, last7: 0, avgTrust: 0, medianTrust: 0, preprints: 0, retracted: 0, multi: 0 };
 
   const byDesign = await db
     .select({ key: articles.studyDesign, count: sql<number>`count(*)::int` })
     .from(articles)
+    .where(visible)
     .groupBy(articles.studyDesign)
     .orderBy(desc(sql`count(*)`));
   const byLevel = await db
     .select({ key: articles.evidenceLevel, count: sql<number>`count(*)::int` })
     .from(articles)
+    .where(visible)
     .groupBy(articles.evidenceLevel)
     .orderBy(articles.evidenceLevel);
   const bySub = await db.execute<{ key: string; count: number }>(
-    sql`select s as key, count(*)::int as count from ${articles}, jsonb_array_elements_text(${articles.subspecialties}) s group by s order by count desc`,
+    sql`select s as key, count(*)::int as count from ${articles}, jsonb_array_elements_text(${articles.subspecialties}) s where not ${articles.isHidden} group by s order by count desc`,
   );
   const bySource = await db.execute<{ key: string; count: number }>(
-    sql`select s as key, count(*)::int as count from ${articles}, jsonb_array_elements_text(${articles.sourceKeys}) s group by s order by count desc`,
+    sql`select s as key, count(*)::int as count from ${articles}, jsonb_array_elements_text(${articles.sourceKeys}) s where not ${articles.isHidden} group by s order by count desc`,
   );
   const byDay = await db.execute<{ day: string; count: number }>(
-    sql`select to_char(date_trunc('day', ${articles.publishedAt}), 'YYYY-MM-DD') as day, count(*)::int as count from ${articles} where ${articles.publishedAt} >= now() - interval '30 days' group by 1 order by 1`,
+    sql`select to_char(date_trunc('day', ${articles.publishedAt}), 'YYYY-MM-DD') as day, count(*)::int as count from ${articles} where not ${articles.isHidden} and ${articles.publishedAt} >= now() - interval '30 days' group by 1 order by 1`,
   );
   const byWeek = await db.execute<{ wk: string; count: number; high: number }>(
-    sql`select to_char(date_trunc('week', ${articles.publishedAt}), 'DD.MM') as wk, count(*)::int as count, count(*) filter (where ${articles.trustScore} >= 70)::int as high from ${articles} where ${articles.publishedAt} >= now() - interval '12 weeks' group by date_trunc('week', ${articles.publishedAt}) order by date_trunc('week', ${articles.publishedAt})`,
+    sql`select to_char(date_trunc('week', ${articles.publishedAt}), 'DD.MM') as wk, count(*)::int as count, count(*) filter (where ${articles.trustScore} >= 70)::int as high from ${articles} where not ${articles.isHidden} and ${articles.publishedAt} >= now() - interval '12 weeks' group by date_trunc('week', ${articles.publishedAt}) order by date_trunc('week', ${articles.publishedAt})`,
   );
   const byYear = await db.execute<{ yr: number; count: number; high: number }>(
-    sql`select extract(year from ${articles.publishedAt})::int as yr, count(*)::int as count, count(*) filter (where ${articles.trustScore} >= 70)::int as high from ${articles} where ${articles.publishedAt} is not null group by 1 order by 1 desc`,
+    sql`select extract(year from ${articles.publishedAt})::int as yr, count(*)::int as count, count(*) filter (where ${articles.trustScore} >= 70)::int as high from ${articles} where not ${articles.isHidden} and ${articles.publishedAt} is not null group by 1 order by 1 desc`,
   );
   const trustHist = await db.execute<{ bucket: number; count: number }>(
-    sql`select (floor(${articles.trustScore} / 10) * 10)::int as bucket, count(*)::int as count from ${articles} group by 1 order by 1`,
+    sql`select (floor(${articles.trustScore} / 10) * 10)::int as bucket, count(*)::int as count from ${articles} where not ${articles.isHidden} group by 1 order by 1`,
   );
   const topJournals = await db
     .select({
@@ -98,7 +106,7 @@ async function computeStats(): Promise<StatsData> {
       avg: sql<number>`round(avg(${articles.trustScore}))::int`,
     })
     .from(articles)
-    .where(sql`${articles.journal} <> ''`)
+    .where(and(visible, sql`${articles.journal} <> ''`))
     .groupBy(articles.journal)
     .orderBy(desc(sql`count(*)`))
     .limit(15);

@@ -1,4 +1,5 @@
-import { fetchJson, stripTags } from "./http";
+import { fetchJson, htmlAbstractToText, stripTags } from "./http";
+import { EDITORIAL_NOTICE_RE } from "./pubmed";
 import type { RawArticle } from "@/lib/evidence/classify";
 
 interface EpmcResult {
@@ -10,7 +11,7 @@ interface EpmcResult {
   title?: string;
   authorString?: string;
   journalTitle?: string;
-  journalInfo?: { journal?: { title?: string } };
+  journalInfo?: { journal?: { title?: string; issn?: string; essn?: string } };
   pubYear?: string;
   firstPublicationDate?: string;
   abstractText?: string;
@@ -29,18 +30,29 @@ function fmt(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
+/** Страховочный запрос по умолчанию: широкая ЛОР-тематика × доказательные дизайны. */
+export const EPMC_FALLBACK_QUERY =
+  '(TITLE:"otolaryngology" OR TITLE:"otorhinolaryngology" OR TITLE:sinusitis OR TITLE:rhinosinusitis OR TITLE:otitis OR TITLE:"hearing loss" OR TITLE:tinnitus OR TITLE:vertigo OR TITLE:cochlear OR TITLE:laryngeal OR TITLE:tonsillectomy OR TITLE:"head and neck" OR TITLE:"sleep apnea" OR TITLE:"nasal polyps" OR TITLE:dysphonia OR TITLE:"vocal fold" OR TITLE:epistaxis OR TITLE:septoplasty OR TITLE:rhinoplasty OR TITLE:cholesteatoma OR TITLE:"vestibular")' +
+  ' AND (PUB_TYPE:"Systematic Review" OR PUB_TYPE:"Meta-Analysis" OR PUB_TYPE:"Randomized Controlled Trial" OR PUB_TYPE:"Guideline" OR PUB_TYPE:"Practice Guideline" OR TITLE:"systematic review" OR TITLE:"meta-analysis" OR TITLE:randomized OR TITLE:randomised OR TITLE:guideline)';
+
 /**
- * Europe PMC: ищем свежие записи по ЛОР-тематике с высоким уровнем доказательности,
- * включая препринты (SRC:PPR) с явной пометкой.
+ * Europe PMC: свежие записи по широкой ЛОР-тематике с высоким уровнем доказательности,
+ * включая препринты (SRC:PPR) с явной пометкой. Используется как страховочный канал,
+ * когда ни одну тему не удалось перевести в синтаксис Europe PMC (аудит I-06).
  */
 export async function fetchEuropePmc(days: number, maxResults: number, includePreprints: boolean): Promise<RawArticle[]> {
+  return fetchEuropePmcQuery(EPMC_FALLBACK_QUERY, days, maxResults, includePreprints);
+}
+
+/**
+ * Europe PMC по произвольному тематическому запросу в синтаксисе Europe PMC
+ * (см. `pubmedToEpmcQuery` — перевод запросов тем из PubMed-синтаксиса).
+ */
+export async function fetchEuropePmcQuery(topicQuery: string, days: number, maxResults: number, includePreprints: boolean): Promise<RawArticle[]> {
   const to = new Date();
   const from = new Date(Date.now() - days * 86400_000);
-  const topic =
-    '(TITLE:"otolaryngology" OR TITLE:"otorhinolaryngology" OR TITLE:sinusitis OR TITLE:rhinosinusitis OR TITLE:otitis OR TITLE:"hearing loss" OR TITLE:tinnitus OR TITLE:vertigo OR TITLE:cochlear OR TITLE:laryngeal OR TITLE:tonsillectomy OR TITLE:"head and neck" OR TITLE:"sleep apnea" OR TITLE:"nasal polyps" OR TITLE:dysphonia OR TITLE:"vocal fold" OR TITLE:epistaxis OR TITLE:septoplasty OR TITLE:rhinoplasty OR TITLE:cholesteatoma OR TITLE:"vestibular")';
-  const design = '(PUB_TYPE:"Systematic Review" OR PUB_TYPE:"Meta-Analysis" OR PUB_TYPE:"Randomized Controlled Trial" OR PUB_TYPE:"Guideline" OR PUB_TYPE:"Practice Guideline" OR TITLE:"systematic review" OR TITLE:"meta-analysis" OR TITLE:randomized OR TITLE:randomised OR TITLE:guideline)';
   const src = includePreprints ? "(SRC:MED OR SRC:PPR)" : "SRC:MED";
-  const query = `${topic} AND ${design} AND ${src} AND FIRST_PDATE:[${fmt(from)} TO ${fmt(to)}]`;
+  const query = `(${topicQuery}) AND ${src} AND FIRST_PDATE:[${fmt(from)} TO ${fmt(to)}]`;
 
   const p = new URLSearchParams({
     query,
@@ -56,10 +68,14 @@ export async function fetchEuropePmc(days: number, maxResults: number, includePr
   const results = data.resultList?.result ?? [];
   return results
     .filter((r) => r.title)
+    // Служебные уведомления (опечатки, уведомления об отзыве, expression of concern) — не исследования;
+    // PubMed-источник их тоже отбрасывает. Europe PMC использует тот же словарь типов публикаций.
+    .filter((r) => !(r.pubTypeList?.pubType ?? []).some((t) => EDITORIAL_NOTICE_RE.test(t)))
     .map<RawArticle>((r) => {
       const isPreprint = r.source === "PPR";
       const journal = r.journalTitle ?? r.journalInfo?.journal?.title ?? (isPreprint ? "Preprint (Europe PMC)" : "");
-      const abstract = stripTags(r.abstractText);
+      const issns = [r.journalInfo?.journal?.issn, r.journalInfo?.journal?.essn].filter((x): x is string => !!x && /^\d{4}-?\d{3}[\dXx]$/.test(x)).map((x) => x.toUpperCase());
+      const abstract = htmlAbstractToText(r.abstractText);
       return {
         pmid: r.pmid ?? null,
         doi: r.doi ?? null,
@@ -68,7 +84,15 @@ export async function fetchEuropePmc(days: number, maxResults: number, includePr
         title: stripTags(r.title),
         abstract,
         journal,
-        authors: (r.authorString ?? "").split(/,\s*/).filter(Boolean).slice(0, 30),
+        issns,
+        // authorString: «Smith J, Ivanova A, Müller R.» — завершающая точка относится ко всей строке, не к инициалу;
+        // «et al.» (встречается в урезанных записях) — не автор.
+        authors: (r.authorString ?? "")
+          .replace(/\.\s*$/, "")
+          .split(/,\s*/)
+          .map((x) => x.trim())
+          .filter((x) => x && !/^et al\.?$/i.test(x))
+          .slice(0, 30),
         publishedAt: r.firstPublicationDate ? new Date(r.firstPublicationDate) : r.pubYear ? new Date(`${r.pubYear}-01-01`) : null,
         publicationTypes: r.pubTypeList?.pubType ?? [],
         meshTerms: (r.meshHeadingList?.meshHeading ?? []).map((m) => m.descriptorName ?? "").filter(Boolean),

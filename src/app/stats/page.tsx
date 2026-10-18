@@ -5,20 +5,24 @@ import { ensureSeeded } from "@/lib/refresh";
 import { getStats } from "@/lib/stats";
 import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import type { StudyDesign } from "@/db/schema";
+import { getI18n } from "@/lib/i18n/server";
 import { pageMetadata } from "@/lib/metadata";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = pageMetadata({
-  title: "Аналитика базы доказательств",
-  description:
-    "Структура накопленных публикаций по дизайну исследования, уровню доказательности, субспециальностям, источникам и распределению индекса доверия.",
-  path: "/stats",
-});
+export async function generateMetadata(): Promise<Metadata> {
+  const { t, locale } = await getI18n();
+  return pageMetadata({
+    title: t("Аналитика базы доказательств"),
+    description: t("Структура накопленных публикаций по дизайну исследования, уровню доказательности, субспециальностям, источникам и распределению индекса доверия."),
+    path: "/stats",
+    locale,
+  });
+}
 
-function Bars({ rows, labelOf, color }: { rows: { key: string | number; count: number }[]; labelOf: (k: string | number) => string; color: string }) {
+function Bars({ rows, labelOf, color, empty }: { rows: { key: string | number; count: number }[]; labelOf: (k: string | number) => string; color: string; empty: string }) {
   const max = Math.max(1, ...rows.map((r) => r.count));
-  if (!rows.length) return <p className="text-sm text-[color:var(--ink-muted)]">Нет данных</p>;
+  if (!rows.length) return <p className="text-sm text-[color:var(--ink-muted)]">{empty}</p>;
   return (
     <ul className="space-y-2">
       {rows.map((r) => (
@@ -38,6 +42,7 @@ function Bars({ rows, labelOf, color }: { rows: { key: string | number; count: n
 
 export default async function StatsPage() {
   await ensureSeeded();
+  const { t } = await getI18n();
   const { totals, byDesign, byLevel, bySub, bySource, byWeek, byYear, trustHist, topJournals } = await getStats();
   const maxWeek = Math.max(1, ...byWeek.map((r) => r.count));
   const maxHist = Math.max(1, ...trustHist.map((r) => r.count));
@@ -46,19 +51,19 @@ export default async function StatsPage() {
   return (
     <main className="space-y-5">
       <div className="rise-in">
-        <p className="eyebrow">Аналитика</p>
-        <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-[color:var(--ink)]">Аналитика базы доказательств</h1>
-        <p className="mt-1 text-sm text-[color:var(--ink-muted)]">Структура накопленных публикаций по дизайну, уровню доказательности, субспециальностям и источникам.</p>
+        <p className="eyebrow">{t("Аналитика")}</p>
+        <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-[color:var(--ink)]">{t("Аналитика базы доказательств")}</h1>
+        <p className="mt-1 text-sm text-[color:var(--ink-muted)]">{t("Структура накопленных публикаций по дизайну, уровню доказательности, субспециальностям и источникам.")}</p>
       </div>
 
       <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {([
-          ["Всего", totals.total],
-          ["Средний индекс", totals.avgTrust],
-          ["Медиана индекса", totals.medianTrust],
-          ["Препринтов", totals.preprints],
-          ["Отозванных", totals.retracted],
-          ["В ≥2 источниках", totals.multi],
+          [t("Всего"), totals.total],
+          [t("Средний индекс"), totals.avgTrust],
+          [t("Медиана индекса"), totals.medianTrust],
+          [t("Препринтов"), totals.preprints],
+          [t("Отозванных"), totals.retracted],
+          [t("В ≥2 источниках"), totals.multi],
         ] as const).map(([l, v], i) => (
           <div key={String(l)} style={{ "--stagger-i": i } as CSSProperties} className="card card-lift rounded-2xl px-4 py-3.5">
             <p className="eyebrow">{l}</p>
@@ -70,8 +75,8 @@ export default async function StatsPage() {
       {byYear.length > 0 && (
         <section className="card rounded-2xl p-5">
           <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-sm font-semibold text-[color:var(--ink)]">Публикации по годам</h2>
-            <p className="text-xs text-[color:var(--ink-subtle)]">Нажмите на столбец, чтобы открыть ленту за год</p>
+            <h2 className="text-sm font-semibold text-[color:var(--ink)]">{t("Публикации по годам")}</h2>
+            <p className="text-xs text-[color:var(--ink-subtle)]">{t("Нажмите на столбец, чтобы открыть ленту за год")}</p>
           </div>
           <div className="flex h-44 items-end gap-1.5">
             {byYear.map((r) => {
@@ -83,7 +88,7 @@ export default async function StatsPage() {
                   key={year}
                   href={`/?fromYear=${year}&toYear=${year}`}
                   className="group flex min-w-9 flex-1 flex-col items-center gap-1"
-                  title={`${year}: ${count} публикаций, ${high} с индексом ≥70`}
+                  title={`${year}: ${t("{count} публикаций, {high} с индексом ≥70", { count, high })}`}
                 >
                   <span className="text-[10px] font-semibold tabular-nums text-[color:var(--ink-subtle)] transition group-hover:text-[color:var(--brand-ink)]">{count}</span>
                   <div className="relative flex w-full items-end" style={{ height: "150px" }}>
@@ -104,27 +109,27 @@ export default async function StatsPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <section className="card rounded-2xl p-5">
-          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">По дизайну исследования</h2>
-          <Bars rows={byDesign} labelOf={(k) => DESIGN_LABELS[k as StudyDesign] ?? String(k)} color="bg-gradient-to-r from-teal-500 to-emerald-500" />
+          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("По дизайну исследования")}</h2>
+          <Bars rows={byDesign} labelOf={(k) => t(DESIGN_LABELS[k as StudyDesign] ?? String(k))} color="bg-gradient-to-r from-teal-500 to-emerald-500" empty={t("Нет данных")} />
         </section>
         <section className="card rounded-2xl p-5">
-          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">По уровню доказательности</h2>
-          <Bars rows={byLevel} labelOf={(k) => EVIDENCE_LEVEL_LABELS[Number(k)] ?? String(k)} color="bg-gradient-to-r from-sky-500 to-cyan-500" />
+          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("По уровню доказательности")}</h2>
+          <Bars rows={byLevel} labelOf={(k) => t(EVIDENCE_LEVEL_LABELS[Number(k)] ?? String(k))} color="bg-gradient-to-r from-sky-500 to-cyan-500" empty={t("Нет данных")} />
         </section>
         <section className="card rounded-2xl p-5">
-          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">По субспециальностям</h2>
-          <Bars rows={bySub} labelOf={(k) => SUBSPECIALTY_LABELS[String(k)] ?? String(k)} color="bg-gradient-to-r from-violet-500 to-indigo-500" />
+          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("По субспециальностям")}</h2>
+          <Bars rows={bySub} labelOf={(k) => t(SUBSPECIALTY_LABELS[String(k)] ?? String(k))} color="bg-gradient-to-r from-violet-500 to-indigo-500" empty={t("Нет данных")} />
         </section>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <section className="card rounded-2xl p-5 lg:col-span-2">
-          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">Публикации по неделям (12 недель) · тёмным — доверие ≥70</h2>
+          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("Публикации по неделям (12 недель) · тёмным — доверие ≥70")}</h2>
           {byWeek.length ? (
             <div className="flex h-44 items-end gap-1.5">
               {byWeek.map((r) => (
                 <div key={r.wk} className="flex flex-1 flex-col items-center gap-1">
-                  <div className="relative w-full rounded-t bg-teal-200 dark:bg-teal-900" style={{ height: `${(r.count / maxWeek) * 150}px` }} title={`${r.count} публикаций, ${r.high} с индексом ≥70`}>
+                  <div className="relative w-full rounded-t bg-teal-200 dark:bg-teal-900" style={{ height: `${(r.count / maxWeek) * 150}px` }} title={t("{count} публикаций, {high} с индексом ≥70", { count: r.count, high: r.high })}>
                     <div className="absolute bottom-0 w-full rounded-t bg-gradient-to-t from-teal-600 to-sky-500 dark:from-teal-500 dark:to-sky-400" style={{ height: `${(r.high / Math.max(1, r.count)) * 100}%` }} />
                   </div>
                   <span className="text-[10px] text-[color:var(--ink-muted)]">{r.wk}</span>
@@ -132,11 +137,11 @@ export default async function StatsPage() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-[color:var(--ink-muted)]">Нет данных</p>
+            <p className="text-sm text-[color:var(--ink-muted)]">{t("Нет данных")}</p>
           )}
         </section>
         <section className="card rounded-2xl p-5">
-          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">Распределение индекса доверия</h2>
+          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("Распределение индекса доверия")}</h2>
           <div className="flex h-44 items-end gap-1">
             {Array.from({ length: 10 }, (_, i) => i * 10).map((b) => {
               const row = trustHist.find((r) => Number(r.bucket) === b);
@@ -155,13 +160,13 @@ export default async function StatsPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card rounded-2xl p-5">
-          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">Источники</h2>
-          <Bars rows={bySource} labelOf={(k) => SOURCE_LABELS[String(k)] ?? String(k)} color="bg-gradient-to-r from-indigo-500 to-blue-500" />
+          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("Источники")}</h2>
+          <Bars rows={bySource} labelOf={(k) => t(SOURCE_LABELS[String(k)] ?? String(k))} color="bg-gradient-to-r from-indigo-500 to-blue-500" empty={t("Нет данных")} />
         </section>
         <section className="card rounded-2xl p-5">
-          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">Топ журналов</h2>
+          <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("Топ журналов")}</h2>
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-[color:var(--ink-subtle)]"><tr><th className="pb-1.5">Журнал</th><th className="pb-1.5 text-right">Tier</th><th className="pb-1.5 text-right">Публ.</th><th className="pb-1.5 text-right">Ср. индекс</th></tr></thead>
+            <thead className="text-left text-xs uppercase tracking-wide text-[color:var(--ink-subtle)]"><tr><th className="pb-1.5">{t("Издание")}</th><th className="pb-1.5 text-right">Tier</th><th className="pb-1.5 text-right">{t("Публ.")}</th><th className="pb-1.5 text-right">{t("Ср. индекс")}</th></tr></thead>
             <tbody className="divide-y divide-[color:var(--hairline)]">
               {topJournals.map((j) => (
                 <tr key={j.key}>
