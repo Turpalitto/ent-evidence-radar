@@ -526,6 +526,24 @@ export function summarizeAbstract(text: string, lang: SummaryLang = "ru"): Promi
   return cached(cacheKeyFor(kind, t), kind, () => chat(t, system));
 }
 
+/**
+ * Перевод заголовка для карточки: если перевод уже в кэше — мгновенно и бесплатно;
+ * если нет и дневной бюджет ещё не исчерпан — переводим и кэшируем (повторные показы бесплатны);
+ * бюджет исчерпан — пустая строка (расходов нет), заголовок просто не показывается.
+ */
+export async function translateTitleCached(title: string): Promise<string> {
+  const t = title.trim();
+  if (!t) return "";
+  if (await cachedPick(cacheKeyFor("tr", t))) return translateAbstract(t);
+  const usage = await getAiUsage();
+  if (usage.budget > 0 && usage.calls >= usage.budget) return "";
+  try {
+    return await translateAbstract(t);
+  } catch {
+    return "";
+  }
+}
+
 /** Стриминговый перевод аннотации. Если перевод уже в кэше (память/БД) — отдаёт его мгновенно. */
 export async function* translateStream(text: string): AsyncGenerator<string> {
   const t = text.trim();

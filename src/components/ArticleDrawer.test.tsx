@@ -129,7 +129,10 @@ describe("<ArticleDrawer />", () => {
       <ArticleDrawer article={makeArticle({ id: 10, isRead: true, title: "Dupilumab versus placebo in CRSwNP", abstract })} onClose={() => {}} onUpdate={() => {}} onSelectArticle={() => {}} />,
     );
     const pico = screen.getAllByTestId("pico").at(-1)!;
-    expect(within(pico).getByText(/120 adults with CRSwNP/)).toBeInTheDocument();
+    // CRSwNP подчёркнут пунктиром (глоссарий) — текст разбит на сегменты, проверяем содержимое целиком
+    expect(pico.textContent).toContain("120 adults with CRSwNP.");
+    expect(within(pico).getByText("CRSwNP").closest("abbr")).toHaveAttribute("title", expect.stringContaining("хронический риносинусит"));
+    expect(within(pico).getByText("Dupilumab").closest("abbr")).toHaveAttribute("title", expect.stringContaining("дупилумаб"));
     expect(within(pico).getByText(/Nasal polyp score at week 24/)).toBeInTheDocument();
     expect(within(pico).getByText("из секций аннотации")).toBeInTheDocument();
     unmount();

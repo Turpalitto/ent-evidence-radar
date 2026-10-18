@@ -4,6 +4,8 @@ import type { Article } from "@/db/schema";
 import { DESIGN_CONFIDENCE_LABELS, DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { translateMesh } from "@/lib/evidence/abstract";
 import { PICO_LABELS, type Pico } from "@/lib/evidence/pico";
+import { AbbrText } from "./AbbrText";
+import { BadgeLegend } from "./BadgeLegend";
 import { trialStatusLabel } from "@/lib/evidence/trial-status";
 import { useI18n } from "@/lib/i18n/client";
 import { NOTICE_LABELS } from "../Badges";
@@ -63,7 +65,7 @@ export function TrialInfoSection({ info }: { info: NonNullable<Article["trialInf
 
 /** PICO (A-10): пациенты / вмешательство / сравнение / исходы. */
 export function PicoSection({ pico }: { pico: Pico }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   return (
     <section className="panel rounded-xl p-3" data-testid="pico" aria-label="PICO">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -87,7 +89,7 @@ export function PicoSection({ pico }: { pico: Pico }) {
               </dt>
               <dd className="text-[color:var(--ink-soft)]">
                 <span className="mr-1 font-semibold text-[color:var(--ink)]">{t(meta.title)}.</span>
-                {value}
+                {locale === "ru" ? <AbbrText text={value} /> : value}
               </dd>
             </div>
           );
@@ -144,6 +146,7 @@ export function TrustBreakdown({ a }: { a: Article }) {
           )}
         </p>
       )}
+      <BadgeLegend />
     </section>
   );
 }

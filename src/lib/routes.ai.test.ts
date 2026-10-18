@@ -102,14 +102,46 @@ describe("POST /api/ai (поток)", () => {
   });
 
   it("если очередная модель падает до выдачи текста, ответ приходит от следующей (модели перебираются по кругу)", async () => {
-    let n = 0;
-    const fetchMock = vi.fn(async () => (++n === 1 ? new Response("upstream overloaded", { status: 503 }) : new Response(providerBody(["Translated ", "text"]), { status: 200 })));
+    // Первый вызов модели в каждом запросе (title и аннотация — отдельные запросы) падает с 503.
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const model = (JSON.parse(String(init?.body)) as { model: string }).model;
+      return model === "test/model-a" ? new Response("upstream overloaded", { status: 503 }) : new Response(providerBody(["Translated ", "text"]), { status: 200 });
+    });
     vi.stubGlobal("fetch", fetchMock);
     const res = await aiPost(post({ articleId, action: "translate" }));
     expect(await readSse(res)).toEqual({ text: "Translated text", error: null });
-    const models = fetchMock.mock.calls.map((c) => (JSON.parse(String((c as unknown as [string, RequestInit])[1].body)) as { model: string }).model);
-    expect(models).toHaveLength(2);
-    expect(new Set(models)).toEqual(new Set(["test/model-a", "test/model-b"]));
+    // Запрос перевода аннотации (не заголовка — у того в сообщении title) перебрал обе модели
+    const isAbstract = (c: unknown[]) => String((c[1] as RequestInit).body).includes("BACKGROUND: Tinnitus is common");
+    const abstractCalls = fetchMock.mock.calls.filter((c) => isAbstract(c as unknown as unknown[]));
+    const models = abstractCalls.map((c) => (JSON.parse(String((c[1] as RequestInit).body)) as { model: string }).model);
+    expect(models).toEqual(["test/model-a", "test/model-b"]);
+  });
+
+  it("translate: первым событием идёт перевод заголовка; повтор — заголовок и аннотация из кэша, без провайдера", async () => {
+    // Заголовок переводится нестриминговым запросом (choices[0].message.content), аннотация — стримом.
+    let call = 0;
+    const fetchMock = vi.fn(async () =>
+      call++ === 0
+        ? Response.json({ choices: [{ message: { content: "Кохлеарная имплантация и тиннитус" } }] })
+        : new Response(providerBody(["Переведённый ", "текст"]), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const collect = async (res: Response) => {
+      const titles: string[] = [];
+      let text = "";
+      await consumeSseDeltas(res.body!, (d) => (text += d), "fallback", (tt) => titles.push(tt));
+      return { titles, text };
+    };
+    const first = await collect(await aiPost(post({ articleId, action: "translate" })));
+    expect(first.titles).toEqual(["Кохлеарная имплантация и тиннитус"]);
+    // Аннотация могла быть переведена в предыдущих тестах файла — важен повтор из кэша
+    expect(first.text.length).toBeGreaterThan(0);
+    await new Promise((r) => setTimeout(r, 60)); // кэш пишется после завершения потока
+    const callsBefore = fetchMock.mock.calls.length;
+    const second = await collect(await aiPost(post({ articleId, action: "translate" })));
+    expect(second.titles).toEqual(["Кохлеарная имплантация и тиннитус"]);
+    expect(second.text).toBe(first.text);
+    expect(fetchMock.mock.calls.length).toBe(callsBefore); // всё из кэша
   });
 
   it("сбой всех моделей приходит клиенту как SSE-событие с ошибкой, а не обрыв соединения", async () => {

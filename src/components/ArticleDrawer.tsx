@@ -59,6 +59,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
   // showTranslate — показывать ли перевод (toggleable)
   const [showTranslate, setShowTranslate] = useState(false);
   const [aiState, setAiState] = useState<AiState>({ mode: "idle" });
+  const [titleRu, setTitleRu] = useState<string | null>(null);
 
   const sheetRef = useRef<HTMLElement>(null);
   const dragStartY = useRef(0);
@@ -95,7 +96,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             ? { ...s, mode: "done", translate: (s.translate ?? "") + delta }
             : { ...s, mode: "done", summary: (s.summary ?? "") + delta },
         );
-      }, t("Не удалось получить ответ"));
+      }, t("Не удалось получить ответ"), action === "translate" ? (title) => setTitleRu(title) : undefined);
     } catch (e) {
       setAiState((s) => ({ ...s, mode: "error", error: e instanceof Error ? e.message : String(e) }));
     }
@@ -105,6 +106,7 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
   useEffect(() => {
     setAiState({ mode: "idle" });
     setShowTranslate(false);
+    setTitleRu(null);
   }, [article?.id]);
 
   async function copyToClipboard(text: string, key: string) {
@@ -224,11 +226,24 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             {hasOverrides && <span className="rounded border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300" title={t("Классификация исправлена вручную и не будет перетёрта при обновлении")}>{t("✎ ВРУЧНУЮ")}</span>}
             {a.isHidden && <span className="rounded bg-slate-600 px-1.5 py-0.5 text-[10px] font-bold text-white">{t("СКРЫТА")}</span>}
           </div>
-          <h2 className="text-sm font-semibold leading-snug text-[color:var(--ink)] md:text-base">{a.title}</h2>
+          {showTranslate && titleRu && (
+            <p className="mb-0.5 text-sm font-semibold leading-snug text-teal-800 dark:text-teal-300">{titleRu}</p>
+          )}
+          <h2 className={`text-sm font-semibold leading-snug text-[color:var(--ink)] md:text-base ${showTranslate && titleRu ? "text-xs font-normal opacity-70" : ""}`}>{a.title}</h2>
           <p className="mt-1 text-xs text-[color:var(--ink-muted)]">
             {stored(a.journal) || "—"} · {date(a.publishedAt)}
             {a.sampleSize ? <span title={t("Объём выборки, извлечённый из аннотации автоматически (участники, уши, образцы — как указано в работе)")} className="cursor-help"> · n≈{a.sampleSize}</span> : ""}
           </p>
+          {a.studyDesign === "guideline" && locale === "ru" && (
+            <a
+              href={`https://cr.minzdrav.gov.ru/search?q=${encodeURIComponent(a.title)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-[color:var(--brand-ink)] hover:underline"
+            >
+              {t("Найти в российском реестре клинрекомендаций ↗")}
+            </a>
+          )}
         </div>
         <button onClick={onClose} className="rounded-xl p-2.5 text-[color:var(--ink-subtle)] transition hover:bg-[color:var(--surface-3)] hover:text-[color:var(--ink)]" aria-label={t("Закрыть")}>
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>

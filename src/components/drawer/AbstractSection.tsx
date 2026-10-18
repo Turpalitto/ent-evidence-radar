@@ -69,7 +69,7 @@ export function AbstractSection({ a, ai, showTranslate, onTranslate, onSummary }
       {ai.summary && (
         <div className="mb-3 rounded-xl border border-teal-100 bg-teal-50/60 p-3 dark:border-teal-900/50 dark:bg-teal-950/30">
           <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">{t("💡 Для практики")}</p>
-          <p className="text-sm leading-relaxed text-slate-800 dark:text-slate-200">{ai.summary}</p>
+          <p className="text-sm leading-relaxed text-slate-800 dark:text-slate-200">{locale === "ru" ? <AbbrText text={ai.summary} /> : ai.summary}</p>
         </div>
       )}
 

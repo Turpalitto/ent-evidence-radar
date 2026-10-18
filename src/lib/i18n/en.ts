@@ -704,6 +704,23 @@ export const EN: Record<string, string> = {
   "Цитаты (ГОСТ)": "Citations (GOST)",
   "Список литературы по ГОСТ Р 7.0.5 для всех статей этой страницы — в буфер обмена (для доклада, статьи или диссертации)":
     "Copy a GOST R 7.0.5-2008 reference list for every article on this page to the clipboard (for a talk, paper, or thesis)",
+  "Что означают бейджи и цифры": "What the badges and numbers mean",
+  "Уровень доказательности (Ур.1–Ур.5)": "Evidence level (1–5)",
+  "1 — систематические обзоры/мета-анализы РКИ и руководства; 2 — отдельные РКИ; 3 — когорта, «случай-контроль», диагностические; 4 — серии случаев; 5 — мнение экспертов, протоколы, препринты, доклинические работы":
+    "1 — systematic reviews/meta-analyses of RCTs and guidelines; 2 — individual RCTs; 3 — cohort, case-control, diagnostic; 4 — case series; 5 — expert opinion, protocols, preprints, preclinical work",
+  "Индекс доверия": "Trust index",
+  "≥80 — можно опираться на запись; 45–79 — проверьте детали в первоисточнике; <45 — только для ориентира. Складывается из дизайна, журнала, выборки, слепого метода и регистрации протокола; вычеты за препринт, отзыв и сомнительный журнал":
+    "≥80 — dependable; 45–79 — check the details in the primary source; <45 — for orientation only. Built from design, journal, sample size, blinding, and protocol registration; deductions for preprints, retractions, and dubious journals",
+  "Эшелон журнала (Tier)": "Journal tier",
+  "Tier 1 — ведущие мировые журналы и Cochrane; Tier 2 — ведущие профильные ЛОР-журналы; Tier 3 — рецензируемые, индексируемые в MEDLINE; «Сомнительный» — из списка возможных «хищнических» издательств":
+    "Tier 1 — leading global journals and Cochrane; Tier 2 — leading specialty ENT journals; Tier 3 — peer-reviewed, MEDLINE-indexed; “Dubious” — from the possible-predatory list",
+  "Как читать числа в аннотации": "How to read the numbers in the abstract",
+  "PTA (слух): 26–40 дБ — лёгкая тугоухость, 41–60 — средняя, 61–80 — тяжёлая, ≥81 — глухота (ВОЗ). AHI (апноэ сна): 5–15 — лёгкая степень, 15–30 — средняя, >30 — тяжёлая. ESS (сонливость): >10 — избыточная дневная сонливость. THI (тиннитус): >58 — значимое влияние на качество жизни":
+    "PTA (hearing): 26–40 dB — mild loss, 41–60 — moderate, 61–80 — severe, ≥81 — deafness (WHO). AHI (sleep apnea): 5–15 — mild, 15–30 — moderate, >30 — severe. ESS (sleepiness): >10 — excessive daytime sleepiness. THI (tinnitus): >58 — significant quality-of-life impact",
+  "Прочие пометки": "Other marks",
+  "«?» у бейджа дизайна — классификатор не уверен, определено по аннотации; ПРЕПРИНТ — не прошёл рецензирование; ОТОЗВАНА / EXPRESSION OF CONCERN — уведомления Crossref; пунктир под словом — есть расшифровка при наведении":
+    "“?” on the design badge — the classifier is unsure (determined from the abstract); PREPRINT — not peer-reviewed; RETRACTED / EXPRESSION OF CONCERN — Crossref notices; dotted underline — a tooltip with an explanation is available",
+  "Найти в российском реестре клинрекомендаций ↗": "Search the Russian clinical guidelines registry ↗",
   "Приложение не смогло запуститься. Обычно это временный сбой — обновите страницу.": "The application failed to start. This is usually a temporary glitch — reload the page.",
   "Обновить страницу": "Reload page",
   "Загрузка": "Loading",
