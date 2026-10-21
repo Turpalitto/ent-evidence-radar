@@ -102,10 +102,12 @@ export default async function HomePage() {
         />
         <div className="relative">
           <p className="eyebrow">{t("Доказательная оториноларингология")}</p>
-          <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-[color:var(--ink)] sm:text-[32px]">
+          <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-[color:var(--ink)] sm:text-3xl">
             {t("Лента")} <span className="brand-gradient-text">{t("доказательных публикаций")}</span>
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[color:var(--ink-soft)]">
+          {/* На мобильном описание обрезано двумя строками: четыре строки вводного текста
+              отодвигали ленту за пределы первого экрана (V-11). На sm+ текст виден целиком. */}
+          <p className="mt-2 line-clamp-2 max-w-2xl text-sm leading-relaxed text-[color:var(--ink-soft)] sm:line-clamp-none">
             {t("Автоматический мониторинг систематических обзоров, РКИ и клинических руководств из первоисточников — с оценкой дизайна исследования, уровня доказательности и индекса доверия.")}
           </p>
 
@@ -141,13 +143,17 @@ export default async function HomePage() {
       </section>
 
       {/* ── Показатели ── */}
-      <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {/* Мобильный: один горизонтальный ряд с прокруткой — три ряда сетки съедали
+          первый экран (V-11). sm+: прежняя сетка. scroll-pl-4 нужен, иначе первая
+          карточка «прилипает» к краю экрана: снап выравнивает её по кромке скроллпорта,
+          игнорируя padding контейнера. */}
+      <div className="stagger -mx-4 flex snap-x snap-mandatory scroll-pl-4 gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:scroll-pl-0 sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-5">
         {cards.map((c, i) => (
           <Link
             key={c.key}
             href={c.href}
             style={{ "--stagger-i": Math.min(i, 8) } as CSSProperties}
-            className="card card-lift group rounded-2xl p-4"
+            className="card card-lift group min-w-[9.5rem] snap-start rounded-2xl p-4 sm:min-w-0"
           >
             <div className="flex items-start justify-between gap-2">
               <p className="eyebrow">{c.label}</p>

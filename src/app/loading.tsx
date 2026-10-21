@@ -8,9 +8,11 @@ export default async function Loading() {
         <div className="skeleton h-6 w-72" />
         <div className="skeleton h-4 w-96 max-w-full" />
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {/* Скелет повторяет мобильный ряд показателей (V-11), иначе при загрузке
+          блок «прыгает» с трёх рядов на один. */}
+      <div className="-mx-4 flex snap-x scroll-pl-4 gap-3 overflow-x-auto px-4 sm:mx-0 sm:grid sm:scroll-pl-0 sm:grid-cols-3 sm:overflow-visible sm:px-0 lg:grid-cols-5">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="card rounded-2xl px-4 py-3.5">
+          <div key={i} className="card min-w-[9.5rem] rounded-2xl px-4 py-3.5 sm:min-w-0">
             <div className="skeleton h-3 w-20" />
             <div className="skeleton mt-2 h-7 w-14" />
             <div className="skeleton mt-2 h-3 w-24" />
