@@ -87,7 +87,7 @@ function ThemeToggle({ compact = false }: { compact?: boolean }) {
     return (
       <button
         onClick={toggle}
-        className="nav-item flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[10px] font-medium"
+        className="nav-item flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[11px] font-medium"
         aria-label={t("Переключить тему")}
       >
         <span className="rounded-lg p-1.5">{icon}</span>
@@ -159,7 +159,7 @@ export function AppNav() {
               <span className="text-[15px] font-bold tracking-tight text-slate-900 dark:text-slate-50">
                 <span className="brand-gradient-text">ENT</span> Evidence Radar
               </span>
-              <span className="mt-1 text-[9.5px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+              <span className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
                 Evidence Intelligence
               </span>
             </span>
@@ -202,7 +202,7 @@ export function AppNav() {
                 key={l.href}
                 href={l.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[10px] font-medium transition ${
+                className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[11px] font-medium transition ${
                   active
                     ? "text-teal-600 dark:text-teal-400"
                     : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"

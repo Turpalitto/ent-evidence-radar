@@ -141,7 +141,7 @@ export function SourceBadge({ k }: { k: string }) {
   return (
     <span
       title={label ? t(label) : k}
-      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${SOURCE_STYLES[k] ?? "bg-slate-100 text-slate-600 dark:bg-slate-700/60 dark:text-slate-300"}`}
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide ${SOURCE_STYLES[k] ?? "bg-slate-100 text-slate-600 dark:bg-slate-700/60 dark:text-slate-300"}`}
     >
       {SOURCE_LABELS[k]?.split(" ")[0] ?? k}
     </span>
@@ -153,7 +153,7 @@ export function TierBadge({ tier }: { tier: number }) {
   if (tier === 0) return null;
   if (tier === -1) {
     return (
-      <span title={t("Журнал из списка сомнительных (возможно «хищнических») издательств")} className="inline-flex items-center rounded bg-gradient-to-br from-red-600 to-rose-700 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm shadow-rose-700/25">
+      <span title={t("Журнал из списка сомнительных (возможно «хищнических») издательств")} className="inline-flex items-center rounded bg-gradient-to-br from-red-600 to-rose-700 px-1.5 py-0.5 text-xs font-bold text-white shadow-sm shadow-rose-700/25">
         {t("⚠ Сомнительный журнал")}
       </span>
     );
@@ -167,7 +167,7 @@ export function TierBadge({ tier }: { tier: number }) {
   const label = tier === 1 ? t("Топ (Tier 1)") : tier === 2 ? t("Профиль (Tier 2)") : "MEDLINE (Tier 3)";
   const hint = tier === 1 ? t("Tier 1 — ведущие мировые журналы и Cochrane") : tier === 2 ? t("Tier 2 — ведущие профильные ЛОР-журналы") : t("Tier 3 — рецензируемые журналы, индексируемые в MEDLINE");
   return (
-    <span title={hint} className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold shadow-sm ${c}`}>
+    <span title={hint} className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-bold shadow-sm ${c}`}>
       {label}
     </span>
   );
@@ -179,7 +179,7 @@ export function IssuerBadge({ issuer, size = "md" }: { issuer: string | null | u
   const l = guidelineIssuerLabel(issuer);
   if (!l) return null;
   return (
-    <span title={t("Руководство: {name}", { name: t(l.name) })} className={`rounded border border-violet-300 bg-violet-50 font-semibold text-violet-800 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300 ${size === "sm" ? "px-1 py-0.5 text-[9px]" : "px-1.5 py-0.5 text-[10px]"}`}>
+    <span title={t("Руководство: {name}", { name: t(l.name) })} className={`rounded border border-violet-300 bg-violet-50 font-semibold text-violet-800 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300 ${size === "sm" ? "px-1 py-0.5 text-[11px]" : "px-1.5 py-0.5 text-xs"}`}>
       {t(l.label)}
     </span>
   );
@@ -200,7 +200,7 @@ export function TrialBadge({ info, size = "md" }: { info: TrialInfo | null | und
   // «Свежесть» считаем от последней проверки реестра (checkedAt обновляется каждым запуском),
   // а не от Date.now(): рендер остаётся чистым и детерминированным.
   const fresh = last && new Date(info.checkedAt).getTime() - new Date(last.at).getTime() < TRIAL_EVENT_FRESH_DAYS * 86400_000 ? last : null;
-  const cls = size === "sm" ? "px-1 py-0.5 text-[9px]" : "px-1.5 py-0.5 text-[10px]";
+  const cls = size === "sm" ? "px-1 py-0.5 text-[11px]" : "px-1.5 py-0.5 text-xs";
   if (fresh?.kind === "results") {
     return <span title={t("В реестре появились результаты{date}", { date: fresh.to ? ` (${fresh.to})` : "" })} className={`rounded border border-emerald-300 bg-emerald-50 font-bold text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 ${cls}`}>{t("РЕЗУЛЬТАТЫ ОПУБЛИКОВАНЫ")}</span>;
   }
@@ -240,7 +240,7 @@ export function NoticeBadge({ notice, size = "md" }: { notice: EditorialNotice |
       ? "border-orange-400 bg-orange-50 text-orange-800 dark:border-orange-500/50 dark:bg-orange-950/40 dark:text-orange-300"
       : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300";
   return (
-    <span title={title} className={`rounded border font-bold ${cls} ${size === "sm" ? "px-1 py-0.5 text-[9px]" : "px-1.5 py-0.5 text-[10px]"}`}>
+    <span title={title} className={`rounded border font-bold ${cls} ${size === "sm" ? "px-1 py-0.5 text-[11px]" : "px-1.5 py-0.5 text-xs"}`}>
       {t(l.short)}
     </span>
   );

@@ -14,8 +14,9 @@ export default function manifest(): MetadataRoute.Manifest {
     description: t("Мониторинг доказательной оториноларингологии: PubMed, Cochrane, Europe PMC, ClinicalTrials.gov, medRxiv"),
     start_url: "/",
     display: "standalone",
-    background_color: "#f8fafc",
-    theme_color: "#0d9488",
+    // Совпадает с --page-bg светлой темы: заставка PWA и панель браузера не «прыгают» (V-10).
+    background_color: "#f4f7fb",
+    theme_color: "#f4f7fb",
     icons: [
       {
         src: "/icon.svg",

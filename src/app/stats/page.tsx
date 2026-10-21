@@ -90,7 +90,7 @@ export default async function StatsPage() {
                   className="group flex min-w-9 flex-1 flex-col items-center gap-1"
                   title={`${year}: ${t("{count} публикаций, {high} с индексом ≥70", { count, high })}`}
                 >
-                  <span className="text-[10px] font-semibold tabular-nums text-[color:var(--ink-subtle)] transition group-hover:text-[color:var(--brand-ink)]">{count}</span>
+                  <span className="text-[11px] font-semibold tabular-nums text-[color:var(--ink-subtle)] transition group-hover:text-[color:var(--brand-ink)]">{count}</span>
                   <div className="relative flex w-full items-end" style={{ height: "150px" }}>
                     <div
                       className="w-full rounded-t bg-teal-200 transition group-hover:bg-teal-300 dark:bg-teal-800 dark:group-hover:bg-teal-700"
@@ -99,7 +99,7 @@ export default async function StatsPage() {
                       <div className="absolute bottom-0 w-full rounded-t bg-gradient-to-t from-teal-600 to-sky-500 dark:from-teal-500 dark:to-sky-400" style={{ height: `${count ? (high / count) * 100 : 0}%` }} />
                     </div>
                   </div>
-                  <span className="text-[10px] text-[color:var(--ink-muted)] transition group-hover:text-[color:var(--brand-ink)]">{year}</span>
+                  <span className="text-[11px] text-[color:var(--ink-muted)] transition group-hover:text-[color:var(--brand-ink)]">{year}</span>
                 </Link>
                 );
             })}
@@ -132,7 +132,7 @@ export default async function StatsPage() {
                   <div className="relative w-full rounded-t bg-teal-200 dark:bg-teal-900" style={{ height: `${(r.count / maxWeek) * 150}px` }} title={t("{count} публикаций, {high} с индексом ≥70", { count: r.count, high: r.high })}>
                     <div className="absolute bottom-0 w-full rounded-t bg-gradient-to-t from-teal-600 to-sky-500 dark:from-teal-500 dark:to-sky-400" style={{ height: `${(r.high / Math.max(1, r.count)) * 100}%` }} />
                   </div>
-                  <span className="text-[10px] text-[color:var(--ink-muted)]">{r.wk}</span>
+                  <span className="text-[11px] text-[color:var(--ink-muted)]">{r.wk}</span>
                 </div>
               ))}
             </div>
@@ -150,7 +150,7 @@ export default async function StatsPage() {
               return (
                 <div key={b} className="flex flex-1 flex-col items-center gap-1">
                   <div className={`w-full rounded-t ${color}`} style={{ height: `${(c / maxHist) * 150}px` }} title={`${b}–${b + 9}: ${c}`} />
-                  <span className="text-[9px] text-[color:var(--ink-muted)]">{b}</span>
+                  <span className="text-[11px] text-[color:var(--ink-muted)]">{b}</span>
                 </div>
               );
             })}

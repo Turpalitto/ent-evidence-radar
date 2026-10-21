@@ -218,13 +218,13 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             <LevelBadge level={a.evidenceLevel} />
             <TierBadge tier={a.journalTier} />
             <IssuerBadge issuer={a.guidelineIssuer} />
-            {a.isPreprint && <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">{t("ПРЕПРИНТ")}</span>}
-            {a.isPreprint && a.publishedDoi && <span className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" title={t("Есть рецензированная журнальная версия")}>{t("ОПУБЛИКОВАН В ЖУРНАЛЕ")}</span>}
-            {a.isRetracted && <span className="rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white">{t("ОТОЗВАНА")}</span>}
+            {a.isPreprint && <span className="rounded bg-rose-600 px-1.5 py-0.5 text-xs font-bold text-white">{t("ПРЕПРИНТ")}</span>}
+            {a.isPreprint && a.publishedDoi && <span className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-xs font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" title={t("Есть рецензированная журнальная версия")}>{t("ОПУБЛИКОВАН В ЖУРНАЛЕ")}</span>}
+            {a.isRetracted && <span className="rounded bg-red-700 px-1.5 py-0.5 text-xs font-bold text-white">{t("ОТОЗВАНА")}</span>}
             <NoticeBadge notice={a.editorialNotice} />
             <TrialBadge info={a.trialInfo} />
-            {hasOverrides && <span className="rounded border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300" title={t("Классификация исправлена вручную и не будет перетёрта при обновлении")}>{t("✎ ВРУЧНУЮ")}</span>}
-            {a.isHidden && <span className="rounded bg-slate-600 px-1.5 py-0.5 text-[10px] font-bold text-white">{t("СКРЫТА")}</span>}
+            {hasOverrides && <span className="rounded border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-xs font-bold text-violet-700 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300" title={t("Классификация исправлена вручную и не будет перетёрта при обновлении")}>{t("✎ ВРУЧНУЮ")}</span>}
+            {a.isHidden && <span className="rounded bg-slate-600 px-1.5 py-0.5 text-xs font-bold text-white">{t("СКРЫТА")}</span>}
           </div>
           {showTranslate && titleRu && (
             <p className="mb-0.5 text-sm font-semibold leading-snug text-teal-800 dark:text-teal-300">{titleRu}</p>

@@ -70,11 +70,14 @@
   --hairline: rgba(15, 23, 42, 0.075);
   --hairline-strong: rgba(15, 23, 42, 0.14);
 
-  /* ── Текст ── */
+  /* ── Текст ──
+     ink-subtle раньше был #94a3b8 (≈2,6:1 на белом) — им набраны .eyebrow и неактивные
+     иконки, то есть текст, который обязан читаться. Значения подобраны под порог 4,5:1
+     на всех трёх поверхностях (страж — src/lib/design-tokens.test.ts). */
   --ink: #0b1220;
   --ink-soft: #334155;
-  --ink-muted: #64748b;
-  --ink-subtle: #94a3b8;
+  --ink-muted: #556275;
+  --ink-subtle: #5f7086;
 
   /* ── Тени: многослойные, «дорогие» ── */
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 16px -10px rgba(15, 23, 42, 0.12);
@@ -115,7 +118,8 @@
   --ink: #e9eff9;
   --ink-soft: #c3cfe2;
   --ink-muted: #93a4bd;
-  --ink-subtle: #6f819c;
+  /* #6f819c давал 4,24:1 на --surface-2 — поднят до 4,85:1. */
+  --ink-subtle: #7a8ba6;
 
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 22px -14px rgba(0, 0, 0, 0.8);
   --shadow-lift: 0 2px 6px rgba(0, 0, 0, 0.5), 0 22px 44px -20px rgba(0, 0, 0, 0.85);

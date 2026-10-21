@@ -13,9 +13,11 @@ import { FEED_TYPES } from "@/lib/site";
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Цвет панели браузера = фон страницы (--page-bg), иначе на мобильном видна полоса
+  // другого цвета над контентом (аудит V-10).
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+    { media: "(prefers-color-scheme: light)", color: "#f4f7fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#070b14" },
   ],
 };
 

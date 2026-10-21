@@ -70,7 +70,7 @@ export function PicoSection({ pico }: { pico: Pico }) {
     <section className="panel rounded-xl p-3" data-testid="pico" aria-label="PICO">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="eyebrow">PICO</h3>
-        <span className="text-[10px] text-[color:var(--ink-muted)]" title={t("Извлечено автоматически из заголовка и аннотации — сверяйте с полным текстом")}>
+        <span className="text-[11px] text-[color:var(--ink-muted)]" title={t("Извлечено автоматически из заголовка и аннотации — сверяйте с полным текстом")}>
           {pico.source === "structured" ? t("из секций аннотации") : t("эвристика по тексту")}
         </span>
       </div>
