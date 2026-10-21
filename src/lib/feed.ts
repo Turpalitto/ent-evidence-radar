@@ -4,7 +4,7 @@
  */
 import { guidelineIssuerLabel } from "@/lib/evidence/guidelines";
 import { DESIGN_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
-import { parseFilters, type ArticleFilters } from "@/lib/filters";
+import { parseFilters, withoutPersonalFilters, type ArticleFilters } from "@/lib/filters";
 import { createI18n, DEFAULT_LOCALE, type I18n } from "@/lib/i18n";
 
 export const FEED_LIMIT = 60;
@@ -14,14 +14,9 @@ export const FEED_PARAMS = ["q", "scope", "subspecialty", "design", "issuer", "l
 
 /** Фильтры для ленты: персональное состояние (закладки/прочитано/скрытые/заметки) наружу не отдаём. */
 export function feedFilters(sp: URLSearchParams): ArticleFilters {
-  const f = parseFilters(sp);
+  const f = withoutPersonalFilters(parseFilters(sp));
   return {
     ...f,
-    bookmarked: false,
-    unread: false,
-    hidden: false,
-    withNotes: false,
-    scope: f.scope === "notes" ? "all" : f.scope,
     page: 1,
     pageSize: FEED_LIMIT,
     sort: f.q ? f.sort : "fetched",

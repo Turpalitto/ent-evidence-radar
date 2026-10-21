@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseFilters } from "@/lib/filters";
+import { parseFilters, withoutPersonalFilters } from "@/lib/filters";
 
 function sp(qs: string) {
   return new URLSearchParams(qs);
@@ -94,5 +94,20 @@ describe("parseFilters", () => {
     expect(parseFilters(sp("fromYear=9999")).fromYear).toBeUndefined();
     expect(parseFilters(sp("toYear=abc")).toYear).toBeUndefined();
     expect(parseFilters(sp("toYear=2025.5")).toYear).toBeUndefined();
+  });
+});
+
+describe("withoutPersonalFilters (N-01)", () => {
+  it("снимает персональные фильтры и не трогает публичные", () => {
+    const f = withoutPersonalFilters(
+      parseFilters(sp("bookmarked=1&unread=1&hidden=1&withNotes=1&scope=notes&q=доза&design=rct&page=2")),
+    );
+    expect(f).toMatchObject({ bookmarked: false, unread: false, hidden: false, withNotes: false, scope: "all" });
+    // Публичные параметры остаются как были — иначе аноним потерял бы обычную ленту.
+    expect(f).toMatchObject({ q: "доза", design: "rct", page: 2 });
+  });
+
+  it("не превращает поиск по заголовку в поиск по всему тексту", () => {
+    expect(withoutPersonalFilters(parseFilters(sp("scope=title"))).scope).toBe("title");
   });
 });

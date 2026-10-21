@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { findRelatedArticles } from "@/lib/queries";
 import { apiError, apiFailure, parseId } from "@/lib/api";
 import { ARTICLES_LIMIT, conditionalJson, publicRateLimit } from "@/lib/public-api";
+import { canReadPersonal, redactArticles } from "@/lib/privacy";
 import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
@@ -14,8 +15,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     // Делит бакет с /api/articles: карточка открывается реже, чем меняются фильтры.
     const limited = publicRateLimit(req, "articles", ARTICLES_LIMIT);
     if (limited) return limited;
+    const personal = canReadPersonal(req);
     const items = await findRelatedArticles(numId, 4);
-    return conditionalJson(req, { items });
+    return conditionalJson(req, { items: personal ? items : redactArticles(items) });
   } catch (e) {
     return apiFailure(req, e, "GET /api/articles/:id/related");
   }

@@ -216,3 +216,65 @@ describe("GET /api/export", () => {
     expect((await exportGet(get("/api/export", { "x-api-key": SECRET }))).status).toBe(200);
   });
 });
+
+/**
+ * Аудит N-01: заметки, закладки, «прочитано» и скрытые записи — личные. При заданном
+ * API_SECRET аноним получает значения по умолчанию и не может фильтровать/искать по ним;
+ * без API_SECRET поведение прежнее (проверяется тестами выше).
+ */
+describe("личные поля при API_SECRET (N-01)", () => {
+  const auth = { authorization: `Bearer ${SECRET}` };
+
+  it("аноним не видит личные поля и не фильтрует по ним", async () => {
+    process.env.API_SECRET = SECRET;
+    const list = await (await articlesGet(get("/api/articles"))).json();
+    expect(list.items).toHaveLength(3);
+    for (const a of list.items) {
+      expect(a).toMatchObject({ notes: "", isBookmarked: false, isRead: false, isHidden: false });
+    }
+
+    // Персональные фильтры игнорируются: закладка есть только у route-a1.
+    expect((await (await articlesGet(get("/api/articles?bookmarked=1"))).json()).total).toBe(3);
+    // «Скрытые» анониму недоступны: фильтр снят, вернулась обычная лента без скрытых записей.
+    const hiddenMode = await (await articlesGet(get("/api/articles?hidden=1"))).json();
+    expect(hiddenMode.total).toBe(3);
+    expect(hiddenMode.items.every((a: { isHidden: boolean }) => a.isHidden === false)).toBe(true);
+    // Поиск «в моих заметках» вырождается в обычный: слова из заметки в тексте статьи нет.
+    const notesSearch = await (await articlesGet(get("/api/articles?q=HYPERLINK&scope=notes"))).json();
+    expect(notesSearch.total).toBe(0);
+  });
+
+  it("авторизованный читатель видит личные поля и фильтрует по ним", async () => {
+    process.env.API_SECRET = SECRET;
+    const bookmarked = await (await articlesGet(get("/api/articles?bookmarked=1", auth))).json();
+    expect(bookmarked.total).toBe(1);
+    expect(bookmarked.items[0]).toMatchObject({ dedupKey: "route-a1", isBookmarked: true, notes: "Проверить  дозу" });
+
+    expect((await (await articlesGet(get("/api/articles?hidden=1", auth))).json()).total).toBe(1);
+    expect((await (await articlesGet(get("/api/articles?q=HYPERLINK&scope=notes", auth))).json()).total).toBe(1);
+  });
+
+  it("карточка: анониму — без заметок, скрытая — 404; с токеном — полностью", async () => {
+    process.env.API_SECRET = SECRET;
+    const [a1] = await db.select({ id: articles.id }).from(articles).where(eq(articles.dedupKey, "route-a1"));
+    const anon = await (await articleGet(get(`/api/articles/${a1.id}`), params(String(a1.id)))).json();
+    expect(anon).toMatchObject({ dedupKey: "route-a1", notes: "", isBookmarked: false, isRead: false });
+
+    const authed = await (await articleGet(get(`/api/articles/${a1.id}`, auth), params(String(a1.id)))).json();
+    expect(authed).toMatchObject({ notes: "Проверить  дозу", isBookmarked: true });
+
+    const [hidden] = await db.select({ id: articles.id }).from(articles).where(eq(articles.dedupKey, "route-a4"));
+    expect((await articleGet(get(`/api/articles/${hidden.id}`), params(String(hidden.id)))).status).toBe(404);
+    expect((await articleGet(get(`/api/articles/${hidden.id}`, auth), params(String(hidden.id)))).status).toBe(200);
+  });
+
+  it("похожие статьи не отдают заметки анониму", async () => {
+    process.env.API_SECRET = SECRET;
+    const [a1] = await db.select({ id: articles.id }).from(articles).where(eq(articles.dedupKey, "route-a1"));
+    const anon = await (await relatedGet(get(`/api/articles/${a1.id}/related`), params(String(a1.id)))).json();
+    expect(anon.items.length).toBeGreaterThan(0);
+    for (const a of anon.items) expect(a.notes).toBe("");
+    const authed = await (await relatedGet(get(`/api/articles/${a1.id}/related`, auth), params(String(a1.id)))).json();
+    expect(authed.items.some((a: { notes: string }) => a.notes !== "")).toBe(true);
+  });
+});

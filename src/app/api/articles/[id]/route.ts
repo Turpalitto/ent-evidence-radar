@@ -7,6 +7,7 @@ import { invalidateArticleAggregates } from "@/lib/cache";
 import { sanitizeOverrides } from "@/lib/evidence/classify";
 import { RECLASSIFY_ROW_COLUMNS, reclassifyRow } from "@/lib/reclassify";
 import { checkApiAuth } from "@/lib/security";
+import { canReadPersonal, redactArticle } from "@/lib/privacy";
 import { i18nOf } from "@/lib/i18n/request";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +18,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const { t } = i18nOf(req);
   const id = parseId((await ctx.params).id);
   if (id === null) return apiError(400, t("Некорректный id статьи"));
+  const personal = canReadPersonal(req);
   const rows = await db.select(articleColumns).from(articles).where(eq(articles.id, id));
-  if (!rows.length) return apiError(404, "not found");
-  return NextResponse.json(rows[0]);
+  const row = rows[0];
+  if (!row) return apiError(404, "not found");
+  // Скрытая запись — личная (аудит N-01): аноним не получает её даже по прямому id.
+  if (!personal && row.isHidden) return apiError(404, "not found");
+  return NextResponse.json(personal ? row : redactArticle(row));
 }
 
 /**

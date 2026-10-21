@@ -30,6 +30,22 @@ export interface ArticleFilters {
 
 const SORTS = new Set(["date", "trust", "fetched", "relevance"]);
 
+/**
+ * Фильтры без персонального состояния (аудит N-01). Закладки, «прочитано», скрытые записи и
+ * заметки — личные, поэтому анонимный читатель по ним не фильтрует, а поиск «в заметках»
+ * вырождается в обычный поиск по заголовку и аннотации. Без `API_SECRET` не применяется.
+ */
+export function withoutPersonalFilters(f: ArticleFilters): ArticleFilters {
+  return {
+    ...f,
+    bookmarked: false,
+    unread: false,
+    hidden: false,
+    withNotes: false,
+    scope: f.scope === "notes" ? "all" : f.scope,
+  };
+}
+
 export function parseFilters(sp: URLSearchParams): ArticleFilters {
   const num = (k: string) => {
     const v = sp.get(k);

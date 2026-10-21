@@ -420,6 +420,7 @@ paths:
     get:
       tags: [articles]
       summary: Лента статей с фильтрами, поиском и пагинацией
+      description: "Личные поля (`notes`, `isBookmarked`, `isRead`, `isHidden`) и персональные фильтры (`bookmarked`, `unread`, `hidden`, `withNotes`, `scope=notes`) доступны только авторизованному читателю: при заданном `API_SECRET` аноним получает значения по умолчанию, а такие фильтры игнорируются. Без `API_SECRET` ограничение не действует."
       parameters:
         - $ref: "#/components/parameters/ArticleFilters_q"
         - $ref: "#/components/parameters/ArticleFilters_scope"
@@ -454,6 +455,7 @@ paths:
     get:
       tags: [articles]
       summary: Одна статья
+      description: "При заданном `API_SECRET` личные поля отдаются только авторизованному читателю; скрытая запись анониму недоступна (404)."
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Article" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -508,6 +510,7 @@ paths:
     get:
       tags: [articles]
       summary: Похожие статьи (общие темы/субспециальности, недавние)
+      description: "Личные поля элементов отдаются только авторизованному читателю (см. `/api/articles`)."
       responses:
         "200":
           description: OK

@@ -93,6 +93,12 @@
 Всего 88 файлов / 632 тестов.
 
 ### Fixed
+- **Личные поля статей были доступны анониму через публичные GET (аудит N-01).** `GET /api/articles`,
+  `/api/articles/:id` и `/api/articles/:id/related` отдавали `notes`, `isBookmarked`, `isRead`, `isHidden`
+  любому клиенту, а лента принимала фильтры `bookmarked`/`unread`/`withNotes`/`hidden` и поиск `scope=notes`.
+  При заданном `API_SECRET` неавторизованный читатель теперь получает значения по умолчанию, персональные
+  фильтры игнорируются, а скрытая запись недоступна даже по прямому id (404). Без `API_SECRET` поведение
+  прежнее. Логика вынесена в `src/lib/privacy.ts` и `withoutPersonalFilters` (её же использует Atom-лента).
 - **Europe PMC: структурированные аннотации склеивались.** `<h4>Methods</h4>text` после снятия тегов превращалось
   в «Methodstext», абзацы `<p>` — в «loss.Methods:»; из-за этого секции, вывод (Conclusions), PICO и поиск по
   таким аннотациям не работали. Новый `htmlAbstractToText` даёт формат PubMed-парсера («Label: text» построчно);
