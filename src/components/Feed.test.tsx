@@ -378,6 +378,28 @@ describe("<Feed /> офлайн (A-15)", () => {
     expect(within(card).getAllByText("Retracted paper")[0]!.className).toContain("var(--ink-muted)");
   });
 
+  it("три уровня карточки: 2 субспециальности + «+N», источники текстом (V-04)", async () => {
+    setup([
+      makeArticle({
+        id: 11,
+        title: "Overloaded card",
+        subspecialties: ["otology", "rhinology", "sleep", "pediatric"],
+        sourceKeys: ["pubmed", "europepmc"],
+        trialInfo: { status: "COMPLETED", hasResults: true, checkedAt: "2026-10-14T00:00:00Z", events: [{ at: "2026-10-10T00:00:00Z", kind: "results", from: null, to: "2026-09-30" }] },
+      }),
+    ]);
+    const card = await screen.findByRole("listitem", { name: "Overloaded card" });
+    // Из четырёх субспециальностей видны две, остальные — в чипе «+2» с полным перечнем в title
+    expect(within(card).getAllByText("Отология").length).toBeGreaterThan(0);
+    expect(within(card).getAllByText("Ринология").length).toBeGreaterThan(0);
+    expect(within(card).queryByText("СОАС")).toBeNull();
+    const more = within(card).getAllByText("+2")[0]!;
+    expect(more).toHaveAttribute("title", "Сомнология / СОАС, Детская ЛОР");
+    // Источники — текстом в строке метаданных, отдельного бейджа источника в ленте больше нет
+    expect(within(card).getAllByText("PubMed · Europe PMC").length).toBeGreaterThan(0);
+    expect(within(card).queryByText("Europe PMC")).toBeNull();
+  });
+
   it("при потере сети показывает «Нет соединения», при восстановлении — скрывает", async () => {
     setup();
     await findTitle("Tympanostomy tubes versus watchful waiting");

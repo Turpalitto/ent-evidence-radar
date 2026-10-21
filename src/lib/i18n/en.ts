@@ -302,6 +302,7 @@ export const EN: Record<string, string> = {
   "Аннотация недоступна": "Abstract not available",
   "и др.": "et al.",
   "Почему в ленте: темы — {topics}; источники — {sources}": "Why it is in the feed: topics — {topics}; sources — {sources}",
+  "Источники: {sources}": "Sources: {sources}",
   "Избранное (b)": "Bookmark (b)",
   "Отметить непрочитанным": "Mark as unread",
   "Отметить прочитанным": "Mark as read",

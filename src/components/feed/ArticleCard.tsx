@@ -2,8 +2,9 @@
 
 import type { Article } from "@/db/schema";
 import { extractConclusion } from "@/lib/evidence/abstract";
+import { SOURCE_SHORT, SUBSPECIALTY_LABELS } from "@/lib/evidence/taxonomy";
 import { useI18n } from "@/lib/i18n/client";
-import { DesignBadge, IssuerBadge, LevelBadge, NoticeBadge, RetractedBadge, SourceBadge, SubBadge, TierBadge, TrialBadge, TrustScore } from "../Badges";
+import { DesignBadge, IssuerBadge, LevelBadge, NoticeBadge, RetractedBadge, SubBadge, TierBadge, TrialBadge, TrustScore, hasTrialBadge } from "../Badges";
 import { IconCheck, IconLightbulb, IconNote, IconStar, IconUnread } from "../icons";
 import { Highlight } from "../Highlight";
 
@@ -18,17 +19,71 @@ interface Props {
   onToggle: (patch: Partial<Article>) => void;
 }
 
+/** Препринт: нейтральный бейдж с пунктирной рамкой — «не прошёл рецензирование» видно по форме (V-05). */
+function PreprintBadge({ size = "md" }: { size?: "sm" | "md" }) {
+  const { t } = useI18n();
+  return (
+    <span
+      title={t("Препринт")}
+      className={`rounded border border-dashed border-slate-400 bg-slate-50 font-semibold text-slate-700 dark:border-slate-500 dark:bg-slate-500/10 dark:text-slate-300 ${size === "sm" ? "px-1 py-0.5 text-[11px]" : "px-1.5 py-0.5 text-xs"}`}
+    >
+      {t("Препринт")}
+    </span>
+  );
+}
+
+/** Есть рецензированная журнальная версия препринта — нейтральная пометка, не предупреждение. */
+function PublishedBadge({ doi, size = "md" }: { doi: string; size?: "sm" | "md" }) {
+  const { t } = useI18n();
+  return (
+    <span
+      title={t("Есть рецензированная журнальная версия: doi:{doi}", { doi })}
+      className={`rounded border border-[color:var(--hairline)] bg-[color:var(--surface-2)] font-semibold text-[color:var(--ink-soft)] ${size === "sm" ? "px-1 py-0.5 text-[11px]" : "px-1.5 py-0.5 text-xs"}`}
+    >
+      {t("Опубликован в журнале")}
+    </span>
+  );
+}
+
+/** Разделитель метаданных: « · », скрытый от скринридера (смысл несут сами значения). */
+function Dot() {
+  return <span aria-hidden>·</span>;
+}
+
 /**
  * Карточка ленты: два макета (desktop ≥ sm и компактный мобильный), клик/Enter/Space открывают
  * карточку, быстрые действия «избранное»/«прочитано» не всплывают до открытия.
- * Отозванная статья помечается `data-retracted` и красной полосой слева (V-03): сигнал
- * безопасности важнее акцента «непрочитано», поэтому градиент в этом случае не рисуется.
+ *
+ * Три уровня информации (V-04): 1) сила доказательств — дизайн, уровень, эшелон, издатель;
+ * 2) предупреждения — отдельной строкой и только если они есть; 3) метаданные — мелким текстом
+ * одной строкой, источники словами вместо бейджей. Отозванная статья помечается `data-retracted`
+ * и красной полосой слева (V-03): сигнал безопасности важнее акцента «непрочитано».
  */
 export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOpen, onToggle }: Props) {
   const { t, date, stored } = useI18n();
   const conclusion = extractConclusion(a.abstract);
   // Превью — первый абзац; для записей реестра он сгенерирован («Статус: …») и переводится при показе.
   const preview = a.abstract ? stored(a.abstract.split("\n").find(Boolean) ?? "") : "";
+
+  const shownSubs = a.subspecialties.slice(0, 2);
+  const restSubs = a.subspecialties.slice(2);
+  const restSubsTitle = restSubs.map((s) => t(SUBSPECIALTY_LABELS[s] ?? s)).join(", ");
+  const sourcesText = a.sourceKeys.map((k) => SOURCE_SHORT[k] ?? k).join(" · ");
+  const notice = a.editorialNotice;
+  const noticeVisible = !!notice && notice.type !== "retraction" && notice.type !== "withdrawal";
+  const hasWarnings = a.isRetracted || noticeVisible || a.isPreprint || hasTrialBadge(a.trialInfo);
+
+  const subspecialties = (size: "sm" | "md") => (
+    <>
+      {shownSubs.map((s) => <SubBadge key={s} k={s} />)}
+      {restSubs.length > 0 && (
+        <span className={`chip font-medium ${size === "sm" ? "text-[11px]" : "text-xs"}`} title={restSubsTitle}>
+          {`+${restSubs.length}`}
+        </span>
+      )}
+    </>
+  );
+
   return (
     <li
       tabIndex={0}
@@ -64,19 +119,24 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
       <div className="hidden gap-3.5 p-4 sm:flex">
         <TrustScore score={a.trustScore} />
         <div className="min-w-0 flex-1">
+          {/* 1. Сила доказательств */}
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
             <DesignBadge design={a.studyDesign} reason={a.designReason} confidence={a.designConfidence} />
-            <IssuerBadge issuer={a.guidelineIssuer} />
             <LevelBadge level={a.evidenceLevel} />
             <TierBadge tier={a.journalTier} />
-            {a.subspecialties.map((s) => <SubBadge key={s} k={s} />)}
-            {a.isPreprint && <span title={t("Препринт")} className="rounded border border-dashed border-slate-400 bg-slate-50 px-1.5 py-0.5 text-xs font-semibold text-slate-700 dark:border-slate-500 dark:bg-slate-500/10 dark:text-slate-300">{t("Препринт")}</span>}
-            {a.isPreprint && a.publishedDoi && <span title={t("Есть рецензированная журнальная версия: doi:{doi}", { doi: a.publishedDoi })} className="rounded border border-[color:var(--hairline)] bg-[color:var(--surface-2)] px-1.5 py-0.5 text-xs font-semibold text-[color:var(--ink-soft)]">{t("Опубликован в журнале")}</span>}
-            {a.isRetracted && <RetractedBadge />}
-            <NoticeBadge notice={a.editorialNotice} />
-            <TrialBadge info={a.trialInfo} />
-            <span className="ml-auto flex items-center gap-1">{a.sourceKeys.map((s) => <SourceBadge key={s} k={s} />)}</span>
+            <IssuerBadge issuer={a.guidelineIssuer} />
+            {subspecialties("md")}
           </div>
+          {/* 2. Предупреждения — только когда есть что показать */}
+          {hasWarnings && (
+            <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+              {a.isRetracted && <RetractedBadge />}
+              <NoticeBadge notice={notice} />
+              <TrialBadge info={a.trialInfo} />
+              {a.isPreprint && <PreprintBadge />}
+              {a.isPreprint && a.publishedDoi && <PublishedBadge doi={a.publishedDoi} />}
+            </div>
+          )}
           <h3 className={`text-[15px] leading-snug transition-colors ${a.isRetracted ? "font-medium text-[color:var(--ink-muted)]" : a.isRead ? "font-medium text-[color:var(--ink-soft)]" : "font-semibold text-[color:var(--ink)]"} group-hover:text-[color:var(--brand-ink)]`}>
             <Highlight text={a.title} terms={searchTerms} />
           </h3>
@@ -102,15 +162,36 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
               <Highlight text={a.notes} terms={searchTerms} />
             </p>
           )}
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--ink-muted)]">
+          {/* 3. Метаданные: журнал · дата · авторы · n≈ · темы · источники */}
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[color:var(--ink-muted)]">
             <span className="font-medium text-[color:var(--ink-soft)]">{stored(a.journal) || "—"}</span>
+            <Dot />
             <span>{date(a.publishedAt)}</span>
-            {a.authors.length > 0 && <span className="truncate">{a.authors.slice(0, 3).join(", ")}{a.authors.length > 3 ? ` ${t("и др.")}` : ""}</span>}
-            {a.sampleSize && <span>n≈{a.sampleSize}</span>}
+            {a.authors.length > 0 && (
+              <>
+                <Dot />
+                <span className="truncate">{a.authors.slice(0, 3).join(", ")}{a.authors.length > 3 ? ` ${t("и др.")}` : ""}</span>
+              </>
+            )}
+            {a.sampleSize && (
+              <>
+                <Dot />
+                <span>n≈{a.sampleSize}</span>
+              </>
+            )}
             {topicNames && (
-              <span className="truncate text-[color:var(--ink-subtle)]" title={t("Почему в ленте: темы — {topics}; источники — {sources}", { topics: topicNames, sources: a.sourceKeys.join(", ") })}>
-                · {topicNames}
-              </span>
+              <>
+                <Dot />
+                <span className="truncate text-[color:var(--ink-subtle)]" title={t("Почему в ленте: темы — {topics}; источники — {sources}", { topics: topicNames, sources: a.sourceKeys.join(", ") })}>
+                  {topicNames}
+                </span>
+              </>
+            )}
+            {sourcesText && (
+              <>
+                <Dot />
+                <span className="truncate" title={t("Источники: {sources}", { sources: sourcesText })}>{sourcesText}</span>
+              </>
             )}
             <span className="ml-auto flex gap-1">
               <button
@@ -144,12 +225,9 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
           <TrustScore score={a.trustScore} size="sm" />
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
             <DesignBadge design={a.studyDesign} reason={a.designReason} confidence={a.designConfidence} />
-            <IssuerBadge issuer={a.guidelineIssuer} size="sm" />
             <LevelBadge level={a.evidenceLevel} />
-            {a.isPreprint && <span className="rounded border border-dashed border-slate-400 bg-slate-50 px-1 py-0.5 text-[11px] font-semibold text-slate-700 dark:border-slate-500 dark:bg-slate-500/10 dark:text-slate-300">{t("Препринт")}</span>}
-            {a.isRetracted && <RetractedBadge size="sm" />}
-            <NoticeBadge notice={a.editorialNotice} size="sm" />
-            <TrialBadge info={a.trialInfo} size="sm" />
+            <IssuerBadge issuer={a.guidelineIssuer} size="sm" />
+            {subspecialties("sm")}
           </div>
           {/* Large tap targets for mobile quick actions */}
           <button
@@ -162,6 +240,15 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
             <IconStar filled={a.isBookmarked} className="h-5 w-5" />
           </button>
         </div>
+        {hasWarnings && (
+          <div className="mb-2 flex flex-wrap items-center gap-1">
+            {a.isRetracted && <RetractedBadge size="sm" />}
+            <NoticeBadge notice={notice} size="sm" />
+            <TrialBadge info={a.trialInfo} size="sm" />
+            {a.isPreprint && <PreprintBadge size="sm" />}
+            {a.isPreprint && a.publishedDoi && <PublishedBadge doi={a.publishedDoi} size="sm" />}
+          </div>
+        )}
         <h3 className={`text-sm leading-snug ${a.isRetracted ? "font-medium text-[color:var(--ink-muted)]" : a.isRead ? "font-medium text-[color:var(--ink-soft)]" : "font-semibold text-[color:var(--ink)]"}`}>
           <Highlight text={a.title} terms={searchTerms} />
         </h3>
@@ -188,6 +275,7 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
         <div className="mt-1.5 flex items-center gap-2 text-[12px] text-[color:var(--ink-muted)]">
           <span className="min-w-0 truncate font-medium text-[color:var(--ink-soft)]">{stored(a.journal) || "—"}</span>
           <span className="shrink-0">{date(a.publishedAt)}</span>
+          {sourcesText && <span className="min-w-0 truncate text-[color:var(--ink-subtle)]">{sourcesText}</span>}
           {a.isRead && <IconCheck className="ml-auto h-4 w-4 shrink-0 text-[color:var(--brand-ink)]" />}
         </div>
       </div>

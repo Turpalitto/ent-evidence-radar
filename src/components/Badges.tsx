@@ -216,6 +216,26 @@ export function IssuerBadge({ issuer, size = "md" }: { issuer: string | null | u
 export const TRIAL_EVENT_FRESH_DAYS = 60;
 
 /**
+ * Последнее событие КИ, если оно свежее. «Свежесть» считаем от последней проверки реестра
+ * (checkedAt обновляется каждым запуском), а не от Date.now(): рендер остаётся чистым
+ * и детерминированным.
+ */
+function freshTrialEvent(info: TrialInfo) {
+  const last = info.events[info.events.length - 1];
+  if (!last) return null;
+  return new Date(info.checkedAt).getTime() - new Date(last.at).getTime() < TRIAL_EVENT_FRESH_DAYS * 86400_000 ? last : null;
+}
+
+/**
+ * Появится ли бейдж отслеживания КИ — чтобы карточка не рисовала пустую строку предупреждений
+ * (V-04). Условие совпадает с самим TrialBadge.
+ */
+export function hasTrialBadge(info: TrialInfo | null | undefined): boolean {
+  if (!info) return false;
+  return freshTrialEvent(info) !== null || Boolean(info.status && NEGATIVE_STATUSES.has(info.status));
+}
+
+/**
  * Бейдж отслеживания КИ (A-08): свежее событие (результаты появились / статус сменился) или
  * негативный статус (прекращено/отозвано/приостановлено). Негативный статус — та же семья
  * --danger, что и отзыв статьи: смысл один — «с этой работой что-то не так» (V-03/V-05).
@@ -224,10 +244,7 @@ export function TrialBadge({ info, size = "md" }: { info: TrialInfo | null | und
   const { t } = useI18n();
   const status = (s: string | null | undefined) => t(trialStatusLabel(s));
   if (!info) return null;
-  const last = info.events[info.events.length - 1];
-  // «Свежесть» считаем от последней проверки реестра (checkedAt обновляется каждым запуском),
-  // а не от Date.now(): рендер остаётся чистым и детерминированным.
-  const fresh = last && new Date(info.checkedAt).getTime() - new Date(last.at).getTime() < TRIAL_EVENT_FRESH_DAYS * 86400_000 ? last : null;
+  const fresh = freshTrialEvent(info);
   const cls = size === "sm" ? "px-1 py-0.5 text-[11px]" : "px-1.5 py-0.5 text-xs";
   const neutral = `border-[color:var(--hairline)] bg-[color:var(--surface-2)] font-semibold text-[color:var(--ink-soft)] ${cls}`;
   if (fresh?.kind === "results") {
