@@ -89,7 +89,7 @@ export function ArticleCard({ article: a, focused, searchTerms, topicNames, onOp
       tabIndex={0}
       aria-label={a.title}
       data-retracted={a.isRetracted ? "true" : undefined}
-      className={`card card-lift card-sheen group relative cursor-pointer overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand-ring)] ${
+      className={`card card-lift group relative cursor-pointer overflow-hidden rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand-ring)] ${
         focused ? "ring-2 ring-[color:var(--brand-ring)]" : ""
       }`}
       onClick={onOpen}

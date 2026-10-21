@@ -94,10 +94,8 @@ export default async function HomePage() {
         className="rise-in relative overflow-hidden rounded-3xl border p-6 shadow-[var(--shadow-card)] sm:p-8"
         style={{ borderColor: "var(--hairline)", background: "var(--surface-1)" }}
       >
-        <div
-          className="aura pointer-events-none absolute -right-28 -top-32 h-80 w-80 rounded-full"
-          style={{ background: "radial-gradient(circle, rgba(13,148,136,0.34), transparent 66%)" }}
-        />
+        {/* Свечение hero: статичное пятно. «Дышащий» .aura убран — бесконечная анимация
+            отвлекала от чтения и жгла батарею (V-08). */}
         <div
           className="pointer-events-none absolute -bottom-40 -left-24 h-72 w-72 rounded-full"
           style={{ background: "radial-gradient(circle, rgba(2,132,199,0.22), transparent 68%)" }}
@@ -148,8 +146,8 @@ export default async function HomePage() {
           <Link
             key={c.key}
             href={c.href}
-            style={{ "--stagger-i": i } as CSSProperties}
-            className="card card-lift card-sheen group rounded-2xl p-4"
+            style={{ "--stagger-i": Math.min(i, 8) } as CSSProperties}
+            className="card card-lift group rounded-2xl p-4"
           >
             <div className="flex items-start justify-between gap-2">
               <p className="eyebrow">{c.label}</p>

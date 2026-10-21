@@ -120,3 +120,21 @@ describe("иконки вместо эмодзи (V-09)", () => {
     expect(violations).toEqual([]);
   });
 });
+
+/**
+ * V-08: блик по карточке и «дышащее» свечение убраны из разметки и CSS. Проверяем именно код,
+ * а не комментарии: в пояснениях эти имена остаются как история решения.
+ */
+describe("декор убран (V-08)", () => {
+  it("классов card-sheen и aura нет ни в разметке, ни в globals.css", () => {
+    const css = readFileSync(join(SRC, "app", "globals.css"), "utf8");
+    const sources = [...UI_FILES.map((f) => ({ rel: f.rel, code: stripComments(f.source) })), { rel: "app/globals.css", code: stripComments(css) }];
+    const violations: string[] = [];
+    for (const file of sources) {
+      for (const cls of ["card-sheen", "aura"]) {
+        if (new RegExp(`\\b${cls}\\b`).test(file.code)) violations.push(`${file.rel}: ${cls}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+});

@@ -47,7 +47,7 @@ export default async function RunsPage() {
 
       <section className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {srcs.map((s, i) => (
-          <div key={s.key} style={{ "--stagger-i": i } as CSSProperties} className="card card-lift rounded-2xl p-4">
+          <div key={s.key} style={{ "--stagger-i": Math.min(i, 8) } as CSSProperties} className="card card-lift rounded-2xl p-4">
             <div className="flex items-center justify-between gap-2">
               <p className="font-semibold text-[color:var(--ink)]">{t(SOURCE_LABELS[s.key] ?? s.name)}</p>
               <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${!s.enabled ? "bg-slate-300 dark:bg-slate-600" : s.lastStatus === "ok" ? "bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.18)]" : s.lastStatus === "degraded" ? "bg-amber-500 shadow-[0_0_0_3px_rgba(245,158,11,0.18)]" : s.lastStatus === "error" ? "bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.18)]" : "bg-slate-300 dark:bg-slate-600"}`} />

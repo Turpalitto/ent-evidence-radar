@@ -71,6 +71,11 @@ export function Feed({ topics }: { topics: Topic[] }) {
   const [showFilters, setShowFilters] = useState(false);
   const [focusedIdx, setFocusedIdx] = useState<number>(-1);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+  /**
+   * Каскадное появление карточек — только для первой загрузки (V-08). При смене фильтра
+   * лента подменяется целиком, и повторная анимация каждый раз «дёргала» список.
+   */
+  const [animateIn, setAnimateIn] = useState(true);
 
   // Pull-to-refresh
   const [ptrActive, setPtrActive] = useState(false);
@@ -597,7 +602,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
         {loading && data.items.length === 0 && (
           <div className="stagger space-y-2.5" aria-hidden>
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} style={{ "--stagger-i": i } as CSSProperties} className="card rounded-2xl p-4">
+              <div key={i} style={{ "--stagger-i": Math.min(i, 8) } as CSSProperties} className="card rounded-2xl p-4">
                 <div className="flex gap-3.5">
                   <div className="skeleton h-12 w-12 shrink-0 rounded-full" />
                   <div className="min-w-0 flex-1 space-y-2 py-0.5">
@@ -667,7 +672,13 @@ export function Feed({ topics }: { topics: Topic[] }) {
           </div>
         )}
 
-        <ul ref={listRef} className="stagger space-y-2.5">
+        <ul
+          ref={listRef}
+          className={animateIn ? "stagger space-y-2.5" : "space-y-2.5"}
+          // Каскад нужен только на первой отрисовке: когда анимация закончилась, класс снимается,
+          // и смена фильтра больше не «прыгает» (V-08). При reduced-motion события нет — и не надо.
+          onAnimationEnd={animateIn ? () => setAnimateIn(false) : undefined}
+        >
           {data.items.map((a, idx) => (
             <ArticleCard
               key={a.id}

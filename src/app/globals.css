@@ -171,11 +171,12 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Фон приложения: мягкое брендовое свечение поверх базового цвета */
+/* Фон приложения: мягкое брендовое свечение поверх базового цвета.
+   Без `background-attachment: fixed` (V-08): фиксированный фон перерисовывается
+   на каждом кадре прокрутки и заметно тормозит на слабых устройствах. */
 .app-bg {
   background-color: var(--page-bg);
   background-image: var(--page-glow);
-  background-attachment: fixed;
   background-repeat: no-repeat;
 }
 
@@ -262,40 +263,14 @@ body {
   border: 1px solid var(--hairline);
   box-shadow: var(--inset-highlight), var(--shadow-card);
 }
+/* Наведение: только тень и рамка. Раньше карточка ещё и подпрыгивала на 3px —
+   при быстром просмотре ленты это дёргало строку под курсором (V-08). */
 .card-lift {
-  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), box-shadow 0.28s cubic-bezier(0.32, 0.72, 0, 1), border-color 0.2s ease;
+  transition: box-shadow 0.28s cubic-bezier(0.32, 0.72, 0, 1), border-color 0.2s ease;
 }
 .card-lift:hover {
-  transform: translateY(-3px);
   box-shadow: var(--inset-highlight), var(--shadow-lift);
   border-color: var(--hairline-strong);
-}
-
-/* Диагональный блик, пробегающий по карточке при наведении */
-.card-sheen { position: relative; overflow: hidden; }
-.card-sheen::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -60%;
-  width: 45%;
-  height: 100%;
-  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.55), transparent);
-  transform: skewX(-16deg);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  pointer-events: none;
-}
-.card-sheen:hover::after {
-  opacity: 1;
-  animation: sheen 0.9s cubic-bezier(0.32, 0.72, 0, 1);
-}
-.dark .card-sheen::after {
-  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.09), transparent);
-}
-@keyframes sheen {
-  from { left: -60%; }
-  to   { left: 130%; }
 }
 
 /* Вложенная поверхность (секции внутри карточек, сайдбар) */
@@ -317,11 +292,11 @@ body {
   outline: none;
 }
 
-/* Стеклянный хедер */
+/* Хедер: почти непрозрачная поверхность без backdrop-filter (V-08).
+   `blur(18px)` на всю ширину — самая дорогая операция при прокрутке, а разница
+   с плотным фоном на глаз неразличима. */
 .glass-header {
-  background: color-mix(in srgb, var(--surface-1) 78%, transparent);
-  backdrop-filter: blur(18px) saturate(1.6);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  background: color-mix(in srgb, var(--surface-1) 96%, transparent);
   border-bottom: 1px solid var(--hairline);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.4), 0 8px 24px -20px rgba(15, 23, 42, 0.5);
 }
@@ -438,9 +413,7 @@ body {
   color: var(--brand-ink);
 }
 .mobile-nav {
-  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
-  backdrop-filter: blur(18px) saturate(1.6);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  background: color-mix(in srgb, var(--surface-1) 96%, transparent);
   border-top: 1px solid var(--hairline);
 }
 /* Текст-ссылка бренда */
@@ -465,7 +438,8 @@ body {
 }
 .fade-in { animation: fade-in 0.35s ease both; }
 
-/* Стаггер карточек ленты: элементы появляются каскадом */
+/* Стаггер карточек ленты: элементы появляются каскадом, но не дольше восьми
+   (задержка в разметке ограничена: `--stagger-i: Math.min(i, 8)`, V-08) */
 .stagger > * {
   animation: rise-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
   animation-delay: calc(var(--stagger-i, 0) * 30ms);
@@ -475,13 +449,6 @@ body {
   100% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
 }
 .pulse-ring { animation: pulse-ring 1.4s ease-out infinite; }
-
-/* Медленное «дыхание» брендового свечения в hero */
-@keyframes aura {
-  0%, 100% { opacity: 0.55; transform: scale(1); }
-  50%      { opacity: 0.85; transform: scale(1.06); }
-}
-.aura { animation: aura 9s ease-in-out infinite; }
 
 /* ═══ Скелетоны ═══ */
 @keyframes shimmer {
@@ -562,11 +529,11 @@ button, a, [role="button"] { touch-action: manipulation; }
 
 /* ═══ Доступность: уважаем reduced motion ═══ */
 @media (prefers-reduced-motion: reduce) {
-  .rise-in, .fade-in, .stagger > *, .sheet-enter, .drawer-enter, .overlay-enter, .aura, .card-sheen::after,
+  .rise-in, .fade-in, .stagger > *, .sheet-enter, .drawer-enter, .overlay-enter,
   .skeleton, .pulse-ring, .ptr-spinning {
     animation: none !important;
   }
-  .card-lift, .btn-brand, .card-sheen::after {
+  .card-lift, .btn-brand {
     transition: none !important;
   }
 }

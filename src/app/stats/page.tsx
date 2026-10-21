@@ -66,7 +66,7 @@ export default async function StatsPage() {
           [t("Отозванных"), totals.retracted],
           [t("В ≥2 источниках"), totals.multi],
         ] as const).map(([l, v], i) => (
-          <div key={String(l)} style={{ "--stagger-i": i } as CSSProperties} className="card card-lift rounded-2xl px-4 py-3.5">
+          <div key={String(l)} style={{ "--stagger-i": Math.min(i, 8) } as CSSProperties} className="card card-lift rounded-2xl px-4 py-3.5">
             <p className="eyebrow">{l}</p>
             <p className="stat-value mt-1.5">{v}</p>
           </div>
