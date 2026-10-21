@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useI18n } from "@/lib/i18n/client";
 import { Section } from "./Section";
+import { IconDownload, IconUpload } from "../icons";
 
 interface Props {
   /** Перечитать настройки и источники после успешного восстановления. */
@@ -64,10 +65,12 @@ export function BackupSection({ onRestored }: Props) {
     >
       <div className="flex flex-wrap items-center gap-3">
         <a href="/api/backup" download className="btn-brand flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white">
-          <span>{t("📥 Скачать резервную копию (JSON)")}</span>
+          <IconDownload className="h-4 w-4 shrink-0" />
+          <span>{t("Скачать резервную копию (JSON)")}</span>
         </a>
         <label className={`btn-ghost flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold ${restoring ? "opacity-60" : ""}`}>
-          <span>{restoring ? t("⏳ Восстановление…") : t("📤 Восстановить из файла")}</span>
+          <IconUpload className="h-4 w-4 shrink-0" />
+          <span>{restoring ? t("Восстановление…") : t("Восстановить из файла")}</span>
           <input
             type="file"
             accept="application/json,.json"

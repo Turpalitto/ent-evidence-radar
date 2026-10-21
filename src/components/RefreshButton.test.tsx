@@ -24,9 +24,9 @@ afterEach(() => {
 });
 
 describe("тексты статуса", () => {
-  it("progressText: первое слово источника и число/крестик; finalText по статусу запуска", () => {
+  it("progressText: короткое имя источника и число либо «ошибка»; finalText по статусу запуска", () => {
     expect(progressText([], t)).toMatch(/Запрашиваем PubMed/);
-    expect(progressText([{ source: "pubmed", found: 120 }, { source: "europepmc", found: 0, error: "HTTP 503" }, { source: "unknown", found: 4 }] as never, t)).toBe("PubMed 120 · Europe ✗ · unknown 4");
+    expect(progressText([{ source: "pubmed", found: 120 }, { source: "europepmc", found: 0, error: "HTTP 503" }, { source: "unknown", found: 4 }] as never, t)).toBe("PubMed 120 · Europe PMC: ошибка · unknown 4");
     const base = { id: 7, newAdded: 3, updated: 2, totalFound: 10, details: [], errorMessage: null };
     expect(finalText({ ...base, status: "success" }, t)).toBe("Готово. Запуск #7: +3 новых, обновлено 2.");
     expect(finalText({ ...base, status: "partial" }, t)).toMatch(/^Готово частично\. Запуск #7/);
@@ -46,7 +46,7 @@ describe("<RefreshButton />", () => {
     render(<RefreshButton />);
     const button = screen.getByRole("button", { name: /Обновить данные/ });
     await userEvent.click(button);
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("PubMed 120 · ClinicalTrials.gov ✗"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("PubMed 120 · CT.gov: ошибка"));
     expect(screen.getByRole("button")).toBeDisabled();
     expect(screen.getByRole("button")).toHaveTextContent("Идёт поиск…");
     expect(calls.filter((c) => c.init?.method === "POST")).toHaveLength(1);

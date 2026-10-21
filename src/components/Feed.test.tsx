@@ -71,8 +71,8 @@ describe("<Feed />", () => {
     expect(screen.getByText("5 ст.")).toBeInTheDocument();
     // Бейдж редакционного уведомления Crossref (A-04) с датой в подсказке
     // Бейдж отслеживания КИ (A-08): свежее событие «появились результаты»
-    expect(screen.getAllByText("РЕЗУЛЬТАТЫ ОПУБЛИКОВАНЫ").length).toBeGreaterThan(0);
-    const eoc = screen.getAllByText("EXPRESSION OF CONCERN");
+    expect(screen.getAllByText("Результаты опубликованы").length).toBeGreaterThan(0);
+    const eoc = screen.getAllByText("Сомнения редакции");
     expect(eoc.length).toBeGreaterThan(0);
     expect(eoc[0]).toHaveAttribute("title", expect.stringContaining("2025-01-02"));
     // названия тем из topicIds (I-14)
@@ -171,16 +171,16 @@ describe("<Feed />", () => {
     await user.click(await screen.findByRole("button", { name: /Сохранить фильтр/ }));
     const stored = JSON.parse(window.localStorage.getItem("ent-radar:filter-presets:v1") ?? "[]");
     expect(stored).toEqual([expect.objectContaining({ name: "Мой ринологический", f: expect.objectContaining({ subspecialty: "rhinology" }) })]);
-    expect(screen.getByRole("button", { name: "★ Мой ринологический" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Мой ринологический" })).toBeInTheDocument();
 
     // сброс → применение пресета возвращает фильтр
     await user.click(screen.getAllByRole("button", { name: /Сбросить/ })[0]);
     await waitFor(() => expect(new URLSearchParams(window.location.search).get("subspecialty")).toBeNull());
-    await user.click(screen.getByRole("button", { name: "★ Мой ринологический" }));
+    await user.click(screen.getByRole("button", { name: "Мой ринологический" }));
     await waitFor(() => expect(new URLSearchParams(window.location.search).get("subspecialty")).toBe("rhinology"));
 
     await user.click(screen.getByRole("button", { name: "Удалить пресет Мой ринологический" }));
-    expect(screen.queryByRole("button", { name: "★ Мой ринологический" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Мой ринологический" })).not.toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem("ent-radar:filter-presets:v1") ?? "[]")).toEqual([]);
   });
 
@@ -352,18 +352,30 @@ describe("<Feed /> офлайн (A-15)", () => {
     expect(screen.queryByText("Не удалось загрузить ленту")).toBeNull();
   });
 
-  it("быстрые действия на карточке: ★ и ✓ шлют PATCH и не открывают карточку", async () => {
+  it("быстрые действия на карточке: избранное и «прочитано» шлют PATCH и не открывают карточку", async () => {
     const user = userEvent.setup();
     const { calls } = setup();
     await findTitle("Tympanostomy tubes versus watchful waiting");
     const card = screen.getAllByRole("listitem").find((li) => li.getAttribute("aria-label") === "Dupilumab for nasal polyps")!;
-    await user.click(within(card).getAllByTitle("Избранное (b)")[0]!);
+    const bookmark = within(card).getAllByRole("button", { name: "Избранное" })[0]!;
+    expect(bookmark).toHaveAttribute("aria-pressed", "false");
+    await user.click(bookmark);
     await waitFor(() => expect(calls.some((c) => c.init?.method === "PATCH" && c.url.pathname === "/api/articles/2")).toBe(true));
     expect(JSON.parse(String(calls.find((c) => c.url.pathname === "/api/articles/2")!.init?.body))).toEqual({ isBookmarked: true });
-    await waitFor(() => expect(within(card).getAllByTitle("Избранное (b)")[0]).toHaveTextContent("★"));
-    await user.click(within(card).getAllByTitle("Прочитано (r)")[0]!);
+    // Состояние отражено и в доступном имени: aria-pressed переключился
+    await waitFor(() => expect(within(card).getAllByRole("button", { name: "Избранное" })[0]).toHaveAttribute("aria-pressed", "true"));
+    await user.click(within(card).getAllByRole("button", { name: "Отметить прочитанным" })[0]!);
     await waitFor(() => expect(calls.filter((c) => c.url.pathname === "/api/articles/2")).toHaveLength(2));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("отозванная статья помечена data-retracted, полосой --danger и бейджем «Отозвана» (V-03)", async () => {
+    setup([makeArticle({ id: 7, title: "Retracted paper", isRetracted: true, isRead: false })]);
+    const card = await screen.findByRole("listitem", { name: "Retracted paper" });
+    expect(card).toHaveAttribute("data-retracted", "true");
+    expect(within(card).getAllByText("Отозвана").length).toBeGreaterThan(0);
+    // Заголовок приглушён, но не перечёркнут
+    expect(within(card).getAllByText("Retracted paper")[0]!.className).toContain("var(--ink-muted)");
   });
 
   it("при потере сети показывает «Нет соединения», при восстановлении — скрывает", async () => {
@@ -392,7 +404,7 @@ describe("<Feed /> офлайн (A-15)", () => {
     expect(text.split("\n").length).toBe(ARTICLES.length);
     expect(text).toContain("// The Laryngoscope. 2026. URL: https://pubmed.ncbi.nlm.nih.gov/90000001/.");
     // Кнопка подтверждает копирование
-    expect(screen.getByRole("button", { name: /Скопировано ✓/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Скопировано/ })).toBeInTheDocument();
     Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
   });
 

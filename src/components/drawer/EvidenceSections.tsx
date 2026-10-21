@@ -9,6 +9,12 @@ import { BadgeLegend } from "./BadgeLegend";
 import { trialStatusLabel } from "@/lib/evidence/trial-status";
 import { useI18n } from "@/lib/i18n/client";
 import { NOTICE_LABELS } from "../Badges";
+import { IconExternal } from "../icons";
+
+/** Внешняя ссылка: текст + иконка «открыть наружу» вместо текстовой стрелки ↗ (V-09). */
+function ExternalMark() {
+  return <IconExternal className="ml-1 inline h-3 w-3 align-[-1px]" />;
+}
 
 /** Компактные ссылки на идентификаторы: уведомление редакции, журнальная версия, PMC, PubMed, DOI, реестр КИ. */
 export function IdentifierLinks({ a }: { a: Article }) {
@@ -22,17 +28,22 @@ export function IdentifierLinks({ a }: { a: Article }) {
           href={`https://doi.org/${notice.noticeDoi}`}
           target="_blank"
           rel="noreferrer"
-          className="rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-800 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300"
+          className={`rounded-lg border px-2.5 py-1 text-xs font-medium ${
+            notice.type === "correction"
+              ? "border-[color:var(--warning)] bg-[color:var(--warning-soft)] text-[color:var(--warning-ink)]"
+              : "border-[color:var(--danger)] bg-[color:var(--danger-soft)] text-[color:var(--danger-ink)]"
+          }`}
           title={`${t(NOTICE_LABELS[notice.type].title)}${notice.date ? `, ${notice.date}` : ""}`}
         >
-          {notice.type === "correction" ? t("Текст исправления") : notice.type === "expression_of_concern" ? t("Текст expression of concern") : t("Уведомление об отзыве")} ↗
+          {notice.type === "correction" ? t("Текст исправления") : notice.type === "expression_of_concern" ? t("Текст expression of concern") : t("Уведомление об отзыве")}
+          <ExternalMark />
         </a>
       )}
-      {a.publishedDoi && <a href={`https://doi.org/${a.publishedDoi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" title={t("Рецензированная версия этого препринта в журнале")}>{t("Журнальная версия (DOI)")} ↗</a>}
-      {a.pmcid && <a href={`https://www.ncbi.nlm.nih.gov/pmc/articles/${a.pmcid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">{t("Полный текст (PMC)")} ↗</a>}
-      {a.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">PubMed (PMID {a.pmid}) ↗</a>}
-      {a.doi && <a href={`https://doi.org/${a.doi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">{t("Первоисточник (DOI)")} ↗</a>}
-      {a.nctId && <a href={`https://clinicaltrials.gov/study/${a.nctId}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">{t("Реестр КИ ({id})", { id: a.nctId })} ↗</a>}
+      {a.publishedDoi && <a href={`https://doi.org/${a.publishedDoi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" title={t("Рецензированная версия этого препринта в журнале")}>{t("Журнальная версия (DOI)")}<ExternalMark /></a>}
+      {a.pmcid && <a href={`https://www.ncbi.nlm.nih.gov/pmc/articles/${a.pmcid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">{t("Полный текст (PMC)")}<ExternalMark /></a>}
+      {a.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">PubMed (PMID {a.pmid})<ExternalMark /></a>}
+      {a.doi && <a href={`https://doi.org/${a.doi}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">{t("Первоисточник (DOI)")}<ExternalMark /></a>}
+      {a.nctId && <a href={`https://clinicaltrials.gov/study/${a.nctId}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">{t("Реестр КИ ({id})", { id: a.nctId })}<ExternalMark /></a>}
     </div>
   );
 }

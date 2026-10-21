@@ -84,7 +84,7 @@ export default async function HomePage() {
     { key: "unread", label: t("Непрочитано"), value: totals.unread, sub: t("новое для вас"), href: "/?unread=1" },
     { key: "level1", label: t("Уровень 1"), value: totals.l1, sub: t("СО/МА и руководства"), href: "/?level=1&sort=trust" },
     { key: "trust", label: t("Доверие ≥ 70"), value: totals.high, sub: t("высоконадёжные"), href: "/?minTrust=70&sort=trust" },
-    { key: "guideline", label: t("Руководств"), value: totals.guidelines, sub: "guidelines / consensus", href: "/?design=guideline" },
+    { key: "guideline", label: t("Руководств"), value: totals.guidelines, sub: t("руководства и консенсусы"), href: "/?design=guideline" },
   ];
 
   return (

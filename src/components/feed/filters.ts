@@ -89,7 +89,7 @@ export function persistUserPresets(list: UserPreset[]) {
 
 /** Подписи и подсказки — ключи словаря (msg), переводятся через t() при рендере. */
 export const PRESETS: { label: string; f: Partial<Filters>; hint: string; params?: Params }[] = [
-  { label: msg("⚡ Изменит практику"), f: { level: "2", minTrust: 70, sort: "trust" }, hint: msg("СО/МА, руководства и РКИ с высоким доверием (≥70)") },
+  { label: msg("Изменит практику"), f: { level: "2", minTrust: 70, sort: "trust" }, hint: msg("СО/МА, руководства и РКИ с высоким доверием (≥70)") },
   { label: msg("Только высший уровень"), f: { level: "1", minTrust: 60 }, hint: msg("СО/МА и руководства, доверие ≥60") },
   { label: msg("Свежие РКИ"), f: { design: "rct", days: "30" }, hint: msg("РКИ за 30 дней") },
   { label: msg("Руководства"), f: { design: "guideline" }, hint: msg("Клинические руководства и консенсусы") },

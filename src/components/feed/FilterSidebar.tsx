@@ -6,6 +6,7 @@ import { guidelineIssuerLabel } from "@/lib/evidence/guidelines";
 import { msg } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { PRESETS, presetActive, type Filters, type UserPreset } from "./filters";
+import { IconStar, IconX } from "../icons";
 
 const SELECT_CLS = "field w-full rounded-xl px-2.5 py-1.5 text-sm text-[color:var(--ink-soft)]";
 
@@ -74,9 +75,10 @@ export function FilterSidebar({ f, topics, issuers, yearOptions, activeCount, us
                 aria-pressed={presetActive(f, p.f)}
                 className={`px-2.5 py-1 text-xs transition ${presetActive(f, p.f) ? "bg-[color:var(--brand-soft)] font-semibold text-[color:var(--brand-ink)]" : "hover:text-[color:var(--brand-ink)]"}`}
               >
-                ★ {p.name}
+                <IconStar filled className="mr-1 inline h-3.5 w-3.5 align-[-2px] text-amber-600 dark:text-amber-400" />
+                {p.name}
               </button>
-              <button type="button" aria-label={t("Удалить пресет {name}", { name: p.name })} title={t("Удалить пресет")} onClick={() => onRemovePreset(p.name)} className="px-1.5 py-1 text-xs text-[color:var(--ink-subtle)] hover:text-rose-600">×</button>
+              <button type="button" aria-label={t("Удалить пресет {name}", { name: p.name })} title={t("Удалить пресет")} onClick={() => onRemovePreset(p.name)} className="inline-flex items-center px-1.5 py-1 text-xs text-[color:var(--ink-subtle)] hover:text-rose-600"><IconX className="h-3.5 w-3.5" /></button>
             </span>
           ))}
           {activeCount > 0 && (

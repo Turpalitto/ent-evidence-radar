@@ -36,3 +36,87 @@ describe("минимальный кегль (V-02)", () => {
     expect(violations).toEqual([]);
   });
 });
+
+/**
+ * Вырезает комментарии, сохраняя переводы строк (номера строк в отчёте остаются настоящими).
+ * Строки и шаблоны не трогаем: эмодзи в ключе словаря — такая же проблема интерфейса.
+ */
+function stripComments(src: string): string {
+  let out = "";
+  let i = 0;
+  let mode: "code" | "line" | "block" | "str" | "tpl" = "code";
+  let quote = "";
+  while (i < src.length) {
+    const ch = src[i]!;
+    const next = src[i + 1];
+    if (mode === "code") {
+      if (ch === "/" && next === "/") {
+        mode = "line";
+        i += 2;
+        continue;
+      }
+      if (ch === "/" && next === "*") {
+        mode = "block";
+        i += 2;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        mode = "str";
+        quote = ch;
+      } else if (ch === "`") {
+        mode = "tpl";
+      }
+      out += ch;
+      i++;
+      continue;
+    }
+    if (mode === "line") {
+      if (ch === "\n") {
+        mode = "code";
+        out += ch;
+      }
+      i++;
+      continue;
+    }
+    if (mode === "block") {
+      if (ch === "*" && next === "/") {
+        mode = "code";
+        i += 2;
+        continue;
+      }
+      if (ch === "\n") out += ch;
+      i++;
+      continue;
+    }
+    if (ch === "\\") {
+      out += ch + (next ?? "");
+      i += 2;
+      continue;
+    }
+    if ((mode === "str" && ch === quote) || (mode === "tpl" && ch === "`")) mode = "code";
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
+/**
+ * V-09: вместо эмодзи и типографских символов — инлайновые иконки из `src/components/icons.tsx`.
+ * Символы в комментариях допустимы (там они поясняют, что заменено), в ключах словаря — нет.
+ */
+const EMOJI = /[\p{Extended_Pictographic}★☆✓↺✎⧉✕✗]/gu;
+
+describe("иконки вместо эмодзи (V-09)", () => {
+  it("в разметке нет эмодзи и символов ★☆✓↺", () => {
+    const violations: string[] = [];
+    for (const file of UI_FILES) {
+      stripComments(file.source)
+        .split("\n")
+        .forEach((line, idx) => {
+          const found = line.match(EMOJI);
+          if (found) violations.push(`${file.rel}:${idx + 1}: ${[...new Set(found)].join(" ")}`);
+        });
+    }
+    expect(violations).toEqual([]);
+  });
+});

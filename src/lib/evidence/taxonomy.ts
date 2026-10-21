@@ -192,3 +192,19 @@ export const SOURCE_LABELS: Record<string, string> = {
   "trial-tracking": "КИ: статусы и результаты",
   reclassify: "Переклассификация",
 };
+
+/**
+ * Короткие подписи источников для узких мест — бейджа, строки прогресса и метаданных
+ * карточки (аудит V-06). Раньше бейдж брал первое слово SOURCE_LABELS и «Europe PMC»
+ * превращалось в «Europe». Бренды не переводятся, служебные источники — короткие.
+ */
+export const SOURCE_SHORT: Record<string, string> = {
+  pubmed: "PubMed",
+  europepmc: "Europe PMC",
+  clinicaltrials: "CT.gov",
+  medrxiv: "medRxiv",
+  "retraction-recheck": "Перепроверка отзывов",
+  "crossref-notices": "Crossref",
+  "trial-tracking": "КИ",
+  reclassify: "Переклассификация",
+};

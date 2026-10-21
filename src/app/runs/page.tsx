@@ -8,6 +8,7 @@ import { msg } from "@/lib/i18n";
 import { getI18n } from "@/lib/i18n/server";
 import { ensureSeeded } from "@/lib/refresh";
 import { pageMetadata } from "@/lib/metadata";
+import { IconAlertTriangle } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
 
@@ -98,7 +99,12 @@ export default async function RunsPage() {
                         {r.details.map((d) => (
                           <li key={d.source} className={d.error ? "text-rose-700 dark:text-rose-400" : "text-[color:var(--ink-soft)]"}>
                             <span className="font-medium">{t(SOURCE_LABELS[d.source] ?? d.source)}</span>: {t("{found} найдено, +{added} новых", { found: d.found, added: d.added })}
-                            {d.error ? <span className="block max-w-md truncate" title={d.error}>⚠ {d.error}</span> : null}
+                            {d.error ? (
+                              <span className="flex max-w-md items-center gap-1" title={d.error}>
+                                <IconAlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">{d.error}</span>
+                              </span>
+                            ) : null}
                           </li>
                         ))}
                         {r.errorMessage && r.details.length === 0 && <li className="text-rose-700 dark:text-rose-400">{r.errorMessage}</li>}

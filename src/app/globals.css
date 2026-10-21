@@ -97,6 +97,21 @@
 
   /* ── Кольцо индекса доверия ── */
   --ring-track: rgba(15, 23, 42, 0.1);
+
+  /* ── Предупреждения (аудит V-03): только отзыв, сомнения редакции, исправление.
+     Раньше эти состояния красились теми же amber/rose, что и обычные бейджи дизайнов,
+     и терялись в ряду из 8–12 плашек. ── */
+  --danger: #be123c;
+  --danger-soft: #fff1f2;
+  --danger-ink: #9f1239;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --warning-ink: #92400e;
+
+  /* ── Зоны индекса доверия (пороги 70/45 не менялись) ── */
+  --trust-high: #10b981;
+  --trust-mid: #f59e0b;
+  --trust-low: #f43f5e;
 }
 
 .dark {
@@ -133,6 +148,18 @@
   --gold: #e3b341;
 
   --ring-track: rgba(148, 163, 184, 0.18);
+
+  /* Предупреждения: светлые чернила на глубоком фоне — контраст ≥ 4,5:1. */
+  --danger: #fb7185;
+  --danger-soft: #4c0519;
+  --danger-ink: #fecdd3;
+  --warning: #fbbf24;
+  --warning-soft: #451a03;
+  --warning-ink: #fde68a;
+
+  --trust-high: #34d399;
+  --trust-mid: #fbbf24;
+  --trust-low: #fb7185;
 }
 
 body {

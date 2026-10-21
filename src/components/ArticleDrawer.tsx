@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Article } from "@/db/schema";
 import { useI18n } from "@/lib/i18n/client";
 import { citeBibtex, citeGost, citeVancouver } from "@/lib/citation";
-import { DesignBadge, IssuerBadge, LevelBadge, NoticeBadge, TierBadge, TrialBadge, TrustScore } from "./Badges";
+import { DesignBadge, IssuerBadge, LevelBadge, NOTICE_LABELS, NoticeBadge, RetractedBadge, TierBadge, TrialBadge, TrustScore } from "./Badges";
+import { IconAlertTriangle, IconCheck, IconCopy, IconExternal, IconInfo, IconLink, IconPencil, IconStar } from "./icons";
 import { useFocusTrap } from "./useFocusTrap";
 import { AbstractSection, type AiState } from "./drawer/AbstractSection";
 import { IdentifierLinks, MetaSections, PicoSection, TrialInfoSection, TrustBreakdown } from "./drawer/EvidenceSections";
@@ -194,6 +195,21 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
   const a = article;
   const hasOverrides = hasManualOverrides(a);
   const pico = picoFor(a);
+  // Плашка предупреждения (V-03): отзыв и сомнения редакции — красная семья токенов,
+  // исправление — янтарная. Тексты берём из NOTICE_LABELS, новых формулировок не придумываем.
+  const notice = a.editorialNotice;
+  const alert: { danger: boolean; text: string } | null = a.isRetracted
+    ? {
+        danger: true,
+        text: t(
+          notice && (notice.type === "retraction" || notice.type === "withdrawal")
+            ? NOTICE_LABELS[notice.type].title
+            : NOTICE_LABELS.retraction.title,
+        ),
+      }
+    : notice
+      ? { danger: notice.type === "expression_of_concern", text: t(NOTICE_LABELS[notice.type].title) }
+      : null;
 
   const handleTranslateClick = () => {
     if (aiState.mode === "loading") return;
@@ -218,13 +234,13 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
             <LevelBadge level={a.evidenceLevel} />
             <TierBadge tier={a.journalTier} />
             <IssuerBadge issuer={a.guidelineIssuer} />
-            {a.isPreprint && <span className="rounded bg-rose-600 px-1.5 py-0.5 text-xs font-bold text-white">{t("ПРЕПРИНТ")}</span>}
-            {a.isPreprint && a.publishedDoi && <span className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-xs font-bold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" title={t("Есть рецензированная журнальная версия")}>{t("ОПУБЛИКОВАН В ЖУРНАЛЕ")}</span>}
-            {a.isRetracted && <span className="rounded bg-red-700 px-1.5 py-0.5 text-xs font-bold text-white">{t("ОТОЗВАНА")}</span>}
+            {a.isPreprint && <span className="rounded border border-dashed border-slate-400 bg-slate-50 px-1.5 py-0.5 text-xs font-semibold text-slate-700 dark:border-slate-500 dark:bg-slate-500/10 dark:text-slate-300">{t("Препринт")}</span>}
+            {a.isPreprint && a.publishedDoi && <span className="rounded border border-[color:var(--hairline)] bg-[color:var(--surface-2)] px-1.5 py-0.5 text-xs font-semibold text-[color:var(--ink-soft)]" title={t("Есть рецензированная журнальная версия")}>{t("Опубликован в журнале")}</span>}
+            {a.isRetracted && <RetractedBadge />}
             <NoticeBadge notice={a.editorialNotice} />
             <TrialBadge info={a.trialInfo} />
-            {hasOverrides && <span className="rounded border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-xs font-bold text-violet-700 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300" title={t("Классификация исправлена вручную и не будет перетёрта при обновлении")}>{t("✎ ВРУЧНУЮ")}</span>}
-            {a.isHidden && <span className="rounded bg-slate-600 px-1.5 py-0.5 text-xs font-bold text-white">{t("СКРЫТА")}</span>}
+            {hasOverrides && <span className="inline-flex items-center gap-1 rounded border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-xs font-semibold text-violet-700 dark:border-violet-500/40 dark:bg-violet-950/40 dark:text-violet-300" title={t("Классификация исправлена вручную и не будет перетёрта при обновлении")}><IconPencil className="h-3.5 w-3.5 shrink-0" />{t("Вручную")}</span>}
+            {a.isHidden && <span className="rounded border border-[color:var(--hairline)] bg-[color:var(--surface-3)] px-1.5 py-0.5 text-xs font-semibold text-[color:var(--ink-soft)]">{t("Скрыта")}</span>}
           </div>
           {showTranslate && titleRu && (
             <p className="mb-0.5 text-sm font-semibold leading-snug text-teal-800 dark:text-teal-300">{titleRu}</p>
@@ -241,7 +257,8 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
               rel="noopener noreferrer"
               className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-[color:var(--brand-ink)] hover:underline"
             >
-              {t("Найти в российском реестре клинрекомендаций ↗")}
+              {t("Найти в российском реестре клинрекомендаций")}
+              <IconExternal className="h-3 w-3 shrink-0" />
             </a>
           )}
         </div>
@@ -251,6 +268,24 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
       </div>
 
       <div className="space-y-5 px-4 py-4 md:px-5">
+
+        {/* ── Плашка предупреждения (V-03): отзыв / сомнения редакции / исправление ── */}
+        {alert && (
+          <div
+            data-testid="editorial-alert"
+            className={`flex items-start gap-2 rounded-xl border p-3 text-sm ${
+              alert.danger
+                ? "border-[color:var(--danger)] bg-[color:var(--danger-soft)] text-[color:var(--danger-ink)]"
+                : "border-[color:var(--warning)] bg-[color:var(--warning-soft)] text-[color:var(--warning-ink)]"
+            }`}
+          >
+            {alert.danger ? <IconAlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <IconInfo className="mt-0.5 h-4 w-4 shrink-0" />}
+            <p className="font-medium">
+              {alert.text}
+              {notice?.date ? `, ${notice.date}` : ""}
+            </p>
+          </div>
+        )}
 
         {/* ── Кнопки действий ── */}
         <div className="flex flex-wrap gap-2">
@@ -265,22 +300,26 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
           </a>
           <button
             onClick={() => patch(a.id, { isBookmarked: !a.isBookmarked })}
+            aria-pressed={a.isBookmarked}
             className={`flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold transition active:scale-95 sm:py-2 ${a.isBookmarked ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300" : "btn-ghost"}`}
           >
-            {a.isBookmarked ? "★" : "☆"} {a.isBookmarked ? t("Сохранено") : t("Сохранить")}
+            <IconStar filled={a.isBookmarked} />
+            {a.isBookmarked ? t("Сохранено") : t("Сохранить")}
           </button>
           <button
             onClick={() => void copyToClipboard(buildConsiliumSummary(a, i18n), "consilium")}
             className="btn-ghost flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition active:scale-95 sm:py-2"
             title={t("Скопировать библиографическую ссылку, дизайн и клинический вывод")}
           >
-            {copied === "consilium" ? t("✓ Ссылка скопирована") : t("📋 Для консилиума")}
+            {copied === "consilium" ? <IconCheck /> : <IconCopy />}
+            {copied === "consilium" ? t("Ссылка скопирована") : t("Для консилиума")}
           </button>
           <button
             onClick={() => void share()}
             className="btn-ghost flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition active:scale-95 sm:py-2"
           >
-            {copied === "share" ? t("✓ Скопировано") : t("⧉ Поделиться")}
+            {copied === "share" ? <IconCheck /> : <IconLink />}
+            {copied === "share" ? t("Скопировано") : t("Поделиться")}
           </button>
         </div>
 
@@ -306,7 +345,14 @@ export function ArticleDrawer({ article, onClose, onUpdate, onSelectArticle }: P
               title={title}
               className="rounded-lg border border-slate-200 px-2 py-1 font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
             >
-              {copied === key ? t("✓ Скопировано") : label}
+              {copied === key ? (
+                <span className="inline-flex items-center gap-1">
+                  <IconCheck className="h-3.5 w-3.5" />
+                  {t("Скопировано")}
+                </span>
+              ) : (
+                label
+              )}
             </button>
           ))}
         </div>

@@ -5,6 +5,7 @@ import { parseStructuredAbstract } from "@/lib/evidence/abstract";
 import { useI18n } from "@/lib/i18n/client";
 import { sectionHeader } from "./consilium";
 import { AbbrText } from "./AbbrText";
+import { IconGlobe, IconLightbulb } from "../icons";
 
 export interface AiState {
   mode: "idle" | "loading" | "done" | "error";
@@ -41,7 +42,8 @@ export function AbstractSection({ a, ai, showTranslate, onTranslate, onSummary }
                     : "btn-ghost"
                 }`}
               >
-                {ai.mode === "loading" ? "…" : showTranslate && ai.translate ? t("Скрыть перевод") : t("🌐 Перевод на русский")}
+                <IconGlobe className="mr-1 inline h-3.5 w-3.5 align-[-2px]" />
+                {ai.mode === "loading" ? "…" : showTranslate && ai.translate ? t("Скрыть перевод") : t("Перевод на русский")}
               </button>
             )}
             <button
@@ -49,7 +51,8 @@ export function AbstractSection({ a, ai, showTranslate, onTranslate, onSummary }
               disabled={ai.mode === "loading"}
               className="btn-ghost rounded-lg px-2.5 py-1 text-xs font-semibold transition disabled:opacity-40"
             >
-              {t("💡 Резюме для практики (PICO)")}
+              <IconLightbulb className="mr-1 inline h-3.5 w-3.5 align-[-2px]" />
+              {t("Резюме для практики (PICO)")}
             </button>
           </div>
         )}
@@ -68,7 +71,10 @@ export function AbstractSection({ a, ai, showTranslate, onTranslate, onSummary }
       {/* AI-резюме */}
       {ai.summary && (
         <div className="mb-3 rounded-xl border border-teal-100 bg-teal-50/60 p-3 dark:border-teal-900/50 dark:bg-teal-950/30">
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">{t("💡 Для практики")}</p>
+          <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">
+            <IconLightbulb className="h-3.5 w-3.5 shrink-0" />
+            {t("Для практики")}
+          </p>
           <p className="text-sm leading-relaxed text-slate-800 dark:text-slate-200">{locale === "ru" ? <AbbrText text={ai.summary} /> : ai.summary}</p>
         </div>
       )}
@@ -117,11 +123,12 @@ function StructuredAbstract({ abstract }: { abstract: string }) {
           <span
             className={
               isConclusion
-                ? "mb-1 block text-[11px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400"
+                ? "mb-1 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400"
                 : "mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
             }
           >
-            {isConclusion ? t("💡 Клинический вывод") : sectionHeader(locale, sec.label)}
+            {isConclusion && <IconLightbulb className="h-3.5 w-3.5 shrink-0" />}
+            {isConclusion ? t("Клинический вывод") : sectionHeader(locale, sec.label)}
           </span>
         )}
         <p className={isConclusion ? "font-medium text-teal-950 dark:text-teal-100" : "text-slate-700 dark:text-slate-300"}>

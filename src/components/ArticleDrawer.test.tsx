@@ -154,18 +154,18 @@ describe("<ArticleDrawer />", () => {
       },
     });
     const dialog = screen.getAllByRole("dialog").at(-1)!;
-    await user.click(within(dialog).getByRole("button", { name: "🌐 Перевод на русский" }));
+    await user.click(within(dialog).getByRole("button", { name: "Перевод на русский" }));
     expect(await within(dialog).findByText("Введение: трубки. Выводы: трубки помогают.")).toBeInTheDocument();
     expect(aiBodies).toEqual([{ action: "translate", articleId: 20, lang: "ru" }]); // текст сервер берёт из БД по id
     // Повторный клик — просто скрыть, без запроса
     await user.click(within(dialog).getByRole("button", { name: "Скрыть перевод" }));
     expect(within(dialog).queryByText("Введение: трубки. Выводы: трубки помогают.")).toBeNull();
     expect(aiBodies).toHaveLength(1);
-    await user.click(within(dialog).getByRole("button", { name: "🌐 Перевод на русский" }));
+    await user.click(within(dialog).getByRole("button", { name: "Перевод на русский" }));
     expect(within(dialog).getByText("Введение: трубки. Выводы: трубки помогают.")).toBeInTheDocument();
     expect(aiBodies).toHaveLength(1);
 
-    await user.click(within(dialog).getByRole("button", { name: "💡 Резюме для практики (PICO)" }));
+    await user.click(within(dialog).getByRole("button", { name: "Резюме для практики (PICO)" }));
     expect(await within(dialog).findByText(/I: тимпаностомия/)).toBeInTheDocument();
     expect(aiBodies.at(-1)).toMatchObject({ action: "summary" });
     expect(calls.filter((c) => c.url.pathname === "/api/ai")).toHaveLength(2);
@@ -181,10 +181,10 @@ describe("<ArticleDrawer />", () => {
           : sseResponse(["частично "], { error: "Лимит AI-запросов исчерпан" }),
     });
     const dialog = screen.getAllByRole("dialog").at(-1)!;
-    await user.click(within(dialog).getByRole("button", { name: "💡 Резюме для практики (PICO)" }));
+    await user.click(within(dialog).getByRole("button", { name: "Резюме для практики (PICO)" }));
     expect(await within(dialog).findByText(/AI не настроен: задайте OPENROUTER_API_KEY/)).toBeInTheDocument();
     mode = "stream";
-    await user.click(within(dialog).getByRole("button", { name: "💡 Резюме для практики (PICO)" }));
+    await user.click(within(dialog).getByRole("button", { name: "Резюме для практики (PICO)" }));
     expect(await within(dialog).findByText(/Лимит AI-запросов исчерпан/)).toBeInTheDocument();
   });
 
@@ -193,7 +193,7 @@ describe("<ArticleDrawer />", () => {
     const share = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "share", { value: share, configurable: true });
     const { unmount } = render(<ArticleDrawer article={makeArticle({ id: 22, isRead: true, title: "Shared", url: "https://e.org/22" })} onClose={() => {}} onUpdate={() => {}} onSelectArticle={() => {}} />);
-    await user.click(screen.getAllByRole("button", { name: "⧉ Поделиться" }).at(-1)!);
+    await user.click(screen.getAllByRole("button", { name: "Поделиться" }).at(-1)!);
     expect(share).toHaveBeenCalledWith({ title: "Shared", url: "https://e.org/22" });
     unmount();
 
@@ -201,9 +201,9 @@ describe("<ArticleDrawer />", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     render(<ArticleDrawer article={makeArticle({ id: 23, isRead: true, url: "https://e.org/23" })} onClose={() => {}} onUpdate={() => {}} onSelectArticle={() => {}} />);
-    await user.click(screen.getAllByRole("button", { name: "⧉ Поделиться" }).at(-1)!);
+    await user.click(screen.getAllByRole("button", { name: "Поделиться" }).at(-1)!);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://e.org/23"));
-    expect((await screen.findAllByRole("button", { name: "✓ Скопировано" })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("button", { name: "Скопировано" })).length).toBeGreaterThan(0);
   });
 
   it("заметки: кнопка активна только при изменении, сохранение шлёт PATCH {notes} и обновляет статью", async () => {

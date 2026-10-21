@@ -7,6 +7,7 @@ import { DESIGN_LABELS, EVIDENCE_LEVEL_LABELS, SOURCE_LABELS, SUBSPECIALTY_LABEL
 import type { StudyDesign } from "@/db/schema";
 import { getI18n } from "@/lib/i18n/server";
 import { pageMetadata } from "@/lib/metadata";
+import { IconAlertTriangle } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
 
@@ -166,12 +167,22 @@ export default async function StatsPage() {
         <section className="card rounded-2xl p-5">
           <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("Топ журналов")}</h2>
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-[color:var(--ink-subtle)]"><tr><th className="pb-1.5">{t("Издание")}</th><th className="pb-1.5 text-right">Tier</th><th className="pb-1.5 text-right">{t("Публ.")}</th><th className="pb-1.5 text-right">{t("Ср. индекс")}</th></tr></thead>
+            <thead className="text-left text-xs uppercase tracking-wide text-[color:var(--ink-subtle)]"><tr><th className="pb-1.5">{t("Издание")}</th><th className="pb-1.5 text-right">{t("Эшелон")}</th><th className="pb-1.5 text-right">{t("Публ.")}</th><th className="pb-1.5 text-right">{t("Ср. индекс")}</th></tr></thead>
             <tbody className="divide-y divide-[color:var(--hairline)]">
               {topJournals.map((j) => (
                 <tr key={j.key}>
                   <td className="py-1.5 pr-2 text-[color:var(--ink-soft)]">{j.key}</td>
-                  <td className="py-1.5 text-right">{j.tier > 0 ? `T${j.tier}` : j.tier < 0 ? "⚠" : "—"}</td>
+                  <td className="py-1.5 text-right">
+                    {j.tier > 0 ? (
+                      `T${j.tier}`
+                    ) : j.tier < 0 ? (
+                      <span className="inline-flex items-center text-[color:var(--danger)]" title={t("Сомнительный журнал")}>
+                        <IconAlertTriangle className="h-4 w-4" />
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="py-1.5 text-right tabular-nums">{j.count}</td>
                   <td className="py-1.5 text-right font-semibold tabular-nums">{j.avg}</td>
                 </tr>

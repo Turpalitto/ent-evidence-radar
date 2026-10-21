@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RunSourceDetail } from "@/db/schema";
-import { SOURCE_LABELS } from "@/lib/evidence/taxonomy";
+import { SOURCE_LABELS, SOURCE_SHORT } from "@/lib/evidence/taxonomy";
 import type { I18n } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
@@ -34,11 +34,14 @@ const POLL_MS = 4000;
  */
 type Phase = "idle" | "starting" | "polling";
 
-/** Короткая строка прогресса: «PubMed 120 · Europe PMC ✗ · ClinicalTrials.gov 15». */
+/** Короткая строка прогресса: «PubMed 120 · Europe PMC: ошибка · CT.gov 15». */
 export function progressText(details: RunSourceDetail[], t: I18n["t"]): string {
   if (!details.length) return t("Запрашиваем PubMed, Europe PMC, ClinicalTrials.gov, medRxiv…");
   return details
-    .map((d) => `${(SOURCE_LABELS[d.source] ?? d.source).split(" ")[0]} ${d.error ? "✗" : d.found}`)
+    .map((d) => {
+      const short = SOURCE_SHORT[d.source] ?? SOURCE_LABELS[d.source] ?? d.source;
+      return d.error ? t("{source}: ошибка", { source: short }) : `${short} ${d.found}`;
+    })
     .join(" · ");
 }
 

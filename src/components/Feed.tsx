@@ -11,6 +11,7 @@ import { ArticleCard } from "./feed/ArticleCard";
 import { FilterSidebar } from "./feed/FilterSidebar";
 import { ShortcutsModal } from "./feed/ShortcutsModal";
 import { useNotificationPermission, useOnlineStatus } from "./feed/hooks";
+import { IconBell, IconCheck, IconCheckDouble, IconCopy } from "./icons";
 import {
   INITIAL_FILTERS,
   PAGE_SIZE,
@@ -190,7 +191,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
             .then((d: { items?: Article[] }) => {
               const top = d.items?.find((a) => !a.isRead);
               if (top) {
-                new Notification(t("⚡ ENT Evidence Radar: важное исследование"), {
+                new Notification(t("ENT Evidence Radar: важное исследование"), {
                   body: `${top.title}\n${t("{journal} · Доверие {score}/100", { journal: top.journal || t("ЛОР"), score: top.trustScore })}`,
                 });
               }
@@ -539,7 +540,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
                 : "btn-ghost"
             }`}
           >
-            <span>{notifyPerm === "granted" ? "🔔" : "🔕"}</span>
+            <IconBell off={notifyPerm !== "granted"} className="h-4 w-4 shrink-0" />
             <span>{notifyPerm === "granted" ? t("Уведомления") : t("Оповещения")}</span>
           </button>
           {data.items.length > 0 && (
@@ -549,8 +550,8 @@ export function Feed({ topics }: { topics: Topic[] }) {
               className="btn-ghost hidden items-center gap-1.5 rounded-xl px-3 py-2.5 text-xs font-medium md:inline-flex"
               title={t("Список литературы по ГОСТ Р 7.0.5 для всех статей этой страницы — в буфер обмена (для доклада, статьи или диссертации)")}
             >
-              <span>📋</span>
-              <span>{gostCopied ? t("Скопировано ✓") : t("Цитаты (ГОСТ)")}</span>
+              {gostCopied ? <IconCheck className="h-4 w-4 shrink-0" /> : <IconCopy className="h-4 w-4 shrink-0" />}
+              <span>{gostCopied ? t("Скопировано") : t("Цитаты (ГОСТ)")}</span>
             </button>
           )}
           {data.items.some((a) => !a.isRead) && (
@@ -560,7 +561,7 @@ export function Feed({ topics }: { topics: Topic[] }) {
               className="btn-ghost hidden items-center gap-1.5 rounded-xl px-3 py-2.5 text-xs font-medium md:inline-flex"
               title={t("Отметить все статьи на этой странице прочитанными")}
             >
-              <span>✓✓</span>
+              <IconCheckDouble className="h-4 w-4 shrink-0" />
               <span>{t("Страницу прочитано")}</span>
             </button>
           )}
