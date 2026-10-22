@@ -51,8 +51,8 @@ const THEMES = [
 
 /** Иерархия текста: от основного к вспомогательному. */
 const INKS = ["--ink", "--ink-soft", "--ink-muted", "--ink-subtle"] as const;
-/** Поверхности, на которых реально лежит текст (карточка, вложенная панель, фон страницы). */
-const SURFACES = ["--surface-1", "--surface-2", "--page-bg"] as const;
+/** Поверхности, на которых реально лежит текст (карточка, вложенная панель, фон страницы, чипы `code`). */
+const SURFACES = ["--surface-1", "--surface-2", "--surface-3", "--page-bg"] as const;
 
 describe("контраст токенов текста (WCAG 2.1 AA)", () => {
   for (const theme of THEMES) {
