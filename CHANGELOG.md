@@ -93,6 +93,13 @@
 Всего 88 файлов / 632 тестов.
 
 ### Fixed
+- **Приложение, запущенное из каталога со словом «build» в пути, молча работало без сохранения данных.**
+  Признак фазы сборки вычислялся как `process.argv.some((a) => a.includes("build"))`, поэтому путь к
+  бинарю `next` (`/srv/build/app/node_modules/.bin/next`) делал обычный `next start` «сборкой»: файловый
+  PGlite подменялся in-memory, записи принимались и исчезали после перезапуска. Проверка вынесена в
+  `src/db/phase.ts` (`isBuildPhase`): сборка — это `NEXT_PHASE=phase-production-build`, `npm run build`
+  или команда `build` у самого CLI `next`. Тесты `src/db/phase.test.ts` (6), включая регрессию на путь
+  `/tmp/ent-build`; проверено на работающем экземпляре из такого каталога — лента отдаёт данные из `.pglite`.
 - **Личные поля статей были доступны анониму через публичные GET (аудит N-01).** `GET /api/articles`,
   `/api/articles/:id` и `/api/articles/:id/related` отдавали `notes`, `isBookmarked`, `isRead`, `isHidden`
   любому клиенту, а лента принимала фильтры `bookmarked`/`unread`/`withNotes`/`hidden` и поиск `scope=notes`.

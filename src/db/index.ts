@@ -8,6 +8,7 @@ import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import { MIGRATION_LOCK_KEY, pendingMigrations, preMigrationBackup, shouldMigrateOnStart } from "./migrate-guard";
+import { isBuildPhase } from "./phase";
 import { onShutdown, SHUTDOWN_ORDER } from "@/lib/shutdown";
 import { log } from "@/lib/log";
 
@@ -84,12 +85,9 @@ async function initDb() {
   // Во время `next build` Next.js запускает множество параллельных воркеров.
   // Файловый PGlite конфликтует при одновременном открытии одной директории,
   // поэтому при сборке используем in-memory PGlite.
-  const isBuild =
-    process.env.NEXT_PHASE === "phase-production-build" ||
-    process.env.npm_lifecycle_event === "build" ||
-    process.argv.some((a) => a.includes("build"));
-
-  if (isBuild) {
+  // Проверка вынесена в `phase.ts`: раньше она срабатывала на любой путь со словом
+  // «build» (`/srv/build/app`), и приложение молча теряло данные — см. комментарий там.
+  if (isBuildPhase()) {
     return await openPglite();
   }
 
