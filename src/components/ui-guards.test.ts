@@ -138,3 +138,48 @@ describe("декор убран (V-08)", () => {
     expect(violations).toEqual([]);
   });
 });
+
+/**
+ * V-11: на 390×844 первая карточка ленты должна быть видна без прокрутки. Геометрию в jsdom
+ * не измерить, поэтому сторож держит саму конструкцию: на мобильном ряд показателей — одна
+ * горизонтальная лента со снапом (иначе пять карточек складываются в три ряда и съедают
+ * первый экран), описание в шапке обрезано двумя строками, а скелет загрузки повторяет тот же
+ * ряд. Замер на живой сборке: до правки первая карточка начиналась на y=1018, после — 685.
+ */
+function uiSource(rel: string): string {
+  const file = UI_FILES.find((f) => f.rel === rel);
+  if (!file) throw new Error(`файл не найден в выборке: ${rel}`);
+  return stripComments(file.source);
+}
+
+/** Классы первого className, содержащего указанный токен. */
+function classListWith(code: string, token: string): string | undefined {
+  for (const m of code.matchAll(/className="([^"]*)"/g)) {
+    const cls = m[1] ?? "";
+    if (cls.split(/\s+/).includes(token)) return cls;
+  }
+  return undefined;
+}
+
+describe("компактный верх главной (V-11)", () => {
+  it("на мобильном показатели — один ряд со снапом, на sm+ прежняя сетка", () => {
+    const row = classListWith(uiSource("app/page.tsx"), "snap-x");
+    expect(row, "ряд показателей с snap-x не найден").toBeTruthy();
+    expect(row).toContain("overflow-x-auto");
+    expect(row).toContain("scroll-pl-4");
+    expect(row).toContain("sm:grid");
+  });
+
+  it("описание в шапке обрезано двумя строками только на мобильном", () => {
+    const desc = classListWith(uiSource("app/page.tsx"), "line-clamp-2");
+    expect(desc, "line-clamp-2 у описания не найден").toBeTruthy();
+    expect(desc).toContain("sm:line-clamp-none");
+  });
+
+  it("скелет загрузки повторяет мобильный ряд, а не три ряда сетки", () => {
+    const row = classListWith(uiSource("app/loading.tsx"), "overflow-x-auto");
+    expect(row, "ряд скелета с overflow-x-auto не найден").toBeTruthy();
+    expect(row).toContain("snap-x");
+    expect(row).toContain("sm:grid");
+  });
+});
