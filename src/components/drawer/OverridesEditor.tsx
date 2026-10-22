@@ -24,7 +24,7 @@ export function OverridesEditor({ a, saving, open, onOpen, patch }: Props) {
   const hasOverrides = hasManualOverrides(a);
   return (
     <details className="rounded-xl border border-[color:var(--hairline)] px-3 py-2 text-xs" open={hasOverrides || open}>
-      <summary className="cursor-pointer select-none font-semibold text-[color:var(--ink-soft)]" onClick={onOpen}>
+      <summary className="cursor-pointer select-none py-1 font-semibold text-[color:var(--ink-soft)]" onClick={onOpen}>
         {t("Исправить классификацию")}{hasOverrides ? ` · ${t("есть ручные правки")}` : ""}
       </summary>
       <div className="mt-2 space-y-2.5">
@@ -61,7 +61,7 @@ export function OverridesEditor({ a, saving, open, onOpen, patch }: Props) {
                     const next = active ? base.filter((k) => k !== s.key) : [...base, s.key];
                     patch({ overrides: { ...a.overrides, subspecialties: next.length ? next : undefined } });
                   }}
-                  className={`rounded-full border px-2 py-0.5 text-[11px] transition ${active ? "border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200" : "border-[color:var(--hairline)] text-[color:var(--ink-subtle)] hover:border-teal-400"}`}
+                  className={`inline-flex min-h-6 items-center rounded-full border px-2 py-0.5 text-[11px] transition ${active ? "border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200" : "border-[color:var(--hairline)] text-[color:var(--ink-subtle)] hover:border-teal-400"}`}
                   aria-pressed={active}
                 >
                   {t(s.short)}

@@ -12,7 +12,7 @@ export function BadgeLegend() {
   const { t } = useI18n();
   return (
     <details className="mt-3 rounded-xl border border-[color:var(--hairline)] bg-[color:var(--surface-2)] px-3 py-2">
-      <summary className="cursor-pointer select-none text-xs font-semibold text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]">
+      <summary className="cursor-pointer select-none py-1 text-xs font-semibold text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]">
         {t("Что означают бейджи и цифры")}
       </summary>
       <dl className="mt-2 space-y-2 text-[11px] leading-relaxed text-[color:var(--ink-muted)]">

@@ -95,7 +95,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 <p className="font-medium tracking-wide text-slate-400 dark:text-slate-500">
                   PubMed · Cochrane · Europe PMC · ClinicalTrials.gov · medRxiv
                 </p>
-                <a href={locale === deploymentDefaultLocale() ? "/feed.xml" : `/feed.xml?lang=${locale}`} className="link-brand inline-flex items-center gap-1.5 font-semibold">
+                <a href={locale === deploymentDefaultLocale() ? "/feed.xml" : `/feed.xml?lang=${locale}`} className="link-brand inline-flex items-center gap-1.5 py-1 font-semibold">
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" />
                     <circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none" />

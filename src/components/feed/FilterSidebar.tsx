@@ -216,7 +216,7 @@ export function FilterSidebar({ f, topics, issuers, yearOptions, activeCount, us
         <p className="mt-1.5 text-[11px] text-[color:var(--ink-subtle)]">{t("RIS — для Zotero / EndNote / Mendeley; BibTeX — для LaTeX")}</p>
         <a
           href={feedHref}
-          className="link-brand mt-2 inline-flex items-center gap-1.5 text-xs font-semibold hover:underline"
+          className="link-brand mt-2 inline-flex min-h-6 items-center gap-1.5 text-xs font-semibold hover:underline"
           title={!feedHasFilters ? t("Atom-лента всех новых публикаций") : t("Atom-лента только по текущим фильтрам — добавьте ссылку в RSS-читалку")}
         >
           <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6.18 15.64a2.18 2.18 0 1 1 0 4.36 2.18 2.18 0 0 1 0-4.36M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27zm0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93z" /></svg>

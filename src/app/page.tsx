@@ -135,7 +135,7 @@ export default async function HomePage() {
             ) : (
               <span className="chip">{t("Обновление ещё не запускалось")}</span>
             )}
-            <Link href="/runs" className="link-brand text-xs font-semibold">
+            <Link href="/runs" className="link-brand inline-flex min-h-6 items-center text-xs font-semibold">
               {t("Журнал запусков →")}
             </Link>
           </div>
