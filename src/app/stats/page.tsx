@@ -74,7 +74,7 @@ export default async function StatsPage() {
       </div>
 
       {byYear.length > 0 && (
-        <section className="card rounded-2xl p-5">
+        <section className="card min-w-0 rounded-2xl p-5">
           <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-sm font-semibold text-[color:var(--ink)]">{t("Публикации по годам")}</h2>
             <p className="text-xs text-[color:var(--ink-subtle)]">{t("Нажмите на столбец, чтобы открыть ленту за год")}</p>
@@ -109,39 +109,43 @@ export default async function StatsPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <section className="card rounded-2xl p-5">
+        <section className="card min-w-0 rounded-2xl p-5">
           <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("По дизайну исследования")}</h2>
           <Bars rows={byDesign} labelOf={(k) => t(DESIGN_LABELS[k as StudyDesign] ?? String(k))} color="bg-gradient-to-r from-teal-500 to-emerald-500" empty={t("Нет данных")} />
         </section>
-        <section className="card rounded-2xl p-5">
+        <section className="card min-w-0 rounded-2xl p-5">
           <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("По уровню доказательности")}</h2>
           <Bars rows={byLevel} labelOf={(k) => t(EVIDENCE_LEVEL_LABELS[Number(k)] ?? String(k))} color="bg-gradient-to-r from-sky-500 to-cyan-500" empty={t("Нет данных")} />
         </section>
-        <section className="card rounded-2xl p-5">
+        <section className="card min-w-0 rounded-2xl p-5">
           <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("По субспециальностям")}</h2>
           <Bars rows={bySub} labelOf={(k) => t(SUBSPECIALTY_LABELS[String(k)] ?? String(k))} color="bg-gradient-to-r from-violet-500 to-indigo-500" empty={t("Нет данных")} />
         </section>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <section className="card rounded-2xl p-5 lg:col-span-2">
+        <section className="card min-w-0 rounded-2xl p-5 lg:col-span-2">
           <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("Публикации по неделям (12 недель) · тёмным — доверие ≥70")}</h2>
           {byWeek.length ? (
-            <div className="flex h-44 items-end gap-1.5">
-              {byWeek.map((r) => (
-                <div key={r.wk} className="flex flex-1 flex-col items-center gap-1">
-                  <div className="relative w-full rounded-t bg-teal-200 dark:bg-teal-900" style={{ height: `${(r.count / maxWeek) * 150}px` }} title={t("{count} публикаций, {high} с индексом ≥70", { count: r.count, high: r.high })}>
-                    <div className="absolute bottom-0 w-full rounded-t bg-gradient-to-t from-teal-600 to-sky-500 dark:from-teal-500 dark:to-sky-400" style={{ height: `${(r.high / Math.max(1, r.count)) * 100}%` }} />
+            // 12 недель с датами не влезают в 358 px: ряд прокручивается внутри карточки,
+            // иначе он распирает грид и вся страница едет по горизонтали (найдено на 390×844).
+            <div className="overflow-x-auto">
+              <div className="flex h-44 items-end gap-1.5">
+                {byWeek.map((r) => (
+                  <div key={r.wk} className="flex flex-1 flex-col items-center gap-1">
+                    <div className="relative w-full rounded-t bg-teal-200 dark:bg-teal-900" style={{ height: `${(r.count / maxWeek) * 150}px` }} title={t("{count} публикаций, {high} с индексом ≥70", { count: r.count, high: r.high })}>
+                      <div className="absolute bottom-0 w-full rounded-t bg-gradient-to-t from-teal-600 to-sky-500 dark:from-teal-500 dark:to-sky-400" style={{ height: `${(r.high / Math.max(1, r.count)) * 100}%` }} />
+                    </div>
+                    <span className="text-[11px] text-[color:var(--ink-muted)]">{r.wk}</span>
                   </div>
-                  <span className="text-[11px] text-[color:var(--ink-muted)]">{r.wk}</span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           ) : (
             <p className="text-sm text-[color:var(--ink-muted)]">{t("Нет данных")}</p>
           )}
         </section>
-        <section className="card rounded-2xl p-5">
+        <section className="card min-w-0 rounded-2xl p-5">
           <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("Распределение индекса доверия")}</h2>
           <div className="flex h-44 items-end gap-1">
             {Array.from({ length: 10 }, (_, i) => i * 10).map((b) => {
@@ -160,11 +164,11 @@ export default async function StatsPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="card rounded-2xl p-5">
+        <section className="card min-w-0 rounded-2xl p-5">
           <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("Источники")}</h2>
           <Bars rows={bySource} labelOf={(k) => t(SOURCE_LABELS[String(k)] ?? String(k))} color="bg-gradient-to-r from-indigo-500 to-blue-500" empty={t("Нет данных")} />
         </section>
-        <section className="card rounded-2xl p-5">
+        <section className="card min-w-0 rounded-2xl p-5">
           <h2 className="mb-3.5 text-sm font-semibold text-[color:var(--ink)]">{t("Топ журналов")}</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-[color:var(--ink-subtle)]"><tr><th className="pb-1.5">{t("Издание")}</th><th className="pb-1.5 text-right">{t("Эшелон")}</th><th className="pb-1.5 text-right">{t("Публ.")}</th><th className="pb-1.5 text-right">{t("Ср. индекс")}</th></tr></thead>

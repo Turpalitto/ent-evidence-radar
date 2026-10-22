@@ -183,3 +183,24 @@ describe("компактный верх главной (V-11)", () => {
     expect(row).toContain("sm:grid");
   });
 });
+
+/**
+ * Найдено на замере 390×844: страница /stats ехала по горизонтали (документ 644 px при
+ * вьюпорте 390). Причина — грид-треки, которые `auto`-минимумом тянутся за min-content
+ * содержимого: длинные подписи уровней и 12 недель с датами. Лечится `min-w-0` у карточек
+ * и прокруткой ряда недель внутри карточки; пиксели в jsdom не измерить, поэтому сторож
+ * держит конструкцию.
+ */
+describe("нет горизонтальной прокрутки на /stats", () => {
+  const code = uiSource("app/stats/page.tsx");
+
+  it("у каждой карточки-секции есть min-w-0", () => {
+    const sections = [...code.matchAll(/<section className="([^"]*)"/g)].map((m) => m[1] ?? "");
+    expect(sections.length).toBeGreaterThan(5);
+    expect(sections.filter((c) => !c.split(/\s+/).includes("min-w-0"))).toEqual([]);
+  });
+
+  it("ряд недель прокручивается внутри карточки", () => {
+    expect(code).toMatch(/className="overflow-x-auto">\s*<div className="flex h-44 items-end/);
+  });
+});
