@@ -100,6 +100,10 @@
   `src/db/phase.ts` (`isBuildPhase`): сборка — это `NEXT_PHASE=phase-production-build`, `npm run build`
   или команда `build` у самого CLI `next`. Тесты `src/db/phase.test.ts` (6), включая регрессию на путь
   `/tmp/ent-build`; проверено на работающем экземпляре из такого каталога — лента отдаёт данные из `.pglite`.
+- **Перебор пароля к `/api/auth/login` не оставлял следа в логах (аудит N-03).** Лимит по решению владельца
+  не менялся (10 попыток за 10 минут на IP), но при его срабатывании пишется предупреждение
+  `auth.login_rate_limited` с `ipHash` (12 hex-символов SHA-256), `retryAfterMs`, `limit`, `windowMs` —
+  сам IP и секрет в лог не попадают. Тест в `routes.auth.test.ts`.
 - **Личные поля статей были доступны анониму через публичные GET (аудит N-01).** `GET /api/articles`,
   `/api/articles/:id` и `/api/articles/:id/related` отдавали `notes`, `isBookmarked`, `isRead`, `isHidden`
   любому клиенту, а лента принимала фильтры `bookmarked`/`unread`/`withNotes`/`hidden` и поиск `scope=notes`.

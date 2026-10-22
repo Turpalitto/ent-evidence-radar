@@ -4,8 +4,13 @@ import { checkRateLimitShared } from "@/lib/rate-limit";
 import { getClientIp, isSameOriginRequest } from "@/lib/security";
 import { SESSION_COOKIE, SESSION_TTL_SEC, createSessionToken } from "@/lib/session";
 import { i18nOf } from "@/lib/i18n/request";
+import { log } from "@/lib/log";
 
 export const dynamic = "force-dynamic";
+
+/** Лимит попыток входа: 10 за 10 минут на IP (аудит N-03 — значение не меняется). */
+const LOGIN_LIMIT = 10;
+const LOGIN_WINDOW_MS = 10 * 60_000;
 
 function safeEqual(a: string, b: string): boolean {
   const ah = createHash("sha256").update(a, "utf8").digest();
@@ -37,8 +42,17 @@ export async function POST(req: NextRequest) {
   }
 
   const ip = getClientIp(req);
-  const rl = await checkRateLimitShared(`login:${ip}`, 10, 10 * 60_000);
+  const rl = await checkRateLimitShared(`login:${ip}`, LOGIN_LIMIT, LOGIN_WINDOW_MS);
   if (!rl.allowed) {
+    // N-03: лимит по решению владельца не меняется — вместо ужесточения оставляем
+    // предупреждение в логе, чтобы перебор был заметен. Сам IP в лог не пишем:
+    // для различения адресов достаточно необратимого отпечатка.
+    log.warn("auth.login_rate_limited", {
+      ipHash: createHash("sha256").update(ip, "utf8").digest("hex").slice(0, 12),
+      retryAfterMs: rl.resetMs,
+      limit: LOGIN_LIMIT,
+      windowMs: LOGIN_WINDOW_MS,
+    });
     return NextResponse.json(
       { ok: false, error: t("Слишком много попыток входа. Попробуйте позже.") },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } },
