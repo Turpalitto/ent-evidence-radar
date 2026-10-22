@@ -102,7 +102,7 @@ export default async function HomePage() {
         />
         <div className="relative">
           <p className="eyebrow">{t("Доказательная оториноларингология")}</p>
-          <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-[color:var(--ink)] sm:text-3xl">
+          <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-[color:var(--ink)] sm:text-[32px]">
             {t("Лента")} <span className="brand-gradient-text">{t("доказательных публикаций")}</span>
           </h1>
           {/* На мобильном описание обрезано двумя строками: четыре строки вводного текста
